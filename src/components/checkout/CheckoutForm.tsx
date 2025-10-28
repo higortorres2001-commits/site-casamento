@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useImperativeHandle, forwardRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -15,8 +15,12 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
-import { isValidCPF, formatCPF } from "@/utils/cpfValidation"; // Import CPF validation
-import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation"; // Import WhatsApp validation
+import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
+import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
+
+export interface CheckoutFormRef {
+  submitForm: () => void;
+}
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -45,118 +49,121 @@ interface CheckoutFormProps {
   };
 }
 
-const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) => {
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: initialData || {
-      name: "",
-      cpf: "",
-      email: "",
-      whatsapp: "",
-    },
-  });
+const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
+  ({ onSubmit, isLoading, initialData }, ref) => {
+    const form = useForm<z.infer<typeof formSchema>>({
+      resolver: zodResolver(formSchema),
+      defaultValues: initialData || {
+        name: "",
+        cpf: "",
+        email: "",
+        whatsapp: "",
+      },
+    });
 
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <h2 className="text-2xl font-bold mb-4">Seus Dados</h2>
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Nome Completo</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Seu nome completo"
-                  {...field}
-                  className="focus:ring-orange-500 focus:border-orange-500"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="cpf"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>CPF</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="000.000.000-00"
-                  {...field}
-                  onChange={(e) => {
-                    const formatted = formatCPF(e.target.value);
-                    field.onChange(formatted);
-                  }}
-                  onBlur={(e) => {
-                    const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
-                    if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
-                      field.onChange(formatCPF(cleanedCpf));
-                    } else {
-                      field.onChange(e.target.value); // Keep invalid input for user to correct
-                    }
-                  }}
-                  maxLength={14} // Max length for formatted CPF
-                  className="focus:ring-orange-500 focus:border-orange-500"
-                />
-              </FormControl>
-              <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl>
-                <Input
-                  type="email"
-                  placeholder="seu@email.com"
-                  {...field}
-                  className="focus:ring-orange-500 focus:border-orange-500"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="whatsapp"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>WhatsApp</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="(XX) XXXXX-XXXX"
-                  {...field}
-                  onChange={(e) => {
-                    const formatted = formatWhatsapp(e.target.value);
-                    field.onChange(formatted);
-                  }}
-                  maxLength={15} // Max length for formatted WhatsApp (e.g., (99) 99999-9999)
-                  className="focus:ring-orange-500 focus:border-orange-500"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <Button
-          type="submit"
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg"
-          disabled={isLoading}
-        >
-          {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Finalizar Compra Agora"}
-        </Button>
-      </form>
-    </Form>
-  );
-};
+    useImperativeHandle(ref, () => ({
+      submitForm: () => {
+        form.handleSubmit(onSubmit)();
+      },
+    }));
+
+    return (
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nome Completo</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Seu nome completo"
+                    {...field}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="cpf"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>CPF</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="000.000.000-00"
+                    {...field}
+                    onChange={(e) => {
+                      const formatted = formatCPF(e.target.value);
+                      field.onChange(formatted);
+                    }}
+                    onBlur={(e) => {
+                      const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
+                      if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
+                        field.onChange(formatCPF(cleanedCpf));
+                      } else {
+                        field.onChange(e.target.value);
+                      }
+                    }}
+                    maxLength={14}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
+                </FormControl>
+                <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email</FormLabel>
+                <FormControl>
+                  <Input
+                    type="email"
+                    placeholder="seu@email.com"
+                    {...field}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="whatsapp"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>WhatsApp</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="(XX) XXXXX-XXXX"
+                    {...field}
+                    onChange={(e) => {
+                      const formatted = formatWhatsapp(e.target.value);
+                      field.onChange(formatted);
+                    }}
+                    maxLength={15}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {/* O botão de submit foi movido para FixedBottomBar */}
+        </form>
+      </Form>
+    );
+  }
+);
+
+CheckoutForm.displayName = "CheckoutForm";
 
 export default CheckoutForm;

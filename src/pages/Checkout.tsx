@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon, Profile } from "@/types";
@@ -11,11 +11,12 @@ import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import OrderSummaryAccordion from "@/components/checkout/OrderSummaryAccordion";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
-import CheckoutForm from "@/components/checkout/CheckoutForm";
+import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm"; // Import CheckoutFormRef
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
+import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard"; // New import
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -36,6 +37,8 @@ const Checkout = () => {
   const [modalPixDetails, setModalPixDetails] = useState<any>(null);
   const [modalTotalPrice, setModalTotalPrice] = useState<number>(0);
   const [modalOrderId, setModalOrderId] = useState<string>("");
+
+  const checkoutFormRef = useRef<CheckoutFormRef>(null); // Ref for CheckoutForm
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -215,15 +218,9 @@ const Checkout = () => {
     />
   );
 
-  const checkoutFormSection = (
-    <div className="bg-white p-6 rounded-xl shadow-lg">
-      <CheckoutForm onSubmit={handleFormSubmit} isLoading={isSubmitting} initialData={userProfile || undefined} />
-    </div>
-  );
-
   const orderBumpsSection = orderBumps.length > 0 && (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">Adicione mais ao seu pedido:</h2>
+      <h2 className="text-xl font-bold text-blue-700 mb-4">Leve também...</h2>
       {orderBumps.map((bump) => (
         <OrderBumpCard
           key={bump.id}
@@ -251,9 +248,25 @@ const Checkout = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Coluna Esquerda: Formulário, Bumps, Cupom */}
           <div className="space-y-6">
-            {checkoutFormSection}
+            {/* Main Product Card */}
+            {mainProduct && <MainProductDisplayCard product={mainProduct} />}
+
+            {/* Order Bumps Section */}
             {orderBumpsSection}
+
+            {/* Coupon Input Section */}
             {couponInputSection}
+
+            {/* Checkout Form Section */}
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+              <h2 className="text-2xl font-bold mb-4 text-gray-800">Estamos quase lá! Complete seus dados:</h2>
+              <CheckoutForm
+                ref={checkoutFormRef}
+                onSubmit={handleFormSubmit}
+                isLoading={isSubmitting}
+                initialData={userProfile || undefined}
+              />
+            </div>
           </div>
           {/* Coluna Direita: Resumo do Pedido */}
           <div className="space-y-6">
@@ -266,11 +279,7 @@ const Checkout = () => {
         totalPrice={currentTotalPrice}
         isSubmitting={isSubmitting}
         onSubmit={() => {
-          if (checkoutFormData) {
-            handleProcessPayment(checkoutFormData);
-          } else {
-            showError("Por favor, preencha seus dados para finalizar a compra.");
-          }
+          checkoutFormRef.current?.submitForm();
         }}
       />
 
