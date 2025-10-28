@@ -14,8 +14,9 @@ import ProductDetails from "./pages/ProductDetails";
 import Confirmation from "./pages/Confirmation";
 import ProcessingPayment from "./pages/ProcessingPayment";
 import Logs from "./pages/admin/Logs";
-import UpdatePassword from "./pages/UpdatePassword"; // Import the new UpdatePassword page
-import Layout from "./components/layout/Layout";
+import UpdatePassword from "./pages/UpdatePassword";
+import AdminLayout from "./components/layout/AdminLayout"; // Import AdminLayout
+import PublicLayout from "./components/layout/PublicLayout"; // Import PublicLayout
 import { SessionContextProvider } from "./components/SessionContextProvider";
 
 const queryClient = new QueryClient();
@@ -28,20 +29,28 @@ const App = () => (
       <BrowserRouter>
         <SessionContextProvider>
           <Routes>
+            {/* Rotas autônomas que gerenciam seu próprio layout de página inteira */}
             <Route path="/login" element={<Login />} />
-            <Route path="/primeira-senha" element={<UpdatePassword />} /> {/* New route for first-time password change */}
-            <Route element={<Layout />}>
-              <Route path="/" element={<Index />} />
+            <Route path="/checkout/:productId" element={<Checkout />} />
+            <Route path="/primeira-senha" element={<UpdatePassword />} />
+
+            {/* Rotas de administração usando AdminLayout (com sidebar e verificação de admin) */}
+            <Route element={<AdminLayout />}>
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
               <Route path="/admin/logs" element={<Logs />} />
-              <Route path="/checkout/:productId" element={<Checkout />} />
+            </Route>
+
+            {/* Rotas de cliente usando PublicLayout (wrapper vazio) */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Index />} />
               <Route path="/meus-produtos" element={<MyProducts />} />
               <Route path="/produto/:productId" element={<ProductDetails />} />
               <Route path="/confirmacao" element={<Confirmation />} />
               <Route path="/processando-pagamento" element={<ProcessingPayment />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             </Route>
+            
+            {/* Rota catch-all */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </SessionContextProvider>

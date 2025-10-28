@@ -5,14 +5,14 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Menu, Loader2 } from 'lucide-react'; // Importando Loader2
+import { Menu, Loader2 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSession } from '@/components/SessionContextProvider';
 import { showError } from '@/utils/toast';
 
 const ADMIN_EMAIL = "higor.torres8@gmail.com";
 
-const Layout = () => {
+const AdminLayout = () => {
   const isMobile = useIsMobile();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { user, isLoading: isSessionLoading } = useSession();
@@ -31,7 +31,6 @@ const Layout = () => {
 
   const handleCloseMobileMenu = () => setIsMobileMenuOpen(false);
 
-  // Renderiza um loader enquanto a sessão está carregando para evitar flashes de conteúdo não autorizado
   if (isSessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -65,4 +64,4 @@ const Layout = () => {
   );
 };
 
-export default Layout;
+export default AdminLayout;
