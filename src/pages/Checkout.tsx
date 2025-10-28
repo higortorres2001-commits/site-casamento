@@ -15,7 +15,7 @@ import CheckoutForm from "@/components/checkout/CheckoutForm";
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
-import FixedBottomBar from "@/components/checkout/FixedBottomBar"; // Import the new FixedBottomBar
+import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -30,9 +30,8 @@ const Checkout = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
-  const [checkoutFormData, setCheckoutFormData] = useState<any>(null); // State to hold form data
+  const [checkoutFormData, setCheckoutFormData] = useState<any>(null);
 
-  // State for the PIX payment modal
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [modalPixDetails, setModalPixDetails] = useState<any>(null);
   const [modalTotalPrice, setModalTotalPrice] = useState<number>(0);
@@ -60,7 +59,6 @@ const Checkout = () => {
     }
     setMainProduct(productData);
 
-    // Fetch order bumps if they exist
     if (productData.orderbumps && productData.orderbumps.length > 0) {
       const { data: orderBumpsData, error: orderBumpsError } = await supabase
         .from("products")
@@ -107,7 +105,6 @@ const Checkout = () => {
     }
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
 
-  // Recalculate total price whenever relevant state changes
   useEffect(() => {
     if (!mainProduct) return;
 
@@ -143,8 +140,8 @@ const Checkout = () => {
   };
 
   const handleFormSubmit = (data: { name: string; cpf: string; email: string; whatsapp: string }) => {
-    setCheckoutFormData(data); // Store form data
-    handleProcessPayment(data); // Directly process payment
+    setCheckoutFormData(data);
+    handleProcessPayment(data);
   };
 
   const handleProcessPayment = async (formData: { name: string; cpf: string; email: string; whatsapp: string }) => {
@@ -210,60 +207,65 @@ const Checkout = () => {
 
   const selectedOrderBumpsDetails = orderBumps.filter(bump => selectedOrderBumps.includes(bump.id));
 
+  const orderSummarySection = (
+    <OrderSummaryAccordion
+      mainProduct={mainProduct}
+      selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+      currentTotalPrice={currentTotalPrice}
+    />
+  );
+
+  const checkoutFormSection = (
+    <div className="bg-white p-6 rounded-xl shadow-lg">
+      <CheckoutForm onSubmit={handleFormSubmit} isLoading={isSubmitting} initialData={userProfile || undefined} />
+    </div>
+  );
+
+  const orderBumpsSection = orderBumps.length > 0 && (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold text-gray-800">Adicione mais ao seu pedido:</h2>
+      {orderBumps.map((bump) => (
+        <OrderBumpCard
+          key={bump.id}
+          product={bump}
+          isSelected={selectedOrderBumps.includes(bump.id)}
+          onToggle={handleToggleOrderBump}
+        />
+      ))}
+    </div>
+  );
+
+  const couponInputSection = (
+    <CouponInputCard
+      onCouponApplied={handleCouponApplied}
+      currentTotalPrice={currentTotalPrice}
+    />
+  );
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
       <CheckoutHeader />
-      <main className="flex-1 p-4 md:p-8 max-w-md mx-auto w-full pb-24"> {/* Added pb-24 for FixedBottomBar */}
+      <main className="flex-1 p-4 md:p-8 max-w-md mx-auto w-full pb-24 md:max-w-6xl">
         <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">Finalizar Compra</h1>
 
-        <div className="space-y-6">
-          {/* Resumo do Pedido (Accordion) */}
-          <OrderSummaryAccordion
-            mainProduct={mainProduct}
-            selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-            currentTotalPrice={currentTotalPrice}
-          />
-
-          {/* Formulário de Dados */}
-          <div className="bg-white p-6 rounded-xl shadow-lg">
-            <CheckoutForm onSubmit={handleFormSubmit} isLoading={isSubmitting} initialData={userProfile || undefined} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Coluna Esquerda: Formulário, Bumps, Cupom */}
+          <div className="space-y-6">
+            {checkoutFormSection}
+            {orderBumpsSection}
+            {couponInputSection}
           </div>
-
-          {/* Order Bumps (Cards Visuais) */}
-          {orderBumps.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold text-gray-800">Adicione mais ao seu pedido:</h2>
-              {orderBumps.map((bump) => (
-                <OrderBumpCard
-                  key={bump.id}
-                  product={bump}
-                  isSelected={selectedOrderBumps.includes(bump.id)}
-                  onToggle={handleToggleOrderBump}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Cupom de Desconto */}
-          <CouponInputCard
-            onCouponApplied={handleCouponApplied}
-            currentTotalPrice={currentTotalPrice}
-          />
+          {/* Coluna Direita: Resumo do Pedido */}
+          <div className="space-y-6">
+            {orderSummarySection}
+          </div>
         </div>
       </main>
 
-      {/* Bloco de Pagamento Fixo no Rodapé */}
       <FixedBottomBar
         totalPrice={currentTotalPrice}
         isSubmitting={isSubmitting}
         onSubmit={() => {
-          // Trigger form submission from CheckoutForm
-          // This requires a ref or a more direct way to submit the form.
-          // For simplicity, we'll assume handleFormSubmit is called directly from the form.
-          // If the form is valid, it will call handleProcessPayment.
-          // If not, the form's validation messages will appear.
-          // For now, the FixedBottomBar's onSubmit will trigger the last submitted data.
-          // A more robust solution would involve passing the form's submit handler down.
           if (checkoutFormData) {
             handleProcessPayment(checkoutFormData);
           } else {
@@ -272,7 +274,6 @@ const Checkout = () => {
         }}
       />
 
-      {/* PIX Payment Modal */}
       <PixPaymentModal
         isOpen={isPixModalOpen}
         onClose={() => setIsPixModalOpen(false)}

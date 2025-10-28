@@ -18,13 +18,13 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  let asaasNotification: any;
-  let asaasPaymentId: string | undefined;
-  let orderId: string | undefined;
   let userId: string | undefined;
+  let orderId: string | undefined;
+  let asaasPaymentId: string | undefined;
+  let requestBody: any;
 
   try {
-    asaasNotification = await req.json();
+    requestBody = await req.json();
     console.log('Asaas Webhook received:', asaasNotification);
     await supabase.from('logs').insert({
       level: 'info',
@@ -126,10 +126,10 @@ serve(async (req) => {
     // 3. Get user_id and ordered_product_ids from the order
     const orderedProductIds = order.ordered_product_ids;
 
-    // 4. Fetch the user profile to get current access, name, email, and CPF
+    // 4. Fetch the user profile to get current access, name, email, CPF, and WhatsApp
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, access, name, email, cpf') // Select email and cpf
+      .select('id, access, name, email, cpf, whatsapp') // Select email, cpf, and whatsapp
       .eq('id', userId)
       .single();
 
