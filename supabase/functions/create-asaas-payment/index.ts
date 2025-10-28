@@ -19,7 +19,7 @@ serve(async (req) => {
   );
 
   try {
-    const { userId, productIds } = await req.json();
+    const { userId, productIds, coupon_code } = await req.json();
 
     if (!userId || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       return new Response(JSON.stringify({ error: 'Missing userId or productIds in request body.' }), {
@@ -65,10 +65,35 @@ serve(async (req) => {
       });
     }
 
-    // 3. Calculate total price
-    const totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price), 0);
+    // 3. Calculate initial total price
+    let totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price), 0);
 
-    // 4. Insert new order with 'pending' status
+    // 4. Apply coupon discount if coupon_code is provided
+    if (coupon_code) {
+      const { data: coupon, error: couponError } = await supabase
+        .from('coupons')
+        .select('code, discount_type, value, active')
+        .eq('code', coupon_code)
+        .eq('active', true)
+        .single();
+
+      if (couponError || !coupon) {
+        console.error('Error fetching coupon or coupon not found/active:', couponError);
+        return new Response(JSON.stringify({ error: 'Invalid or inactive coupon code.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (coupon.discount_type === 'percentage') {
+        totalPrice = totalPrice * (1 - (parseFloat(coupon.value) / 100));
+      } else if (coupon.discount_type === 'fixed') {
+        totalPrice = Math.max(0, totalPrice - parseFloat(coupon.value)); // Ensure price doesn't go below zero
+      }
+      console.log(`Coupon ${coupon_code} applied. New total price: ${totalPrice}`);
+    }
+
+    // 5. Insert new order with 'pending' status
     const { data: order, error: orderInsertError } = await supabase
       .from('orders')
       .insert({
@@ -88,7 +113,7 @@ serve(async (req) => {
       });
     }
 
-    // 5. Make request to Asaas API to create payment
+    // 6. Make request to Asaas API to create payment
     const asaasApiUrl = 'https://api.asaas.com/api/v3/payments';
     const asaasHeaders = {
       'Content-Type': 'application/json',
@@ -105,7 +130,7 @@ serve(async (req) => {
         cpfCnpj: customerCpfCnpj,
       },
       billingType: 'PIX', // Defaulting to PIX, can be made dynamic if needed
-      value: totalPrice,
+      value: totalPrice, // Use the potentially discounted total price
       description: `Order #${order.id} payment`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
     };
@@ -127,7 +152,7 @@ serve(async (req) => {
 
     const asaasPaymentData = await asaasResponse.json();
 
-    // 6. Update order with asaas_payment_id
+    // 7. Update order with asaas_payment_id
     const { error: orderUpdateError } = await supabase
       .from('orders')
       .update({ asaas_payment_id: asaasPaymentData.id })
