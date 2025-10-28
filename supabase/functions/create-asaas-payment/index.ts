@@ -18,10 +18,22 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  let userId: string | undefined;
+  let orderId: string | undefined;
+  let asaasPaymentId: string | undefined;
+  let requestBody: any;
+
   try {
-    const { name, email, cpf, productIds, coupon_code } = await req.json();
+    requestBody = await req.json();
+    const { name, email, cpf, productIds, coupon_code } = requestBody;
 
     if (!name || !email || !cpf || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'Missing name, email, cpf, or productIds in request body.',
+        metadata: { requestBody }
+      });
       return new Response(JSON.stringify({ error: 'Missing name, email, cpf, or productIds in request body.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -30,13 +42,18 @@ serve(async (req) => {
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
     if (!ASAAS_API_KEY) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'ASAAS_API_KEY not set in Supabase secrets.',
+        metadata: { requestBody }
+      });
       return new Response(JSON.stringify({ error: 'ASAAS_API_KEY not set in Supabase secrets.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    let userId: string;
     let isNewUser = false;
 
     // 1. Check if user exists by email
@@ -46,6 +63,12 @@ serve(async (req) => {
 
     if (listUsersError) {
       console.error('Error listing users:', listUsersError);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'Failed to check for existing user.',
+        metadata: { email, error: listUsersError.message }
+      });
       return new Response(JSON.stringify({ error: 'Failed to check for existing user.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -56,6 +79,12 @@ serve(async (req) => {
       // User exists
       userId = existingUsers.users[0].id;
       console.log(`Existing user found: ${userId}`);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'create-asaas-payment',
+        message: `Existing user found: ${userId}`,
+        metadata: { email, userId }
+      });
 
       // Update profile if necessary (e.g., name or cpf might be new/updated)
       const { error: updateProfileError } = await supabase
@@ -65,6 +94,12 @@ serve(async (req) => {
 
       if (updateProfileError) {
         console.error('Error updating existing user profile:', updateProfileError);
+        await supabase.from('logs').insert({
+          level: 'warning',
+          context: 'create-asaas-payment',
+          message: 'Error updating existing user profile.',
+          metadata: { userId, error: updateProfileError.message }
+        });
         // Continue even if profile update fails, as payment is primary goal
       }
     } else {
@@ -79,6 +114,12 @@ serve(async (req) => {
 
       if (createUserError || !newUser?.user) {
         console.error('Error creating new user:', createUserError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'Failed to create new user account.',
+          metadata: { email, error: createUserError?.message }
+        });
         return new Response(JSON.stringify({ error: 'Failed to create new user account.' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -86,6 +127,12 @@ serve(async (req) => {
       }
       userId = newUser.user.id;
       console.log(`New user created: ${userId}`);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'create-asaas-payment',
+        message: `New user created: ${userId}`,
+        metadata: { email, userId }
+      });
 
       // The handle_new_user trigger should automatically insert into profiles.
       // If it doesn't, we would manually insert here.
@@ -100,6 +147,12 @@ serve(async (req) => {
 
     if (productsError || !products || products.length !== productIds.length) {
       console.error('Error fetching products:', productsError);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'One or more products not found or an error occurred.',
+        metadata: { productIds, error: productsError?.message }
+      });
       return new Response(JSON.stringify({ error: 'One or more products not found or an error occurred.' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -120,6 +173,12 @@ serve(async (req) => {
 
       if (couponError || !coupon) {
         console.error('Error fetching coupon or coupon not found/active:', couponError);
+        await supabase.from('logs').insert({
+          level: 'warning',
+          context: 'create-asaas-payment',
+          message: 'Invalid or inactive coupon code.',
+          metadata: { coupon_code, error: couponError?.message }
+        });
         return new Response(JSON.stringify({ error: 'Invalid or inactive coupon code.' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -132,6 +191,12 @@ serve(async (req) => {
         totalPrice = Math.max(0, totalPrice - parseFloat(coupon.value)); // Ensure price doesn't go below zero
       }
       console.log(`Coupon ${coupon_code} applied. New total price: ${totalPrice}`);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'create-asaas-payment',
+        message: `Coupon ${coupon_code} applied.`,
+        metadata: { coupon_code, originalPrice: products.reduce((sum, p) => sum + parseFloat(p.price), 0), newPrice: totalPrice }
+      });
     }
 
     // 5. Insert new order with 'pending' status
@@ -148,11 +213,24 @@ serve(async (req) => {
 
     if (orderInsertError || !order) {
       console.error('Error inserting order:', orderInsertError);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'Failed to create order.',
+        metadata: { userId, productIds, totalPrice, error: orderInsertError?.message }
+      });
       return new Response(JSON.stringify({ error: 'Failed to create order.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    orderId = order.id;
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment',
+      message: `Order created successfully: ${orderId}`,
+      metadata: { orderId, userId, productIds, totalPrice }
+    });
 
     // 6. Make request to Asaas API to create payment
     const asaasApiUrl = 'https://api.asaas.com/api/v3/payments';
@@ -185,6 +263,12 @@ serve(async (req) => {
     if (!asaasResponse.ok) {
       const errorData = await asaasResponse.json();
       console.error('Asaas API error:', errorData);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'Failed to create payment with Asaas.',
+        metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasResponse.status }
+      });
       return new Response(JSON.stringify({ error: 'Failed to create payment with Asaas.', details: errorData }), {
         status: asaasResponse.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -192,6 +276,7 @@ serve(async (req) => {
     }
 
     const asaasPaymentData = await asaasResponse.json();
+    asaasPaymentId = asaasPaymentData.id;
 
     // 7. Update order with asaas_payment_id
     const { error: orderUpdateError } = await supabase
@@ -201,8 +286,21 @@ serve(async (req) => {
 
     if (orderUpdateError) {
       console.error('Error updating order with Asaas payment ID:', orderUpdateError);
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'create-asaas-payment',
+        message: 'Error updating order with Asaas payment ID.',
+        metadata: { orderId, asaasPaymentId, error: orderUpdateError.message }
+      });
       // Even if update fails, we still return Asaas data as payment was created
     }
+
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment',
+      message: `Asaas payment created successfully for order ${orderId}.`,
+      metadata: { orderId, userId, asaasPaymentId, asaasPaymentData }
+    });
 
     // Return Asaas response to the client
     return new Response(JSON.stringify(asaasPaymentData), {
@@ -212,6 +310,18 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Edge Function error:', error);
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'create-asaas-payment',
+      message: `Unhandled error in Edge Function: ${error.message}`,
+      metadata: {
+        errorStack: error.stack,
+        userId,
+        orderId,
+        asaasPaymentId,
+        requestBody,
+      }
+    });
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

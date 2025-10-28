@@ -18,22 +18,45 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  let asaasNotification: any;
+  let asaasPaymentId: string | undefined;
+  let orderId: string | undefined;
+  let userId: string | undefined;
+
   try {
-    const asaasNotification = await req.json();
+    asaasNotification = await req.json();
     console.log('Asaas Webhook received:', asaasNotification);
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'asaas-webhook',
+      message: 'Asaas Webhook received.',
+      metadata: { asaasNotification }
+    });
 
     // Check if the event is PAYMENT_CONFIRMED
     if (asaasNotification.event !== 'PAYMENT_CONFIRMED') {
       console.log('Ignoring non-PAYMENT_CONFIRMED event:', asaasNotification.event);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'asaas-webhook',
+        message: `Ignoring non-PAYMENT_CONFIRMED event: ${asaasNotification.event}`,
+        metadata: { event: asaasNotification.event }
+      });
       return new Response(JSON.stringify({ message: 'Event not relevant, ignored.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const asaasPaymentId = asaasNotification.payment.id;
+    asaasPaymentId = asaasNotification.payment.id;
 
     if (!asaasPaymentId) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'asaas-webhook',
+        message: 'asaas_payment_id not found in notification.',
+        metadata: { asaasNotification }
+      });
       return new Response(JSON.stringify({ error: 'asaas_payment_id not found in notification.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -49,11 +72,19 @@ serve(async (req) => {
 
     if (orderError || !order) {
       console.error('Error finding order:', orderError);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'asaas-webhook',
+        message: 'Order not found for the given asaas_payment_id.',
+        metadata: { asaasPaymentId, error: orderError?.message }
+      });
       return new Response(JSON.stringify({ error: 'Order not found for the given asaas_payment_id.' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    orderId = order.id;
+    userId = order.user_id;
 
     // 2. If the order status is not 'paid', update it to 'paid'
     if (order.status !== 'paid') {
@@ -64,18 +95,35 @@ serve(async (req) => {
 
       if (updateOrderError) {
         console.error('Error updating order status:', updateOrderError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'asaas-webhook',
+          message: 'Failed to update order status.',
+          metadata: { orderId, asaasPaymentId, error: updateOrderError.message }
+        });
         return new Response(JSON.stringify({ error: 'Failed to update order status.' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       console.log(`Order ${order.id} status updated to 'paid'.`);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'asaas-webhook',
+        message: `Order ${order.id} status updated to 'paid'.`,
+        metadata: { orderId, asaasPaymentId, userId }
+      });
     } else {
       console.log(`Order ${order.id} already 'paid', skipping status update.`);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'asaas-webhook',
+        message: `Order ${order.id} already 'paid', skipping status update.`,
+        metadata: { orderId, asaasPaymentId, userId }
+      });
     }
 
     // 3. Get user_id and ordered_product_ids from the order
-    const userId = order.user_id;
     const orderedProductIds = order.ordered_product_ids;
 
     // 4. Fetch the user profile to get current access, name, email, and CPF
@@ -87,6 +135,12 @@ serve(async (req) => {
 
     if (profileError || !profile) {
       console.error('Error fetching profile:', profileError);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'asaas-webhook',
+        message: 'User profile not found.',
+        metadata: { userId, orderId, asaasPaymentId, error: profileError?.message }
+      });
       return new Response(JSON.stringify({ error: 'User profile not found.' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -105,12 +159,24 @@ serve(async (req) => {
 
     if (updateProfileError) {
       console.error('Error updating profile access:', updateProfileError);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'asaas-webhook',
+        message: 'Failed to update user profile access.',
+        metadata: { userId, orderId, asaasPaymentId, orderedProductIds, error: updateProfileError.message }
+      });
       return new Response(JSON.stringify({ error: 'Failed to update user profile access.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
     console.log(`Profile ${userId} access updated with new products.`);
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'asaas-webhook',
+      message: `Profile ${userId} access updated with new products.`,
+      metadata: { userId, orderId, asaasPaymentId, newAccess }
+    });
 
     // 7. Send "Acesso Liberado" email with login details
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY'); // Assuming Resend for email
@@ -144,11 +210,29 @@ serve(async (req) => {
       if (!resendResponse.ok) {
         const errorData = await resendResponse.json();
         console.error('Error sending email via Resend:', errorData);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'asaas-webhook',
+          message: 'Error sending access liberation email via Resend.',
+          metadata: { userId, orderId, asaasPaymentId, email: profile.email, resendError: errorData }
+        });
       } else {
         console.log(`Access liberation email sent to ${profile.email}`);
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'asaas-webhook',
+          message: `Access liberation email sent to ${profile.email}.`,
+          metadata: { userId, orderId, asaasPaymentId, email: profile.email }
+        });
       }
     } else {
       console.warn('RESEND_API_KEY, user email, or CPF not available. Skipping email sending.');
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'asaas-webhook',
+        message: 'RESEND_API_KEY, user email, or CPF not available. Skipping email sending.',
+        metadata: { userId, orderId, asaasPaymentId, email: profile.email, cpf: profile.cpf, resendApiKeySet: !!RESEND_API_KEY }
+      });
     }
 
     // Return a 200 OK response to Asaas
@@ -159,6 +243,18 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Edge Function error:', error);
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'asaas-webhook',
+      message: `Unhandled error in Edge Function: ${error.message}`,
+      metadata: {
+        errorStack: error.stack,
+        asaasNotification,
+        asaasPaymentId,
+        orderId,
+        userId,
+      }
+    });
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
