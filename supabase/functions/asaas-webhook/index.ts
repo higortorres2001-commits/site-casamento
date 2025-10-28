@@ -115,22 +115,16 @@ serve(async (req) => {
     // 7. Send "Acesso Liberado" email with login details
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY'); // Assuming Resend for email
     if (RESEND_API_KEY && profile.email && profile.cpf) {
-      const emailSubject = "Seu acesso foi liberado! Detalhes de Login";
+      const emailSubject = "Seu acesso foi liberado!";
+      const loginUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/login`; // Construct login URL
       const emailBody = `
-        Olá ${profile.name || 'cliente'},
+        Parabéns! Seu pagamento foi confirmado. Para acessar seus produtos, use os dados abaixo na nossa página de login:
 
-        Seu acesso aos produtos adquiridos foi liberado!
-
-        Você pode fazer login na sua área de membros usando os seguintes dados:
+        Login: ${loginUrl}
         Email: ${profile.email}
         Senha: ${profile.cpf} (os números do seu CPF)
 
-        Acesse sua área de membros aqui: ${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}
-
-        Se tiver qualquer dúvida, entre em contato.
-
-        Atenciosamente,
-        Sua Equipe
+        Recomendamos trocar sua senha no primeiro acesso.
       `;
 
       const resendResponse = await fetch('https://api.resend.com/emails', {
