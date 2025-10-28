@@ -42,12 +42,12 @@ const OrderSummaryAccordion = ({
             <div className="space-y-3">
               <div className="flex justify-between items-center text-gray-700 text-base"> {/* Base product */}
                 <span>{mainProduct.name}</span>
-                <span className="font-semibold">R$ {mainProduct.price.toFixed(2)}</span>
+                <span className="font-normal text-gray-600 text-sm">R$ {mainProduct.price.toFixed(2)}</span>
               </div>
               {selectedOrderBumpsDetails.map((bump) => (
                 <div key={bump.id} className="flex justify-between items-center text-gray-600 text-sm"> {/* Order bumps */}
                   <span>+ {bump.name}</span>
-                  <span className="font-medium">R$ {bump.price.toFixed(2)}</span>
+                  <span className="font-normal text-gray-600 text-sm">R$ {bump.price.toFixed(2)}</span>
                 </div>
               ))}
               {appliedCoupon && discountAmount > 0 && (

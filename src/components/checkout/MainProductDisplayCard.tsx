@@ -27,7 +27,7 @@ const MainProductDisplayCard = ({ product }: MainProductDisplayCardProps) => {
         )}
         <div className="flex justify-between items-center pt-2 border-t border-gray-200">
           <span className="text-lg font-bold text-gray-900">Preço:</span>
-          <span className="text-2xl font-extrabold text-orange-500">R$ {product.price.toFixed(2)}</span>
+          <span className="font-normal text-gray-700 text-lg">R$ {product.price.toFixed(2)}</span>
         </div>
       </CardContent>
     </Card>

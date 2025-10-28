@@ -36,7 +36,7 @@ const OrderBumpCard = ({ product, isSelected, onToggle }: OrderBumpCardProps) =>
       >
         <div className="flex justify-between items-center">
           <span className="text-base text-gray-800">Adicionar {product.name} por apenas</span> {/* Adjusted font size */}
-          <span className="font-semibold text-lg text-gray-900">R$ {product.price.toFixed(2)}</span> {/* Adjusted font size */}
+          <span className="font-normal text-gray-700 text-sm">R$ {product.price.toFixed(2)}</span> {/* Adjusted font size */}
         </div>
         {product.description && (
           <p className="text-sm text-gray-500 mt-1">{product.description}</p>
