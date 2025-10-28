@@ -301,6 +301,7 @@ const Products = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-28">ID</TableHead> {/* New ID column */}
                 <TableHead>Nome</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Descrição</TableHead>
@@ -311,6 +312,7 @@ const Products = () => {
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
+                  <TableCell className="w-28 truncate text-xs">{product.id}</TableCell> {/* Display ID */}
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>
                   <TableCell className="max-w-xs truncate">{product.description || "N/A"}</TableCell>
