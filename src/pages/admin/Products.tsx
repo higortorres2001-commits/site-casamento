@@ -18,7 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, FileText } from "lucide-react";
+import { Edit, Trash2, PlusCircle, FileText, Link as LinkIcon } from "lucide-react"; // Import Link as LinkIcon
 import { showError, showSuccess } from "@/utils/toast";
 import ProductForm from "@/components/ProductForm";
 import { Product, ProductAsset } from "@/types";
@@ -266,6 +266,13 @@ const Products = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleGenerateCheckoutLink = (productId: string) => {
+    const checkoutUrl = `${window.location.origin}/checkout/${productId}`;
+    navigator.clipboard.writeText(checkoutUrl)
+      .then(() => showSuccess("Link do checkout copiado!"))
+      .catch(() => showError("Falha ao copiar o link."));
+  };
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
@@ -301,7 +308,7 @@ const Products = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-28">ID</TableHead> {/* New ID column */}
+                <TableHead className="w-28">ID</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Descrição</TableHead>
@@ -312,7 +319,7 @@ const Products = () => {
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell className="w-28 truncate text-xs">{product.id}</TableCell> {/* Display ID */}
+                  <TableCell className="w-28 truncate text-xs">{product.id}</TableCell>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>
                   <TableCell className="max-w-xs truncate">{product.description || "N/A"}</TableCell>
@@ -343,6 +350,14 @@ const Products = () => {
                       className="mr-2"
                     >
                       <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleGenerateCheckoutLink(product.id)}
+                      className="mr-2 text-orange-500 hover:text-orange-600"
+                    >
+                      <LinkIcon className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
