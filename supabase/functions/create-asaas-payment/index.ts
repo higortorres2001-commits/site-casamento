@@ -74,10 +74,10 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/api/v3 or your sandbox URL.',
+        message: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/v3 or your sandbox URL.',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/api/v3 or your sandbox URL.' }), {
+      return new Response(JSON.stringify({ error: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/v3 or your sandbox URL.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -310,6 +310,48 @@ serve(async (req) => {
         });
       }
       finalAsaasResponseData = await asaasResponse.json();
+      asaasPaymentId = finalAsaasResponseData.id; // Get the payment ID from the initial response
+
+      // Now, fetch the PIX QR Code details
+      const pixQrCodeUrl = `${ASAAS_BASE_URL}/payments/${asaasPaymentId}/pixQrCode`;
+      const pixQrCodeResponse = await fetch(pixQrCodeUrl, { method: 'GET', headers: asaasHeaders });
+
+      if (!pixQrCodeResponse.ok) {
+        const contentType = pixQrCodeResponse.headers.get('Content-Type');
+        let errorData: any;
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await pixQrCodeResponse.json();
+        } else {
+          errorData = await pixQrCodeResponse.text();
+        }
+        console.error('Asaas PIX QR Code API error:', errorData);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'Failed to fetch PIX QR Code from Asaas.',
+          metadata: { orderId, userId, asaasPaymentId, asaasError: errorData, statusCode: pixQrCodeResponse.status }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to fetch PIX QR Code from Asaas.', details: errorData }), {
+          status: pixQrCodeResponse.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const pixQrCodeData = await pixQrCodeResponse.json();
+      // Add pixQrCodeData to the final response under the 'pix' key
+      finalAsaasResponseData.pix = {
+        payload: pixQrCodeData.payload,
+        encodedImage: pixQrCodeData.encodedImage,
+        expirationDate: pixQrCodeData.expirationDate,
+      };
+      console.log('PIX QR Code fetched successfully:', finalAsaasResponseData.pix);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'create-asaas-payment',
+        message: 'PIX QR Code fetched successfully.',
+        metadata: { orderId, userId, asaasPaymentId, pixDetails: finalAsaasResponseData.pix }
+      });
+
     } else if (paymentMethod === 'CREDIT_CARD') {
       if (!creditCard) {
         await supabase.from('logs').insert({
@@ -395,7 +437,7 @@ serve(async (req) => {
           metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasPaymentResponse.status }
         });
         return new Response(JSON.stringify({ error: 'Failed to create credit card payment with Asaas.', details: errorData }), {
-          status: asaasPaymentResponse.status,
+          status: tokenizeResponse.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -414,12 +456,15 @@ serve(async (req) => {
       });
     }
 
-    asaasPaymentId = finalAsaasResponseData.id;
+    // If asaasPaymentId was not set in the PIX block, set it here for credit card
+    if (!asaasPaymentId && finalAsaasResponseData.id) {
+      asaasPaymentId = finalAsaasResponseData.id;
+    }
 
     // 7. Update order with asaas_payment_id
     const { error: orderUpdateError } = await supabase
       .from('orders')
-      .update({ asaas_payment_id: finalAsaasResponseData.id })
+      .update({ asaas_payment_id: asaasPaymentId })
       .eq('id', order.id);
 
     if (orderUpdateError) {
@@ -439,7 +484,7 @@ serve(async (req) => {
       metadata: { orderId, userId, asaasPaymentId, asaasPaymentData: finalAsaasResponseData }
     });
 
-    // Return Asaas response to the client
+    // Return Asaas response to the client, including PIX details if available
     return new Response(JSON.stringify({ ...finalAsaasResponseData, orderId: order.id }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
