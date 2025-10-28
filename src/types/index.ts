@@ -17,3 +17,11 @@ export type Product = {
   memberareaurl: string | null;
   orderbumps: string[] | null;
 };
+
+export type ProductAsset = {
+  id: string;
+  product_id: string;
+  file_name: string;
+  storage_path: string;
+  created_at: string;
+};
