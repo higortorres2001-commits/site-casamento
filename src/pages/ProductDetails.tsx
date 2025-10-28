@@ -5,7 +5,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, ProductAsset } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
-import { Loader2, FileText } from "lucide-react";
+import { Loader2, FileText, ArrowLeft } from "lucide-react"; // Import ArrowLeft icon
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -83,6 +83,16 @@ const ProductDetails = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8">
+      <div className="max-w-3xl mx-auto mb-6">
+        <Button
+          variant="outline"
+          onClick={() => navigate("/meus-produtos")}
+          className="text-gray-600 hover:text-gray-800"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Voltar para Meus Produtos
+        </Button>
+      </div>
       <Card className="bg-white rounded-xl shadow-lg max-w-3xl mx-auto p-6">
         <CardHeader className="pb-4">
           <CardTitle className="text-3xl font-bold text-gray-800">
