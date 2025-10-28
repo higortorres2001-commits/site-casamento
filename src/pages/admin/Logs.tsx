@@ -64,8 +64,7 @@ const Logs = () => {
     // This query might need RLS adjustments if not all users can see all contexts
     const { data, error } = await supabase
       .from("logs")
-      .select("context")
-      .distinct("context");
+      .select("context", { distinct: true }); // Corrigido: usar { distinct: true } no select
 
     if (error) {
       console.error("Error fetching distinct contexts:", error);
