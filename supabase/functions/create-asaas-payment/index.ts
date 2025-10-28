@@ -25,16 +25,30 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod } = requestBody; // Receive paymentMethod
+    console.log('create-asaas-payment: Received request body:', requestBody); // Log para depuração
+    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod } = requestBody;
 
-    if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0 || !paymentMethod) {
+    if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Missing name, email, cpf, whatsapp, productIds, or paymentMethod in request body.',
+        message: 'Missing required fields (name, email, cpf, whatsapp, productIds) in request body.',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'Missing name, email, cpf, whatsapp, productIds, or paymentMethod in request body.' }), {
+      return new Response(JSON.stringify({ error: 'Missing required fields (name, email, cpf, whatsapp, productIds) in request body.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!paymentMethod) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'Payment method is missing from the request body.',
+        metadata: { requestBody }
+      });
+      return new Response(JSON.stringify({ error: 'Payment method is missing from the request body.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -89,7 +103,7 @@ serve(async (req) => {
       // Update profile if necessary (e.g., name, cpf, email, whatsapp might be new/updated)
       const { error: updateProfileError } = await supabase
         .from('profiles')
-        .update({ name, cpf, email, whatsapp }) // Update whatsapp
+        .update({ name, cpf, email, whatsapp })
         .eq('id', userId);
 
       if (updateProfileError) {
@@ -133,10 +147,6 @@ serve(async (req) => {
         message: `New user created: ${userId}`,
         metadata: { email, userId }
       });
-
-      // The handle_new_user trigger should automatically insert into profiles.
-      // If it doesn't, we would manually insert here.
-      // For now, assuming the trigger is active and correctly populates profiles.
     }
 
     // 2. Fetch product prices
@@ -203,7 +213,7 @@ serve(async (req) => {
     const { data: order, error: orderInsertError } = await supabase
       .from('orders')
       .insert({
-        user_id: userId, // Use the determined userId
+        user_id: userId,
         ordered_product_ids: productIds,
         total_price: totalPrice,
         status: 'pending',
@@ -242,8 +252,11 @@ serve(async (req) => {
     // Asaas requires CPF/CNPJ without formatting
     const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
 
-    // CRITICAL: Convert totalPrice from Reais to Centavos for Asaas API
-    const totalPriceInCents = Math.round(totalPrice * 100);
+    // CRITICAL: Asaas expects value in BRL (decimal), not cents, for this endpoint.
+    // However, if the user is reporting R$12.00 -> R$1200.00, it implies Asaas is interpreting BRL as cents.
+    // Let's try sending the value as a fixed 2-decimal string to ensure precision.
+    // If the problem persists, we might need to explicitly send in cents (totalPrice * 100).
+    const formattedTotalPrice = totalPrice.toFixed(2); // Ensure 2 decimal places
 
     let asaasPayload: any = {
       customer: {
@@ -252,7 +265,7 @@ serve(async (req) => {
         cpfCnpj: customerCpfCnpj,
         phone: whatsapp,
       },
-      value: totalPrice, // Asaas expects value in BRL, not cents, for this endpoint
+      value: parseFloat(formattedTotalPrice), // Send as float with 2 decimal places
       description: `Order #${order.id} payment`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
     };
@@ -261,11 +274,8 @@ serve(async (req) => {
       asaasPayload.billingType = 'PIX';
     } else if (paymentMethod === 'CREDIT_CARD') {
       asaasPayload.billingType = 'CREDIT_CARD';
-      // For hosted checkout, Asaas might need these for redirection
       asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
       asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
-      // Asaas also requires a customer ID for credit card payments if not creating a new customer directly
-      // For simplicity, we'll rely on Asaas creating the customer if not found via cpfCnpj
     } else {
       await supabase.from('logs').insert({
         level: 'error',
@@ -291,7 +301,7 @@ serve(async (req) => {
       if (contentType && contentType.includes('application/json')) {
         errorData = await asaasResponse.json();
       } else {
-        errorData = await asaasResponse.text(); // Read as text if not JSON
+        errorData = await asaasResponse.text();
       }
       
       console.error('Asaas API error:', errorData);
@@ -324,7 +334,6 @@ serve(async (req) => {
         message: 'Error updating order with Asaas payment ID.',
         metadata: { orderId, asaasPaymentId, error: orderUpdateError.message }
       });
-      // Even if update fails, we still return Asaas data as payment was created
     }
 
     await supabase.from('logs').insert({
@@ -335,7 +344,7 @@ serve(async (req) => {
     });
 
     // Return Asaas response to the client
-    return new Response(JSON.stringify({ ...asaasPaymentData, orderId: order.id }), { // Include orderId in response
+    return new Response(JSON.stringify({ ...asaasPaymentData, orderId: order.id }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
