@@ -19,21 +19,21 @@ import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
 
 export interface CheckoutFormRef {
-  submitForm: () => void;
+  submitForm: () => Promise<boolean>;
+  getValues: () => z.infer<typeof formSchema>;
 }
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
   cpf: z.string()
-    .min(11, "O CPF é obrigatório e deve ter 11 dígitos")
-    .max(14, "O CPF deve ter no máximo 14 caracteres (com formatação)")
-    .refine((cpf) => isValidCPF(cpf.replace(/[^\d]+/g, "")), {
+    .transform(val => val.replace(/[^\d]+/g, '')) // Limpa o CPF, deixando apenas dígitos
+    .refine(val => val.length === 11 && isValidCPF(val), { // Valida o comprimento e a lógica do CPF
       message: "CPF inválido",
     }),
   email: z.string().email("Email inválido").min(1, "O email é obrigatório"),
   whatsapp: z.string()
-    .min(1, "O WhatsApp é obrigatório")
-    .refine((phone) => isValidWhatsapp(phone.replace(/\D/g, "")), {
+    .transform(val => val.replace(/\D/g, '')) // Limpa o WhatsApp, deixando apenas dígitos
+    .refine(val => isValidWhatsapp(val), { // Valida o comprimento (10 ou 11 dígitos)
       message: "Número de WhatsApp inválido",
     }),
 });
@@ -63,8 +63,9 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
 
     useImperativeHandle(ref, () => ({
       submitForm: () => {
-        form.handleSubmit(onSubmit)();
+        return form.trigger(); // Apenas dispara a validação e retorna o resultado
       },
+      getValues: () => form.getValues(),
     }));
 
     return (
@@ -102,11 +103,12 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                       field.onChange(formatted);
                     }}
                     onBlur={(e) => {
+                      // Garante que o campo seja formatado corretamente ao perder o foco
                       const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
                       if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
                         field.onChange(formatCPF(cleanedCpf));
                       } else {
-                        field.onChange(e.target.value);
+                        field.onChange(e.target.value); // Mantém o valor digitado se for inválido para o usuário corrigir
                       }
                     }}
                     maxLength={14}

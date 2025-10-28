@@ -202,7 +202,7 @@ const Checkout = () => {
           whatsapp: cleanedWhatsapp,
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
-          paymentMethod: paymentMethod, // <-- Adicionado o paymentMethod aqui
+          paymentMethod: paymentMethod,
           creditCard: cardData, // Pass raw card data to Edge Function
         },
       });
@@ -298,7 +298,7 @@ const Checkout = () => {
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
       <CheckoutHeader />
-      <main className="flex-1 p-4 md:p-8 max-w-md mx-auto w-full pb-32 md:max-w-6xl min-h-[calc(100vh-64px)]">
+      <main className="flex-1 p-4 md:p-8 max-w-md mx-auto w-full pb-40 md:max-w-6xl min-h-[calc(100vh-64px)]"> {/* Aumentado pb-32 para pb-40 */}
         <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">Finalizar Compra</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
