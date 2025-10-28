@@ -88,7 +88,9 @@ const Products = () => {
   const handleSaveProduct = async (
     formData: z.infer<typeof formSchema>,
     files: File[],
-    deletedAssetIds: string[]
+    deletedAssetIds: string[],
+    imageFile: File | null, // New parameter
+    oldImageUrl: string | null // New parameter
   ) => {
     setIsSubmitting(true);
 
@@ -98,6 +100,56 @@ const Products = () => {
     };
 
     let currentProductId = editingProduct?.id;
+    let newImageUrl = formData.image_url; // Start with the URL from the form (could be manual or empty)
+
+    // Handle image upload if a new file is selected
+    if (imageFile && user?.id) {
+      const fileExtension = imageFile.name.split('.').pop();
+      const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`; // Unique filename
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(filePath, imageFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        showError(`Erro ao fazer upload da imagem: ${uploadError.message}`);
+        console.error("Error uploading image:", uploadError);
+        setIsSubmitting(false);
+        return;
+      }
+      newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
+      showSuccess("Imagem do produto enviada com sucesso!");
+
+      // If there was an old image and a new one is uploaded, delete the old one
+      if (oldImageUrl && oldImageUrl !== newImageUrl) {
+        const oldPath = oldImageUrl.split('product-images/')[1]; // Extract path from public URL
+        if (oldPath) {
+          const { error: deleteOldImageError } = await supabase.storage
+            .from('product-images')
+            .remove([oldPath]);
+          if (deleteOldImageError) {
+            console.warn("Could not delete old product image from storage:", deleteOldImageError.message);
+          }
+        }
+      }
+    } else if (!imageFile && !formData.image_url && oldImageUrl) {
+      // If no new file, and image_url field is cleared, and there was an old image, delete it
+      const oldPath = oldImageUrl.split('product-images/')[1];
+      if (oldPath) {
+        const { error: deleteOldImageError } = await supabase.storage
+          .from('product-images')
+          .remove([oldPath]);
+        if (deleteOldImageError) {
+          console.warn("Could not delete old product image from storage (cleared field):", deleteOldImageError.message);
+        }
+      }
+      newImageUrl = null; // Ensure image_url is null in DB
+    }
+
+    // Update productData with the new image URL
+    productData.image_url = newImageUrl;
 
     if (editingProduct) {
       // Update existing product
@@ -112,6 +164,7 @@ const Products = () => {
         return;
       }
       showSuccess("Produto atualizado com sucesso!");
+      currentProductId = editingProduct.id; // Ensure currentProductId is set for asset uploads
     } else {
       // Create new product
       const { data, error } = await supabase
@@ -129,10 +182,10 @@ const Products = () => {
       currentProductId = data.id;
     }
 
-    // Handle file uploads
-    if (files.length > 0 && currentProductId) {
+    // Handle file uploads (PDFs)
+    if (files.length > 0 && currentProductId && user?.id) {
       for (const file of files) {
-        const filePath = `${user?.id}/${currentProductId}/${file.name}`;
+        const filePath = `${user.id}/${currentProductId}/${file.name}`;
         const { error: uploadError } = await supabase.storage
           .from("product-assets")
           .upload(filePath, file);
@@ -158,7 +211,7 @@ const Products = () => {
       showSuccess("Arquivos enviados com sucesso!");
     }
 
-    // Handle asset deletions
+    // Handle asset deletions (PDFs)
     if (deletedAssetIds.length > 0) {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
@@ -230,6 +283,22 @@ const Products = () => {
         // Continue with database deletion even if storage fails, to avoid orphaned records
       } else {
           showSuccess("Arquivos do produto excluídos do storage.");
+      }
+    }
+
+    // Also delete the main product image if it exists
+    const productToDelete = products.find(p => p.id === id);
+    if (productToDelete?.image_url) {
+      const imagePath = productToDelete.image_url.split('product-images/')[1];
+      if (imagePath) {
+        const { error: deleteImageError } = await supabase.storage
+          .from('product-images')
+          .remove([imagePath]);
+        if (deleteImageError) {
+          console.warn("Could not delete product image from storage during product deletion:", deleteImageError.message);
+        } else {
+          showSuccess("Imagem principal do produto excluída do storage.");
+        }
       }
     }
 
@@ -319,6 +388,7 @@ const Products = () => {
                 <TableHead>Nome</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Descrição</TableHead>
+                <TableHead>Imagem</TableHead> {/* New column for image */}
                 <TableHead>Arquivos</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -330,6 +400,13 @@ const Products = () => {
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>
                   <TableCell className="max-w-xs truncate">{product.description || "N/A"}</TableCell>
+                  <TableCell>
+                    {product.image_url ? (
+                      <img src={product.image_url} alt={product.name} className="w-12 h-12 object-cover rounded-md" />
+                    ) : (
+                      "N/A"
+                    )}
+                  </TableCell>
                   <TableCell>
                     {product.assets && product.assets.length > 0 ? (
                       <div className="flex flex-wrap gap-2">

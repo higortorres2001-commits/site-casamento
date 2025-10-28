@@ -30,7 +30,9 @@ interface ProductEditTabsProps {
   onSubmit: (
     data: z.infer<typeof formSchema>,
     files: File[],
-    deletedAssetIds: string[]
+    deletedAssetIds: string[],
+    imageFile: File | null, // New: Pass image file
+    oldImageUrl: string | null // New: Pass old image URL for deletion logic
   ) => void;
   onCancel: () => void;
   isLoading: boolean;
@@ -64,6 +66,7 @@ const ProductEditTabs = ({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletedAssetIds, setDeletedAssetIds] = useState<string[]>([]);
   const [currentAssets, setCurrentAssets] = useState<ProductAsset[]>(initialData?.assets || []);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null); // New state for product image
 
   useEffect(() => {
     if (initialData) {
@@ -74,6 +77,7 @@ const ProductEditTabs = ({
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
+      setSelectedImageFile(null); // Clear selected image file on initialData change
     } else {
       form.reset({
         name: "",
@@ -85,8 +89,9 @@ const ProductEditTabs = ({
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);
+      setSelectedFiles([]);
+      setSelectedImageFile(null); // Clear selected image file
     }
-    setSelectedFiles([]);
   }, [initialData, form]);
 
   const handleFileChange = (files: File[]) => {
@@ -102,8 +107,12 @@ const ProductEditTabs = ({
     showSuccess("Arquivo marcado para exclusão.");
   };
 
+  const handleImageFileChange = (file: File | null) => {
+    setSelectedImageFile(file);
+  };
+
   const handleFormSubmit = (data: z.infer<typeof formSchema>) => {
-    onSubmit(data, selectedFiles, deletedAssetIds);
+    onSubmit(data, selectedFiles, deletedAssetIds, selectedImageFile, initialData?.image_url || null);
   };
 
   return (
@@ -116,7 +125,12 @@ const ProductEditTabs = ({
       <Form {...form}> {/* Envolve o formulário HTML com o componente Form do shadcn/ui */}
         <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 mt-4">
           <TabsContent value="details">
-            <ProductDetailsTab form={form} isLoading={isLoading} />
+            <ProductDetailsTab
+              form={form}
+              isLoading={isLoading}
+              onImageFileChange={handleImageFileChange}
+              initialImageUrl={initialData?.image_url}
+            />
           </TabsContent>
           <TabsContent value="order-bumps">
             <ProductOrderBumpsTab form={form} isLoading={isLoading} currentProductId={initialData?.id} />
