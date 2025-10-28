@@ -25,22 +25,22 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    console.log('Asaas Webhook received:', asaasNotification);
+    console.log('Asaas Webhook received:', requestBody); // Changed asaasNotification to requestBody
     await supabase.from('logs').insert({
       level: 'info',
       context: 'asaas-webhook',
       message: 'Asaas Webhook received.',
-      metadata: { asaasNotification }
+      metadata: { asaasNotification: requestBody } // Changed asaasNotification to requestBody
     });
 
     // Check if the event is PAYMENT_CONFIRMED
-    if (asaasNotification.event !== 'PAYMENT_CONFIRMED') {
-      console.log('Ignoring non-PAYMENT_CONFIRMED event:', asaasNotification.event);
+    if (requestBody.event !== 'PAYMENT_CONFIRMED') { // Changed asaasNotification to requestBody
+      console.log('Ignoring non-PAYMENT_CONFIRMED event:', requestBody.event); // Changed asaasNotification to requestBody
       await supabase.from('logs').insert({
         level: 'info',
         context: 'asaas-webhook',
-        message: `Ignoring non-PAYMENT_CONFIRMED event: ${asaasNotification.event}`,
-        metadata: { event: asaasNotification.event }
+        message: `Ignoring non-PAYMENT_CONFIRMED event: ${requestBody.event}`, // Changed asaasNotification to requestBody
+        metadata: { event: requestBody.event } // Changed asaasNotification to requestBody
       });
       return new Response(JSON.stringify({ message: 'Event not relevant, ignored.' }), {
         status: 200,
@@ -48,14 +48,14 @@ serve(async (req) => {
       });
     }
 
-    asaasPaymentId = asaasNotification.payment.id;
+    asaasPaymentId = requestBody.payment.id; // Changed asaasNotification to requestBody
 
     if (!asaasPaymentId) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'asaas-webhook',
         message: 'asaas_payment_id not found in notification.',
-        metadata: { asaasNotification }
+        metadata: { asaasNotification: requestBody } // Changed asaasNotification to requestBody
       });
       return new Response(JSON.stringify({ error: 'asaas_payment_id not found in notification.' }), {
         status: 400,
@@ -151,10 +151,10 @@ serve(async (req) => {
     const existingAccess = profile.access || [];
     const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
 
-    // 6. Update the 'profiles' table with the new 'access' array
+    // 6. Update the 'profiles' table with the new 'access' array and set primeiro_acesso to TRUE
     const { error: updateProfileError } = await supabase
       .from('profiles')
-      .update({ access: newAccess })
+      .update({ access: newAccess, primeiro_acesso: true }) // Set primeiro_acesso to true
       .eq('id', userId);
 
     if (updateProfileError) {
@@ -170,11 +170,11 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    console.log(`Profile ${userId} access updated with new products.`);
+    console.log(`Profile ${userId} access updated with new products and primeiro_acesso set to true.`);
     await supabase.from('logs').insert({
       level: 'info',
       context: 'asaas-webhook',
-      message: `Profile ${userId} access updated with new products.`,
+      message: `Profile ${userId} access updated with new products and primeiro_acesso set to true.`,
       metadata: { userId, orderId, asaasPaymentId, newAccess }
     });
 
@@ -249,7 +249,7 @@ serve(async (req) => {
       message: `Unhandled error in Edge Function: ${error.message}`,
       metadata: {
         errorStack: error.stack,
-        asaasNotification,
+        asaasNotification: requestBody, // Changed asaasNotification to requestBody
         asaasPaymentId,
         orderId,
         userId,
