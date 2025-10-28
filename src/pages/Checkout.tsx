@@ -12,6 +12,7 @@ import OrderSummaryCard from "@/components/checkout/OrderSummaryCard";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
 import CheckoutForm from "@/components/checkout/CheckoutForm";
+import { formatCPF } from "@/utils/cpfValidation"; // Import formatCPF for initialData
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -26,7 +27,7 @@ const Checkout = () => {
   const [currentTotalPrice, setCurrentTotalPrice] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userProfile, setUserProfile] = useState<{ name?: string; cpf?: string; email?: string; whatsapp?: string; } | null>(null);
+  const [userProfile, setUserProfile] = useState<{ name?: string; cpf?: string; email?: string; } | null>(null);
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -79,9 +80,8 @@ const Checkout = () => {
       } else if (data) {
         setUserProfile({
           name: data.name || '',
-          cpf: data.cpf || '',
+          cpf: data.cpf ? formatCPF(data.cpf) : '', // Format CPF for display
           email: data.email || user.email || '',
-          whatsapp: '', // WhatsApp is not in profile, user will fill
         });
       }
     }
@@ -129,12 +129,7 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
-  const handleCheckoutSubmit = async (formData: { name: string; cpf: string; email: string; whatsapp: string }) => {
-    if (!user) {
-      showError("Você precisa estar logado para finalizar a compra.");
-      navigate("/login");
-      return;
-    }
+  const handleCheckoutSubmit = async (formData: { name: string; cpf: string; email: string }) => {
     if (!mainProduct) {
       showError("Nenhum produto principal selecionado.");
       return;
@@ -143,27 +138,15 @@ const Checkout = () => {
     setIsSubmitting(true);
 
     const productIdsToPurchase = [mainProduct.id, ...selectedOrderBumps];
+    const cleanedCpf = formData.cpf.replace(/[^\d]+/g, ""); // Clean CPF for backend
 
     try {
-      // First, update user profile with new data if available
-      const { error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({
-          name: formData.name,
-          cpf: formData.cpf,
-          email: formData.email,
-        })
-        .eq('id', user.id);
-
-      if (profileUpdateError) {
-        console.error("Error updating user profile:", profileUpdateError);
-        // Don't block checkout, but log the error
-      }
-
-      // Then, invoke the Edge Function to create payment
+      // Invoke the Edge Function to create payment and handle user creation/lookup
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: {
-          userId: user.id,
+          name: formData.name,
+          email: formData.email,
+          cpf: cleanedCpf,
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
         },

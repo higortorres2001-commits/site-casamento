@@ -15,12 +15,17 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
+import { isValidCPF, formatCPF } from "@/utils/cpfValidation"; // Import CPF validation
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
-  cpf: z.string().min(11, "O CPF é obrigatório e deve ter 11 dígitos").max(14, "O CPF deve ter no máximo 14 caracteres (com formatação)"),
+  cpf: z.string()
+    .min(11, "O CPF é obrigatório e deve ter 11 dígitos")
+    .max(14, "O CPF deve ter no máximo 14 caracteres (com formatação)")
+    .refine((cpf) => isValidCPF(cpf.replace(/[^\d]+/g, "")), {
+      message: "CPF inválido",
+    }),
   email: z.string().email("Email inválido").min(1, "O email é obrigatório"),
-  whatsapp: z.string().min(10, "O WhatsApp é obrigatório e deve ter pelo menos 10 dígitos"),
 });
 
 interface CheckoutFormProps {
@@ -30,7 +35,6 @@ interface CheckoutFormProps {
     name?: string;
     cpf?: string;
     email?: string;
-    whatsapp?: string;
   };
 }
 
@@ -41,7 +45,6 @@ const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) =
       name: "",
       cpf: "",
       email: "",
-      whatsapp: "",
     },
   });
 
@@ -76,6 +79,19 @@ const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) =
                 <Input
                   placeholder="000.000.000-00"
                   {...field}
+                  onChange={(e) => {
+                    const formatted = formatCPF(e.target.value);
+                    field.onChange(formatted);
+                  }}
+                  onBlur={(e) => {
+                    const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
+                    if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
+                      field.onChange(formatCPF(cleanedCpf));
+                    } else {
+                      field.onChange(e.target.value); // Keep invalid input for user to correct
+                    }
+                  }}
+                  maxLength={14} // Max length for formatted CPF
                   className="focus:ring-orange-500 focus:border-orange-500"
                 />
               </FormControl>
@@ -93,24 +109,6 @@ const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) =
                 <Input
                   type="email"
                   placeholder="seu@email.com"
-                  {...field}
-                  className="focus:ring-orange-500 focus:border-orange-500"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="whatsapp"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>WhatsApp</FormLabel>
-              <FormControl>
-                <Input
-                  type="tel"
-                  placeholder="(DD) 9XXXX-XXXX"
                   {...field}
                   className="focus:ring-orange-500 focus:border-orange-500"
                 />

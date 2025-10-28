@@ -19,10 +19,10 @@ serve(async (req) => {
   );
 
   try {
-    const { userId, productIds, coupon_code } = await req.json();
+    const { name, email, cpf, productIds, coupon_code } = await req.json();
 
-    if (!userId || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
-      return new Response(JSON.stringify({ error: 'Missing userId or productIds in request body.' }), {
+    if (!name || !email || !cpf || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      return new Response(JSON.stringify({ error: 'Missing name, email, cpf, or productIds in request body.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -36,19 +36,60 @@ serve(async (req) => {
       });
     }
 
-    // 1. Fetch user profile (name, cpf, email)
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('name, cpf, email')
-      .eq('id', userId)
-      .single();
+    let userId: string;
+    let isNewUser = false;
 
-    if (profileError || !profile) {
-      console.error('Error fetching profile:', profileError);
-      return new Response(JSON.stringify({ error: 'User profile not found.' }), {
-        status: 404,
+    // 1. Check if user exists by email
+    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({
+      email,
+    });
+
+    if (listUsersError) {
+      console.error('Error listing users:', listUsersError);
+      return new Response(JSON.stringify({ error: 'Failed to check for existing user.' }), {
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if (existingUsers && existingUsers.users.length > 0) {
+      // User exists
+      userId = existingUsers.users[0].id;
+      console.log(`Existing user found: ${userId}`);
+
+      // Update profile if necessary (e.g., name or cpf might be new/updated)
+      const { error: updateProfileError } = await supabase
+        .from('profiles')
+        .update({ name, cpf, email })
+        .eq('id', userId);
+
+      if (updateProfileError) {
+        console.error('Error updating existing user profile:', updateProfileError);
+        // Continue even if profile update fails, as payment is primary goal
+      }
+    } else {
+      // User does not exist, create new user
+      isNewUser = true;
+      const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+        email,
+        password: cpf, // CPF as password
+        email_confirm: true, // Automatically confirm email
+        user_metadata: { name, cpf }, // Store name and cpf in user_metadata
+      });
+
+      if (createUserError || !newUser?.user) {
+        console.error('Error creating new user:', createUserError);
+        return new Response(JSON.stringify({ error: 'Failed to create new user account.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = newUser.user.id;
+      console.log(`New user created: ${userId}`);
+
+      // The handle_new_user trigger should automatically insert into profiles.
+      // If it doesn't, we would manually insert here.
+      // For now, assuming the trigger is active and correctly populates profiles.
     }
 
     // 2. Fetch product prices
@@ -97,7 +138,7 @@ serve(async (req) => {
     const { data: order, error: orderInsertError } = await supabase
       .from('orders')
       .insert({
-        user_id: userId,
+        user_id: userId, // Use the determined userId
         ordered_product_ids: productIds,
         total_price: totalPrice,
         status: 'pending',
@@ -121,12 +162,12 @@ serve(async (req) => {
     };
 
     // Asaas requires CPF/CNPJ without formatting
-    const customerCpfCnpj = profile.cpf ? profile.cpf.replace(/[^0-9]/g, '') : null;
+    const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
 
     const asaasPayload = {
       customer: {
-        name: profile.name,
-        email: profile.email,
+        name: name,
+        email: email,
         cpfCnpj: customerCpfCnpj,
       },
       billingType: 'PIX', // Defaulting to PIX, can be made dynamic if needed

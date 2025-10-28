@@ -78,10 +78,10 @@ serve(async (req) => {
     const userId = order.user_id;
     const orderedProductIds = order.ordered_product_ids;
 
-    // 4. Fetch the user profile
+    // 4. Fetch the user profile to get current access, name, email, and CPF
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, access')
+      .select('id, access, name, email, cpf') // Select email and cpf
       .eq('id', userId)
       .single();
 
@@ -111,6 +111,51 @@ serve(async (req) => {
       });
     }
     console.log(`Profile ${userId} access updated with new products.`);
+
+    // 7. Send "Acesso Liberado" email with login details
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY'); // Assuming Resend for email
+    if (RESEND_API_KEY && profile.email && profile.cpf) {
+      const emailSubject = "Seu acesso foi liberado! Detalhes de Login";
+      const emailBody = `
+        Olá ${profile.name || 'cliente'},
+
+        Seu acesso aos produtos adquiridos foi liberado!
+
+        Você pode fazer login na sua área de membros usando os seguintes dados:
+        Email: ${profile.email}
+        Senha: ${profile.cpf} (os números do seu CPF)
+
+        Acesse sua área de membros aqui: ${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}
+
+        Se tiver qualquer dúvida, entre em contato.
+
+        Atenciosamente,
+        Sua Equipe
+      `;
+
+      const resendResponse = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: 'onboarding@resend.dev', // Replace with your verified sender email
+          to: profile.email,
+          subject: emailSubject,
+          html: emailBody.replace(/\n/g, '<br/>'), // Convert newlines to HTML breaks
+        }),
+      });
+
+      if (!resendResponse.ok) {
+        const errorData = await resendResponse.json();
+        console.error('Error sending email via Resend:', errorData);
+      } else {
+        console.log(`Access liberation email sent to ${profile.email}`);
+      }
+    } else {
+      console.warn('RESEND_API_KEY, user email, or CPF not available. Skipping email sending.');
+    }
 
     // Return a 200 OK response to Asaas
     return new Response(JSON.stringify({ message: 'Webhook processed successfully.' }), {
