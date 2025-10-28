@@ -50,8 +50,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
           }
         } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           if (currentSession && location.pathname === '/login') {
-            console.log('SessionContextProvider: SIGNED_IN/INITIAL_SESSION, on /login. Redirecting to /.');
-            navigate('/');
+            console.log('SessionContextProvider: SIGNED_IN/INITIAL_SESSION, on /login. Redirecting to /meus-produtos.');
+            navigate('/meus-produtos'); // Alterado de '/' para '/meus-produtos'
           }
         }
       }
