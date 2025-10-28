@@ -36,9 +36,9 @@ const PixPaymentModal = ({
       .catch(() => showError("Falha ao copiar."));
   };
 
-  const handleGoToConfirmation = () => {
+  const handleGoToProcessing = () => {
     onClose(); // Close the modal
-    navigate("/confirmacao"); // Redirect to the confirmation page
+    navigate("/processando-pagamento"); // Redirect to the new processing payment page
   };
 
   if (!pixDetails) {
@@ -120,7 +120,7 @@ const PixPaymentModal = ({
             <Button
               variant="secondary"
               className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg shadow-md py-3 text-lg"
-              onClick={handleGoToConfirmation}
+              onClick={handleGoToProcessing}
             >
               Já paguei, ir para o acesso
             </Button>
