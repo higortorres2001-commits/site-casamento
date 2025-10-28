@@ -202,7 +202,7 @@ const Checkout = () => {
           whatsapp: cleanedWhatsapp,
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
-          paymentMethod: paymentMethod,
+          paymentMethod: paymentMethod, // <-- Adicionado o paymentMethod aqui
           creditCard: cardData, // Pass raw card data to Edge Function
         },
       });
