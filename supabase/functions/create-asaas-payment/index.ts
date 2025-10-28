@@ -26,7 +26,7 @@ serve(async (req) => {
   try {
     requestBody = await req.json();
     console.log('create-asaas-payment: Received request body:', requestBody); // Log para depuração
-    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCardToken } = requestBody; // Added creditCardToken
+    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard } = requestBody; // 'creditCard' will contain raw card data if paymentMethod is CREDIT_CARD
 
     if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
@@ -68,9 +68,7 @@ serve(async (req) => {
       });
     }
 
-    let isNewUser = false;
-
-    // 1. Check if user exists by email
+    // 1. Check if user exists by email and create if not
     const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({
       email,
     });
@@ -118,7 +116,6 @@ serve(async (req) => {
       }
     } else {
       // User does not exist, create new user
-      isNewUser = true;
       const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
         email,
         password: cpf, // CPF as password
@@ -267,27 +264,124 @@ serve(async (req) => {
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
     };
 
+    let finalAsaasResponseData: any;
+
     if (paymentMethod === 'PIX') {
       asaasPayload.billingType = 'PIX';
-    } else if (paymentMethod === 'CREDIT_CARD') {
-      if (!creditCardToken) {
+      const asaasResponse = await fetch(asaasApiUrl, { method: 'POST', headers: asaasHeaders, body: JSON.stringify(asaasPayload) });
+      if (!asaasResponse.ok) {
+        const contentType = asaasResponse.headers.get('Content-Type');
+        let errorData: any;
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await asaasResponse.json();
+        } else {
+          errorData = await asaasResponse.text();
+        }
+        console.error('Asaas PIX API error:', errorData);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'creditCardToken is missing for CREDIT_CARD payment method.',
+          message: 'Failed to create PIX payment with Asaas.',
+          metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasResponse.status }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to create PIX payment with Asaas.', details: errorData }), {
+          status: asaasResponse.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      finalAsaasResponseData = await asaasResponse.json();
+    } else if (paymentMethod === 'CREDIT_CARD') {
+      if (!creditCard) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'Credit card details are missing for CREDIT_CARD payment method.',
           metadata: { requestBody }
         });
-        return new Response(JSON.stringify({ error: 'creditCardToken is missing for CREDIT_CARD payment method.' }), {
+        return new Response(JSON.stringify({ error: 'Credit card details are missing for CREDIT_CARD payment method.' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // Step A: Tokenize Credit Card (Backend-side)
+      const tokenizeUrl = 'https://api.asaas.com/api/v3/creditCard/tokenizeCreditCard';
+      const tokenizePayload = {
+        customer: {
+          name: name,
+          email: email,
+          cpfCnpj: customerCpfCnpj,
+          phone: whatsapp,
+        },
+        creditCard: {
+          holderName: creditCard.holderName,
+          number: creditCard.cardNumber.replace(/\s/g, ''), // Remove spaces
+          expiryMonth: creditCard.expiryMonth,
+          expiryYear: creditCard.expiryYear,
+          ccv: creditCard.ccv,
+        },
+      };
+
+      const tokenizeResponse = await fetch(tokenizeUrl, {
+        method: 'POST',
+        headers: asaasHeaders,
+        body: JSON.stringify(tokenizePayload),
+      });
+
+      if (!tokenizeResponse.ok) {
+        const errorData = await tokenizeResponse.json();
+        console.error('Asaas Tokenization API error:', errorData);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'Failed to tokenize credit card with Asaas.',
+          metadata: { orderId, userId, tokenizePayload, asaasError: errorData, statusCode: tokenizeResponse.status }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to tokenize credit card with Asaas.', details: errorData }), {
+          status: tokenizeResponse.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const tokenizeData = await tokenizeResponse.json();
+      const creditCardToken = tokenizeData.creditCardToken;
+      console.log('Credit card tokenized successfully:', creditCardToken);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'create-asaas-payment',
+        message: 'Credit card tokenized successfully.',
+        metadata: { orderId, userId, creditCardToken }
+      });
+
+      // Step B: Create Payment with Token
       asaasPayload.billingType = 'CREDIT_CARD';
       asaasPayload.creditCardToken = creditCardToken;
-      // Asaas will process the payment directly, no hosted checkout URL needed for this flow
-      // We can optionally add callbackUrl/returnUrl if Asaas needs them for status updates
-      asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
       asaasPayload.remoteIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1'; // Get client IP
+      asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional callback
+      asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional return URL
+
+      const asaasPaymentResponse = await fetch(asaasApiUrl, {
+        method: 'POST',
+        headers: asaasHeaders,
+        body: JSON.stringify(asaasPayload),
+      });
+
+      if (!asaasPaymentResponse.ok) {
+        const errorData = await asaasPaymentResponse.json();
+        console.error('Asaas Payment API error:', errorData);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'Failed to create credit card payment with Asaas.',
+          metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasPaymentResponse.status }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to create credit card payment with Asaas.', details: errorData }), {
+          status: asaasPaymentResponse.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      finalAsaasResponseData = await asaasPaymentResponse.json();
+
     } else {
       await supabase.from('logs').insert({
         level: 'error',
@@ -301,41 +395,12 @@ serve(async (req) => {
       });
     }
 
-    const asaasResponse = await fetch(asaasApiUrl, {
-      method: 'POST',
-      headers: asaasHeaders,
-      body: JSON.stringify(asaasPayload),
-    });
-
-    if (!asaasResponse.ok) {
-      const contentType = asaasResponse.headers.get('Content-Type');
-      let errorData: any;
-      if (contentType && contentType.includes('application/json')) {
-        errorData = await asaasResponse.json();
-      } else {
-        errorData = await asaasResponse.text();
-      }
-      
-      console.error('Asaas API error:', errorData);
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-asaas-payment',
-        message: 'Failed to create payment with Asaas.',
-        metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasResponse.status }
-      });
-      return new Response(JSON.stringify({ error: 'Failed to create payment with Asaas.', details: errorData }), {
-        status: asaasResponse.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const asaasPaymentData = await asaasResponse.json();
-    asaasPaymentId = asaasPaymentData.id;
+    asaasPaymentId = finalAsaasResponseData.id;
 
     // 7. Update order with asaas_payment_id
     const { error: orderUpdateError } = await supabase
       .from('orders')
-      .update({ asaas_payment_id: asaasPaymentData.id })
+      .update({ asaas_payment_id: finalAsaasResponseData.id })
       .eq('id', order.id);
 
     if (orderUpdateError) {
@@ -352,11 +417,11 @@ serve(async (req) => {
       level: 'info',
       context: 'create-asaas-payment',
       message: `Asaas payment created successfully for order ${orderId}.`,
-      metadata: { orderId, userId, asaasPaymentId, asaasPaymentData }
+      metadata: { orderId, userId, asaasPaymentId, asaasPaymentData: finalAsaasResponseData }
     });
 
     // Return Asaas response to the client
-    return new Response(JSON.stringify({ ...asaasPaymentData, orderId: order.id }), {
+    return new Response(JSON.stringify({ ...finalAsaasResponseData, orderId: order.id }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -44,9 +44,8 @@ const Checkout = () => {
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null); // Ref for credit card form
 
-  // IMPORTANT: Replace with your actual Asaas Publishable API Key
-  // This key is safe to be in the frontend. Do NOT use your ASAAS_API_KEY (service role key) here.
-  const ASAAS_PUBLISHABLE_KEY = import.meta.env.VITE_ASAAS_PUBLISHABLE_KEY || "YOUR_ASAAS_PUBLISHABLE_KEY_HERE";
+  // REMOVED: ASAAS_PUBLISHABLE_KEY is no longer needed in the frontend.
+  // All Asaas API calls are now handled by the Edge Function.
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -164,10 +163,9 @@ const Checkout = () => {
     }
 
     const customerData = checkoutFormRef.current.getValues();
+    let cardData = null;
 
-    if (paymentMethod === "PIX") {
-      handleProcessPayment(customerData, null); // No credit card token for PIX
-    } else if (paymentMethod === "CREDIT_CARD") {
+    if (paymentMethod === "CREDIT_CARD") {
       if (!creditCardFormRef.current) {
         showError("Erro: Formulário de cartão de crédito não disponível.");
         return;
@@ -177,66 +175,15 @@ const Checkout = () => {
         showError("Por favor, preencha todos os dados do cartão corretamente.");
         return;
       }
-      const cardData = creditCardFormRef.current.getValues();
-      await handleCreditCardTokenization(customerData, cardData);
+      cardData = creditCardFormRef.current.getValues(); // Get raw card data
     }
-  };
 
-  const handleCreditCardTokenization = async (customerData: any, cardData: any) => {
-    setIsSubmitting(true);
-    try {
-      const asaasTokenizeUrl = 'https://api.asaas.com/api/v3/creditCard/tokenize';
-      const asaasTokenizeHeaders = {
-        'Content-Type': 'application/json',
-        'access_token': ASAAS_PUBLISHABLE_KEY, // Use the publishable key here
-      };
-
-      const tokenizePayload = {
-        customer: {
-          name: customerData.name,
-          email: customerData.email,
-          cpfCnpj: customerData.cpf.replace(/[^\d]+/g, ''),
-          phone: customerData.whatsapp.replace(/[^\d]+/g, ''),
-        },
-        creditCard: {
-          holderName: cardData.holderName,
-          number: cardData.cardNumber.replace(/\s/g, ''), // Remove spaces
-          expiryMonth: cardData.expiryMonth,
-          expiryYear: cardData.expiryYear,
-          ccv: cardData.ccv,
-        },
-      };
-
-      const tokenizeResponse = await fetch(asaasTokenizeUrl, {
-        method: 'POST',
-        headers: asaasTokenizeHeaders,
-        body: JSON.stringify(tokenizePayload),
-      });
-
-      if (!tokenizeResponse.ok) {
-        const errorData = await tokenizeResponse.json();
-        showError("Erro ao tokenizar cartão: " + (errorData.errors?.[0]?.description || "Verifique os dados do cartão."));
-        console.error("Asaas Tokenization Error:", errorData);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const tokenizeData = await tokenizeResponse.json();
-      const creditCardToken = tokenizeData.creditCardToken;
-      showSuccess("Cartão tokenizado com sucesso! Finalizando pagamento...");
-      await handleProcessPayment(customerData, creditCardToken);
-
-    } catch (error: any) {
-      showError("Erro inesperado na tokenização do cartão: " + error.message);
-      console.error("Tokenization error:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
+    await handleProcessPayment(customerData, cardData);
   };
 
   const handleProcessPayment = async (
     customerData: { name: string; cpf: string; email: string; whatsapp: string },
-    creditCardToken: string | null
+    cardData: any | null // Raw card data, or null for PIX
   ) => {
     if (!mainProduct) {
       showError("Nenhum produto principal selecionado.");
@@ -259,7 +206,7 @@ const Checkout = () => {
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
           paymentMethod: paymentMethod,
-          creditCardToken: creditCardToken, // Pass the token if available
+          creditCard: cardData, // Pass raw card data to Edge Function
         },
       });
 
@@ -273,14 +220,20 @@ const Checkout = () => {
           setModalTotalPrice(currentTotalPrice);
           setModalOrderId(data.orderId);
           setIsPixModalOpen(true);
-        } else if (paymentMethod === "CREDIT_CARD" && data.status === "CONFIRMED") {
-          showSuccess("Pagamento com cartão de crédito aprovado!");
-          navigate("/confirmacao"); // Redirect to confirmation page
-        } else if (paymentMethod === "CREDIT_CARD" && data.status === "PENDING") {
-          showSuccess("Pagamento com cartão de crédito pendente. Verifique seu e-mail.");
-          navigate("/processando-pagamento"); // Or a specific pending page
-        } else if (paymentMethod === "CREDIT_CARD" && data.status === "REFUSED") {
-          showError("Pagamento com cartão de crédito recusado. Tente novamente ou use outro cartão.");
+        } else if (paymentMethod === "CREDIT_CARD") {
+          // Asaas response for credit card payment status
+          if (data.status === "CONFIRMED") {
+            showSuccess("Pagamento com cartão de crédito aprovado!");
+            navigate("/confirmacao"); // Redirect to confirmation page
+          } else if (data.status === "PENDING") {
+            showSuccess("Pagamento com cartão de crédito pendente. Verifique seu e-mail.");
+            navigate("/processando-pagamento"); // Or a specific pending page
+          } else if (data.status === "REFUSED") {
+            showError("Pagamento com cartão de crédito recusado. Tente novamente ou use outro cartão.");
+          } else {
+            showError("Erro desconhecido ao processar pagamento com cartão.");
+            console.error("Unexpected credit card payment status:", data);
+          }
         } else {
           showError("Erro desconhecido ao processar pagamento.");
           console.error("Unexpected response from Edge Function:", data);
