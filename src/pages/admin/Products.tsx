@@ -18,11 +18,20 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, FileText, Link as LinkIcon } from "lucide-react"; // Import Link as LinkIcon
+import { Edit, Trash2, PlusCircle, FileText, Link as LinkIcon } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
-import ProductForm from "@/components/ProductForm";
+import ProductEditTabs from "@/components/ProductEditTabs"; // Import the new tabbed component
 import { Product, ProductAsset } from "@/types";
 import { useSession } from "@/components/SessionContextProvider";
+import * as z from "zod";
+
+const formSchema = z.object({
+  name: z.string().min(1, "O nome é obrigatório"),
+  price: z.coerce.number().min(0.01, "O preço deve ser maior que zero"),
+  description: z.string().optional(),
+  memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
+  orderbumps: z.array(z.string()).optional(), // Array of product IDs
+});
 
 const Products = () => {
   const { user } = useSession();
@@ -66,17 +75,14 @@ const Products = () => {
   };
 
   const handleSaveProduct = async (
-    formData: Omit<Product, "id" | "created_at" | "user_id"> & { orderbumps: string },
-    files: File[]
+    formData: z.infer<typeof formSchema>,
+    files: File[],
+    deletedAssetIds: string[]
   ) => {
     setIsSubmitting(true);
-    const orderbumpsArray = formData.orderbumps
-      ? formData.orderbumps.split(",").map((id) => id.trim()).filter(Boolean)
-      : [];
 
     const productData = {
       ...formData,
-      orderbumps: orderbumpsArray,
       user_id: user?.id,
     };
 
@@ -141,6 +147,42 @@ const Products = () => {
       showSuccess("Arquivos enviados com sucesso!");
     }
 
+    // Handle asset deletions
+    if (deletedAssetIds.length > 0) {
+      const assetsToDeletePaths: string[] = [];
+      for (const assetId of deletedAssetIds) {
+        const asset = editingProduct?.assets?.find(a => a.id === assetId);
+        if (asset) {
+          assetsToDeletePaths.push(asset.storage_path);
+        }
+      }
+
+      if (assetsToDeletePaths.length > 0) {
+        const { error: deleteStorageError } = await supabase.storage
+          .from('product-assets')
+          .remove(assetsToDeletePaths);
+
+        if (deleteStorageError) {
+          showError("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
+          console.error("Error deleting files from storage:", deleteStorageError);
+        } else {
+          showSuccess("Arquivos do produto excluídos do storage.");
+        }
+      }
+
+      const { error: deleteDbError } = await supabase
+        .from('product_assets')
+        .delete()
+        .in('id', deletedAssetIds);
+
+      if (deleteDbError) {
+        showError("Erro ao excluir registros de arquivos do banco de dados: " + deleteDbError.message);
+        console.error("Error deleting asset records:", deleteDbError);
+      } else {
+        showSuccess("Registros de arquivos excluídos do banco de dados.");
+      }
+    }
+
     fetchProducts();
     setIsModalOpen(false);
     setIsSubmitting(false);
@@ -191,60 +233,6 @@ const Products = () => {
     setIsSubmitting(false);
   };
 
-  const handleDeleteAsset = async (assetId: string) => {
-    if (!window.confirm("Tem certeza que deseja excluir este arquivo?")) return;
-
-    setIsSubmitting(true);
-
-    // Fetch asset details to get storage_path
-    const { data: asset, error: fetchAssetError } = await supabase
-      .from('product_assets')
-      .select('storage_path')
-      .eq('id', assetId)
-      .single();
-
-    if (fetchAssetError || !asset) {
-      showError("Erro ao buscar detalhes do arquivo: " + fetchAssetError?.message);
-      console.error("Error fetching asset details:", fetchAssetError);
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Delete from Supabase Storage
-    const { error: deleteStorageError } = await supabase.storage
-      .from('product-assets')
-      .remove([asset.storage_path]);
-
-    if (deleteStorageError) {
-      showError("Erro ao excluir arquivo do storage: " + deleteStorageError.message);
-      console.error("Error deleting file from storage:", deleteStorageError);
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Delete from product_assets table
-    const { error: deleteDbError } = await supabase
-      .from('product_assets')
-      .delete()
-      .eq('id', assetId);
-
-    if (deleteDbError) {
-      showError("Erro ao excluir registro do arquivo do banco de dados: " + deleteDbError.message);
-      console.error("Error deleting asset record:", deleteDbError);
-    } else {
-      showSuccess("Arquivo excluído com sucesso!");
-      fetchProducts(); // Refresh products to update asset list
-      // Also update editingProduct state if the modal is open
-      if (editingProduct && editingProduct.assets) {
-        setEditingProduct({
-          ...editingProduct,
-          assets: editingProduct.assets.filter(a => a.id !== assetId)
-        });
-      }
-    }
-    setIsSubmitting(false);
-  };
-
   const handleDownloadAsset = async (storagePath: string, fileName: string) => {
     const { data, error } = await supabase.storage
       .from('product-assets')
@@ -290,12 +278,11 @@ const Products = () => {
             <DialogHeader>
               <DialogTitle>{editingProduct ? "Editar Produto" : "Criar Novo Produto"}</DialogTitle>
             </DialogHeader>
-            <ProductForm
+            <ProductEditTabs
               initialData={editingProduct}
               onSubmit={handleSaveProduct}
               onCancel={() => setIsModalOpen(false)}
               isLoading={isSubmitting}
-              onDeleteAsset={handleDeleteAsset}
             />
           </DialogContent>
         </Dialog>
