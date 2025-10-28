@@ -31,6 +31,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
+  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
 });
 
 const Products = () => {

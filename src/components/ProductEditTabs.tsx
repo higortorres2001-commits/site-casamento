@@ -22,6 +22,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
+  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
 });
 
 interface ProductEditTabsProps {
@@ -48,6 +49,7 @@ const ProductEditTabs = ({
       ? {
           ...initialData,
           orderbumps: initialData.orderbumps || [],
+          image_url: initialData.image_url || "", // Definir default para image_url
         }
       : {
           name: "",
@@ -55,6 +57,7 @@ const ProductEditTabs = ({
           description: "",
           memberareaurl: "",
           orderbumps: [],
+          image_url: "", // Definir default para image_url
         },
   });
 
@@ -67,6 +70,7 @@ const ProductEditTabs = ({
       form.reset({
         ...initialData,
         orderbumps: initialData.orderbumps || [],
+        image_url: initialData.image_url || "",
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
@@ -77,6 +81,7 @@ const ProductEditTabs = ({
         description: "",
         memberareaurl: "",
         orderbumps: [],
+        image_url: "",
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);

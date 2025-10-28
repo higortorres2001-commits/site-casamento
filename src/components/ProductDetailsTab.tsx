@@ -19,6 +19,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
+  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
 });
 
 interface ProductDetailsTabProps {
@@ -76,6 +77,19 @@ const ProductDetailsTab = ({ form, isLoading }: ProductDetailsTabProps) => {
             <FormLabel>URL da Área de Membros</FormLabel>
             <FormControl>
               <Input placeholder="Ex: https://minha-area-de-membros.com" {...field} disabled={isLoading} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="image_url"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>URL da Imagem do Produto</FormLabel>
+            <FormControl>
+              <Input placeholder="Ex: https://seusite.com/imagem-produto.jpg" {...field} disabled={isLoading} />
             </FormControl>
             <FormMessage />
           </FormItem>
