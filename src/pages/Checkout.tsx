@@ -137,8 +137,15 @@ const Checkout = () => {
 
   const handleToggleOrderBump = (bumpId: string, isSelected: boolean) => {
     if (isSelected) {
-      setSelectedOrderBumps((prev) => [...prev, bumpId]);
+      // Add if not already present
+      setSelectedOrderBumps((prev) => {
+        if (!prev.includes(bumpId)) {
+          return [...prev, bumpId];
+        }
+        return prev; // Already present, do nothing
+      });
     } else {
+      // Remove
       setSelectedOrderBumps((prev) => prev.filter((id) => id !== bumpId));
     }
   };
