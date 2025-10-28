@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,9 +18,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, FileText, Link as LinkIcon } from "lucide-react";
+import { Edit, Trash2, PlusCircle, FileText, Link as LinkIcon, Loader2 } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
-import ProductEditTabs from "@/components/ProductEditTabs"; // Import the new tabbed component
+import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
 import { useSession } from "@/components/SessionContextProvider";
 import * as z from "zod";
@@ -34,25 +34,23 @@ const formSchema = z.object({
 });
 
 const Products = () => {
-  const { user } = useSession();
+  const { user, isLoading: isSessionLoading } = useSession();
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true); // Renomeado para clareza
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<(Product & { assets?: ProductAsset[] }) | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchProducts();
+  const fetchProducts = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoadingProducts(false);
+      return;
     }
-  }, [user]);
-
-  const fetchProducts = async () => {
-    setLoading(true);
+    setIsLoadingProducts(true);
     const { data, error } = await supabase
       .from("products")
-      .select("*, product_assets(*)") // Fetch assets along with products
-      .eq("user_id", user?.id)
+      .select("*, product_assets(*)")
+      .eq("user_id", user.id) // Usar user.id diretamente após a verificação
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -61,8 +59,20 @@ const Products = () => {
     } else {
       setProducts(data || []);
     }
-    setLoading(false);
-  };
+    setIsLoadingProducts(false);
+  }, [user]); // Depende de user
+
+  useEffect(() => {
+    if (!isSessionLoading) {
+      if (user) {
+        fetchProducts();
+      } else {
+        // Se a sessão carregou mas não há usuário, parar o carregamento interno.
+        // O SessionContextProvider cuidará do redirecionamento para o login se não for uma rota pública.
+        setIsLoadingProducts(false); 
+      }
+    }
+  }, [user, isSessionLoading, fetchProducts]); // Depende de user, isSessionLoading e fetchProducts
 
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
@@ -165,6 +175,7 @@ const Products = () => {
         if (deleteStorageError) {
           showError("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
           console.error("Error deleting files from storage:", deleteStorageError);
+          // Continue with database deletion even if storage fails, to avoid orphaned records
         } else {
           showSuccess("Arquivos do produto excluídos do storage.");
         }
@@ -217,7 +228,7 @@ const Products = () => {
         console.error("Error deleting files from storage:", deleteStorageError);
         // Continue with database deletion even if storage fails, to avoid orphaned records
       } else {
-        showSuccess("Arquivos do produto excluídos do storage.");
+          showSuccess("Arquivos do produto excluídos do storage.");
       }
     }
 
@@ -261,6 +272,14 @@ const Products = () => {
       .catch(() => showError("Falha ao copiar o link."));
   };
 
+  if (isSessionLoading || isLoadingProducts) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
@@ -288,8 +307,8 @@ const Products = () => {
         </Dialog>
       </div>
 
-      {loading ? (
-        <p>Carregando produtos...</p>
+      {products.length === 0 ? (
+        <p className="text-center text-gray-600 text-lg mt-10">Nenhum produto encontrado. Crie um novo produto para começar!</p>
       ) : (
         <div className="rounded-md border">
           <Table>
