@@ -16,7 +16,7 @@ const FixedBottomBar = ({ totalPrice, isSubmitting, onSubmit }: FixedBottomBarPr
       <div className="max-w-md mx-auto flex flex-col gap-3">
         <div className="flex justify-between items-center">
           <span className="text-xl font-bold text-gray-900">Total:</span> {/* Increased font size */}
-          <span className="text-3xl font-extrabold text-gray-900">R$ {totalPrice.toFixed(2)}</span> {/* Increased font size */}
+          <span className="text-2xl text-gray-500">R$ {totalPrice.toFixed(2)}</span> {/* Ajustado: cinza claro, sem negrito, menor */}
         </div>
         <Button
           type="submit"
