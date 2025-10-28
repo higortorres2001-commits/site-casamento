@@ -19,6 +19,7 @@ import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RealtimeChannel } from '@supabase/supabase-js'; // Import RealtimeChannel
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -111,6 +112,44 @@ const Checkout = () => {
       fetchUserProfile();
     }
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
+
+  // Realtime listener for PIX payment confirmation
+  useEffect(() => {
+    let orderSubscription: RealtimeChannel | null = null;
+
+    if (isPixModalOpen && modalOrderId) {
+      console.log(`Subscribing to order updates for order ID: ${modalOrderId}`);
+      orderSubscription = supabase
+        .channel(`order_status_update:${modalOrderId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'orders',
+            filter: `id=eq.${modalOrderId}`,
+          },
+          (payload) => {
+            console.log('Realtime update received for order:', payload);
+            if (payload.new.status === 'paid') {
+              showSuccess("Seu pagamento foi confirmado!");
+              if (orderSubscription) {
+                orderSubscription.unsubscribe();
+              }
+              navigate("/confirmacao");
+            }
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      if (orderSubscription) {
+        console.log(`Unsubscribing from order updates for order ID: ${modalOrderId}`);
+        orderSubscription.unsubscribe();
+      }
+    };
+  }, [isPixModalOpen, modalOrderId, navigate]); // Dependencies for the listener
 
   useEffect(() => {
     if (!mainProduct) return;
