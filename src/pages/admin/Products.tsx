@@ -89,10 +89,12 @@ const Products = () => {
     formData: z.infer<typeof formSchema>,
     files: File[],
     deletedAssetIds: string[],
-    imageFile: File | null, // New parameter
-    oldImageUrl: string | null // New parameter
+    imageFile: File | null,
+    oldImageUrl: string | null
   ) => {
     setIsSubmitting(true);
+    let hasErrors = false;
+    const errorMessages: string[] = [];
 
     const productData = {
       ...formData,
@@ -100,12 +102,12 @@ const Products = () => {
     };
 
     let currentProductId = editingProduct?.id;
-    let newImageUrl = formData.image_url; // Start with the URL from the form (could be manual or empty)
+    let newImageUrl = formData.image_url;
 
-    // Handle image upload if a new file is selected
+    // --- Image Upload Logic ---
     if (imageFile && user?.id) {
       const fileExtension = imageFile.name.split('.').pop();
-      const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`; // Unique filename
+      const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("product-images")
         .upload(filePath, imageFile, {
@@ -114,23 +116,21 @@ const Products = () => {
         });
 
       if (uploadError) {
-        showError(`Erro ao fazer upload da imagem: ${uploadError.message}`);
+        errorMessages.push(`Erro ao fazer upload da imagem: ${uploadError.message}`);
         console.error("Error uploading image:", uploadError);
-        setIsSubmitting(false);
-        return;
-      }
-      newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
-      showSuccess("Imagem do produto enviada com sucesso!");
-
-      // If there was an old image and a new one is uploaded, delete the old one
-      if (oldImageUrl && oldImageUrl !== newImageUrl) {
-        const oldPath = oldImageUrl.split('product-images/')[1]; // Extract path from public URL
-        if (oldPath) {
-          const { error: deleteOldImageError } = await supabase.storage
-            .from('product-images')
-            .remove([oldPath]);
-          if (deleteOldImageError) {
-            console.warn("Could not delete old product image from storage:", deleteOldImageError.message);
+        hasErrors = true;
+      } else {
+        newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
+        // If there was an old image and a new one is uploaded, delete the old one
+        if (oldImageUrl && oldImageUrl !== newImageUrl) {
+          const oldPath = oldImageUrl.split('product-images/')[1];
+          if (oldPath) {
+            const { error: deleteOldImageError } = await supabase.storage
+              .from('product-images')
+              .remove([oldPath]);
+            if (deleteOldImageError) {
+              console.warn("Could not delete old product image from storage:", deleteOldImageError.message);
+            }
           }
         }
       }
@@ -145,73 +145,79 @@ const Products = () => {
           console.warn("Could not delete old product image from storage (cleared field):", deleteOldImageError.message);
         }
       }
-      newImageUrl = null; // Ensure image_url is null in DB
+      newImageUrl = null;
     }
-
-    // Update productData with the new image URL
     productData.image_url = newImageUrl;
 
+    // --- Product Create/Update Logic ---
     if (editingProduct) {
-      // Update existing product
       const { error } = await supabase
         .from("products")
         .update(productData)
         .eq("id", editingProduct.id);
       if (error) {
-        showError("Erro ao atualizar produto: " + error.message);
+        errorMessages.push("Erro ao atualizar produto: " + error.message);
         console.error("Error updating product:", error);
-        setIsSubmitting(false);
-        return;
+        hasErrors = true;
+      } else {
+        showSuccess("Detalhes do produto atualizados!"); // Specific success for product details
+        currentProductId = editingProduct.id;
       }
-      showSuccess("Produto atualizado com sucesso!");
-      currentProductId = editingProduct.id; // Ensure currentProductId is set for asset uploads
     } else {
-      // Create new product
       const { data, error } = await supabase
         .from("products")
         .insert(productData)
         .select("id")
         .single();
       if (error || !data) {
-        showError("Erro ao criar produto: " + error.message);
+        errorMessages.push("Erro ao criar produto: " + error.message);
         console.error("Error creating product:", error);
-        setIsSubmitting(false);
-        return;
+        hasErrors = true;
+      } else {
+        showSuccess("Produto criado com sucesso!"); // Specific success for product creation
+        currentProductId = data.id;
       }
-      showSuccess("Produto criado com sucesso!");
-      currentProductId = data.id;
     }
 
-    // Handle file uploads (PDFs)
+    // If product creation/update failed, stop here.
+    if (hasErrors && !currentProductId) { // If there were errors and no product ID to associate assets with
+      setIsSubmitting(false);
+      showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
+      return;
+    }
+
+    // --- Handle File Uploads (PDFs) ---
     if (files.length > 0 && currentProductId && user?.id) {
       for (const file of files) {
-        const filePath = `${user.id}/${currentProductId}/${file.name}`;
+        // Sanitize file name to avoid issues with storage paths
+        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const filePath = `${user.id}/${currentProductId}/${sanitizedFileName}`;
         const { error: uploadError } = await supabase.storage
           .from("product-assets")
           .upload(filePath, file);
 
         if (uploadError) {
-          showError(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
+          errorMessages.push(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
           console.error("Error uploading file:", uploadError);
+          hasErrors = true;
         } else {
-          // Insert asset record into product_assets table
           const { error: assetInsertError } = await supabase
             .from("product_assets")
             .insert({
               product_id: currentProductId,
-              file_name: file.name,
+              file_name: file.name, // Keep original file name for display
               storage_path: filePath,
             });
           if (assetInsertError) {
-            showError(`Erro ao registrar asset ${file.name}: ${assetInsertError.message}`);
+            errorMessages.push(`Erro ao registrar asset ${file.name} no banco de dados: ${assetInsertError.message}`);
             console.error("Error inserting asset record:", assetInsertError);
+            hasErrors = true;
           }
         }
       }
-      showSuccess("Arquivos enviados com sucesso!");
     }
 
-    // Handle asset deletions (PDFs)
+    // --- Handle Asset Deletions (PDFs) ---
     if (deletedAssetIds.length > 0) {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
@@ -227,11 +233,9 @@ const Products = () => {
           .remove(assetsToDeletePaths);
 
         if (deleteStorageError) {
-          showError("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
+          errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
           console.error("Error deleting files from storage:", deleteStorageError);
-          // Continue with database deletion even if storage fails, to avoid orphaned records
-        } else {
-          showSuccess("Arquivos do produto excluídos do storage.");
+          hasErrors = true;
         }
       }
 
@@ -241,11 +245,17 @@ const Products = () => {
         .in('id', deletedAssetIds);
 
       if (deleteDbError) {
-        showError("Erro ao excluir registros de arquivos do banco de dados: " + deleteDbError.message);
+        errorMessages.push("Erro ao excluir registros de arquivos do banco de dados: " + deleteDbError.message);
         console.error("Error deleting asset records:", deleteDbError);
-      } else {
-        showSuccess("Registros de arquivos excluídos do banco de dados.");
+        hasErrors = true;
       }
+    }
+
+    // --- Final Feedback ---
+    if (hasErrors) {
+      showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
+    } else {
+      showSuccess("Produto e arquivos salvos com sucesso!");
     }
 
     fetchProducts();
