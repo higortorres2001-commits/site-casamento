@@ -44,11 +44,11 @@ const LoginForm = () => {
     });
 
     if (error) {
-      showError("Erro ao fazer login: " + error.message);
+      showError("Erro ao fazer login: E-mail ou senha inválidos."); // Mensagem de erro específica
       console.error("Login error:", error);
     } else {
       showSuccess("Login realizado com sucesso!");
-      navigate("/"); // Redirect to home or dashboard after successful login
+      navigate("/meus-produtos"); // Redirecionar para /meus-produtos após o login
     }
     setIsLoading(false);
   };
@@ -62,7 +62,7 @@ const LoginForm = () => {
 
     setIsLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`, // You might need a page to handle password reset
+      redirectTo: `${window.location.origin}/update-password`, // Você pode precisar de uma página para lidar com a redefinição de senha
     });
 
     if (error) {
@@ -78,8 +78,10 @@ const LoginForm = () => {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="text-center">
-          {/* Placeholder for your logo */}
+          {/* Placeholder para o seu logo */}
           <h1 className="text-4xl font-bold text-gray-800 mb-4">Seu Logo</h1>
+          <p className="text-lg text-gray-700 mb-2">Bem-vindo! Use o e-mail da sua compra para entrar.</p>
+          <p className="text-sm text-gray-600 mb-6">Primeiro acesso? Sua senha são os números do seu CPF (sem pontos ou traços).</p>
         </div>
 
         <FormField
@@ -127,9 +129,6 @@ const LoginForm = () => {
           {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Entrar"}
         </Button>
 
-        <p className="text-sm text-gray-600 text-center mt-4">
-          Primeiro acesso após a compra? Sua senha são os 11 números do seu CPF.
-        </p>
         <div className="text-center mt-2">
           <Button variant="link" onClick={handleForgotPassword} disabled={isLoading} className="text-blue-600 hover:text-blue-800">
             Esqueci minha senha
