@@ -32,9 +32,11 @@ const ProductCard = ({ product }: ProductCardProps) => {
               </Button>
             </a>
           ) : (
-            <Button className="w-full bg-gray-400 text-white cursor-not-allowed" disabled>
-              Conteúdo Indisponível
-            </Button>
+            <Link to={`/produto/${product.id}`}>
+              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+                Acessar Conteúdo
+              </Button>
+            </Link>
           )}
         </div>
       </CardContent>
