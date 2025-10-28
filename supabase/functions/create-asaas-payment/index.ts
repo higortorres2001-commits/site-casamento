@@ -55,6 +55,8 @@ serve(async (req) => {
     }
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+    const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL'); // Get the base URL from environment variable
+
     if (!ASAAS_API_KEY) {
       await supabase.from('logs').insert({
         level: 'error',
@@ -63,6 +65,19 @@ serve(async (req) => {
         metadata: { requestBody }
       });
       return new Response(JSON.stringify({ error: 'ASAAS_API_KEY not set in Supabase secrets.' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!ASAAS_BASE_URL) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/api/v3 or your sandbox URL.',
+        metadata: { requestBody }
+      });
+      return new Response(JSON.stringify({ error: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/api/v3 or your sandbox URL.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -240,7 +255,12 @@ serve(async (req) => {
     });
 
     // 6. Make request to Asaas API to create payment
-    const asaasApiUrl = 'https://api.asaas.com/api/v3/payments';
+    const asaasPaymentsUrl = `${ASAAS_BASE_URL}/payments`;
+    const asaasTokenizeUrl = `${ASAAS_BASE_URL}/creditCard/tokenizeCreditCard`;
+
+    console.log('Asaas Payments URL:', asaasPaymentsUrl); // Log the constructed URL
+    console.log('Asaas Tokenize URL:', asaasTokenizeUrl); // Log the constructed URL
+
     const asaasHeaders = {
       'Content-Type': 'application/json',
       'access_token': ASAAS_API_KEY,
@@ -268,7 +288,7 @@ serve(async (req) => {
 
     if (paymentMethod === 'PIX') {
       asaasPayload.billingType = 'PIX';
-      const asaasResponse = await fetch(asaasApiUrl, { method: 'POST', headers: asaasHeaders, body: JSON.stringify(asaasPayload) });
+      const asaasResponse = await fetch(asaasPaymentsUrl, { method: 'POST', headers: asaasHeaders, body: JSON.stringify(asaasPayload) });
       if (!asaasResponse.ok) {
         const contentType = asaasResponse.headers.get('Content-Type');
         let errorData: any;
@@ -305,7 +325,6 @@ serve(async (req) => {
       }
 
       // Step A: Tokenize Credit Card (Backend-side)
-      const tokenizeUrl = 'https://api.asaas.com/api/v3/creditCard/tokenizeCreditCard';
       const tokenizePayload = {
         customer: {
           name: name,
@@ -322,7 +341,7 @@ serve(async (req) => {
         },
       };
 
-      const tokenizeResponse = await fetch(tokenizeUrl, {
+      const tokenizeResponse = await fetch(asaasTokenizeUrl, {
         method: 'POST',
         headers: asaasHeaders,
         body: JSON.stringify(tokenizePayload),
@@ -360,7 +379,7 @@ serve(async (req) => {
       asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional callback
       asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional return URL
 
-      const asaasPaymentResponse = await fetch(asaasApiUrl, {
+      const asaasPaymentResponse = await fetch(asaasPaymentsUrl, {
         method: 'POST',
         headers: asaasHeaders,
         body: JSON.stringify(asaasPayload),
