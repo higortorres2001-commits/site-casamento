@@ -242,6 +242,9 @@ serve(async (req) => {
     // Asaas requires CPF/CNPJ without formatting
     const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
 
+    // CRITICAL: Convert totalPrice from Reais to Centavos for Asaas API
+    const totalPriceInCents = Math.round(totalPrice * 100);
+
     const asaasPayload = {
       customer: {
         name: name,
@@ -249,7 +252,7 @@ serve(async (req) => {
         cpfCnpj: customerCpfCnpj,
       },
       billingType: 'PIX', // Defaulting to PIX, can be made dynamic if needed
-      value: totalPrice, // Use the potentially discounted total price
+      value: totalPriceInCents, // <-- AQUI! Use o valor em centavos
       description: `Order #${order.id} payment`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
     };
