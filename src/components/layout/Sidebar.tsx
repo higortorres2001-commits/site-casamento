@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut } from 'lucide-react';
+import { Package, Home, LogOut, Tag } from 'lucide-react'; // Import Tag icon
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -44,6 +44,10 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
         <Link to="/admin/products" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
           <Package className="h-4 w-4" />
           Produtos
+        </Link>
+        <Link to="/admin/cupons" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
+          <Tag className="h-4 w-4" /> {/* New icon for Coupons */}
+          Cupons
         </Link>
       </nav>
       <div className="mt-auto">
