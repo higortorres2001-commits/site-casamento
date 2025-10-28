@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom'; // Import useLocation
 
 interface SessionContextType {
   session: Session | null;
@@ -18,8 +18,20 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation(); // Use useLocation hook
 
   useEffect(() => {
+    const publicPaths = [
+      '/login',
+      '/checkout/', // Dynamic path, check with startsWith
+      '/confirmacao',
+      '/processando-pagamento',
+    ];
+
+    const isPublicPath = publicPaths.some(path => 
+      path.endsWith('/') ? location.pathname.startsWith(path) : location.pathname === path
+    );
+
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         setSession(currentSession);
@@ -27,7 +39,9 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         setIsLoading(false);
 
         if (event === 'SIGNED_OUT') {
-          navigate('/login');
+          if (!isPublicPath) { // Only redirect if not on a public path
+            navigate('/login');
+          }
         } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           if (currentSession && location.pathname === '/login') {
             navigate('/');
@@ -40,7 +54,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       setSession(initialSession);
       setUser(initialSession?.user || null);
       setIsLoading(false);
-      if (!initialSession && location.pathname !== '/login') {
+      // If no session and not on a public path, redirect to login
+      if (!initialSession && !isPublicPath) {
         navigate('/login');
       }
     });
@@ -48,7 +63,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, location.pathname]); // Add location.pathname to dependencies
 
   return (
     <SessionContext.Provider value={{ session, user, isLoading }}>
