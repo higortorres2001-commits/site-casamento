@@ -5,15 +5,25 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, ProductAsset } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
-import { Loader2, FileText, ArrowLeft } from "lucide-react"; // Import ArrowLeft icon
+import { Loader2, FileText, ArrowLeft, Eye } from "lucide-react"; // Import Eye icon for view
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 const ProductDetails = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
   const [product, setProduct] = useState<(Product & { assets?: ProductAsset[] }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPdfViewerOpen, setIsPdfViewerOpen] = useState(false);
+  const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
+  const [currentPdfName, setCurrentPdfName] = useState<string | null>(null);
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -65,6 +75,32 @@ const ProductDetails = () => {
     showSuccess(`Download de "${fileName}" iniciado!`);
   };
 
+  const handleViewPdf = async (storagePath: string, fileName: string) => {
+    const { data, error } = await supabase.storage
+      .from('product-assets')
+      .download(storagePath);
+
+    if (error) {
+      showError("Erro ao carregar PDF para visualização: " + error.message);
+      console.error("Error downloading PDF for view:", error);
+      return;
+    }
+
+    const url = URL.createObjectURL(data);
+    setCurrentPdfUrl(url);
+    setCurrentPdfName(fileName);
+    setIsPdfViewerOpen(true);
+  };
+
+  const handleClosePdfViewer = () => {
+    setIsPdfViewerOpen(false);
+    if (currentPdfUrl) {
+      URL.revokeObjectURL(currentPdfUrl); // Clean up the object URL
+      setCurrentPdfUrl(null);
+      setCurrentPdfName(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -112,18 +148,27 @@ const ProductDetails = () => {
               {product.assets.map((asset) => (
                 <div
                   key={asset.id}
-                  className="flex items-center justify-between p-4 border rounded-lg bg-gray-50"
+                  className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg bg-gray-50"
                 >
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-6 w-6 text-blue-500" /> {/* Ícone de PDF azul */}
+                  <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                    <FileText className="h-6 w-6 text-blue-500" />
                     <span className="text-gray-700 font-medium">{asset.file_name}</span>
                   </div>
-                  <Button
-                    className="bg-orange-500 hover:bg-orange-600 text-white"
-                    onClick={() => handleDownloadAsset(asset.storage_path, asset.file_name)}
-                  >
-                    Baixar
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="text-blue-500 hover:text-blue-700"
+                      onClick={() => handleViewPdf(asset.storage_path, asset.file_name)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" /> Visualizar
+                    </Button>
+                    <Button
+                      className="bg-orange-500 hover:bg-orange-600 text-white"
+                      onClick={() => handleDownloadAsset(asset.storage_path, asset.file_name)}
+                    >
+                      Baixar
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -132,6 +177,30 @@ const ProductDetails = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* PDF Viewer Dialog */}
+      <Dialog open={isPdfViewerOpen} onOpenChange={handleClosePdfViewer}>
+        <DialogContent className="sm:max-w-[800px] h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{currentPdfName || "Visualizador de PDF"}</DialogTitle>
+            <DialogDescription>
+              Visualizando o arquivo PDF.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 w-full">
+            {currentPdfUrl ? (
+              <iframe src={currentPdfUrl} className="w-full h-full border-none" title="PDF Viewer"></iframe>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Não foi possível carregar o PDF.
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end pt-4">
+            <Button onClick={handleClosePdfViewer}>Fechar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
