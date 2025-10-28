@@ -95,7 +95,7 @@ const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) =
                   className="focus:ring-orange-500 focus:border-orange-500"
                 />
               </FormControl>
-              <FormMessage />
+              <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
             </FormItem>
           )}
         />
