@@ -35,4 +35,6 @@ export type Profile = {
   access?: string[] | null;
   created_at?: string;
   updated_at?: string;
+  primeiro_acesso?: boolean | null;
+  has_changed_password?: boolean | null;
 };

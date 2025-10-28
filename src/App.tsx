@@ -12,8 +12,9 @@ import Checkout from "./pages/Checkout";
 import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
 import Confirmation from "./pages/Confirmation";
-import ProcessingPayment from "./pages/ProcessingPayment"; // Import the new ProcessingPayment page
-import Logs from "./pages/admin/Logs"; // Import the new Logs page
+import ProcessingPayment from "./pages/ProcessingPayment";
+import Logs from "./pages/admin/Logs";
+import UpdatePassword from "./pages/UpdatePassword"; // Import the new UpdatePassword page
 import Layout from "./components/layout/Layout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 
@@ -28,16 +29,17 @@ const App = () => (
         <SessionContextProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/primeira-senha" element={<UpdatePassword />} /> {/* New route for first-time password change */}
             <Route element={<Layout />}>
               <Route path="/" element={<Index />} />
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
-              <Route path="/admin/logs" element={<Logs />} /> {/* New route for Logs */}
+              <Route path="/admin/logs" element={<Logs />} />
               <Route path="/checkout/:productId" element={<Checkout />} />
               <Route path="/meus-produtos" element={<MyProducts />} />
               <Route path="/produto/:productId" element={<ProductDetails />} />
               <Route path="/confirmacao" element={<Confirmation />} />
-              <Route path="/processando-pagamento" element={<ProcessingPayment />} /> {/* New route */}
+              <Route path="/processando-pagamento" element={<ProcessingPayment />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             </Route>
             <Route path="*" element={<NotFound />} />

@@ -7,25 +7,28 @@ import { Product } from "@/types";
 import { showError } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
+import { useNavigate } from "react-router-dom"; // Import useNavigate
 
 const MyProducts = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate(); // Initialize useNavigate
 
   useEffect(() => {
     const fetchMyProducts = async () => {
       if (!user) {
         setIsLoading(false);
+        // SessionContextProvider already handles redirection to /login if not logged in
         return;
       }
 
       setIsLoading(true);
       try {
-        // 1. Fetch user profile to get the 'access' array
+        // 1. Fetch user profile to get 'access' array and 'has_changed_password'
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('access')
+          .select('access, has_changed_password')
           .eq('id', user.id)
           .single();
 
@@ -34,6 +37,14 @@ const MyProducts = () => {
           console.error("Error fetching profile:", profileError);
           setMyProducts([]);
           setIsLoading(false);
+          return;
+        }
+
+        // CRITICAL: Check if user has changed password
+        if (profile.has_changed_password === false) {
+          console.log("User has not changed password, redirecting to /primeira-senha");
+          navigate("/primeira-senha");
+          setIsLoading(false); // Stop loading state as we are redirecting
           return;
         }
 
@@ -69,7 +80,7 @@ const MyProducts = () => {
     if (!isSessionLoading) {
       fetchMyProducts();
     }
-  }, [user, isSessionLoading]);
+  }, [user, isSessionLoading, navigate]); // Add navigate to dependencies
 
   if (isLoading || isSessionLoading) {
     return (
@@ -87,7 +98,9 @@ const MyProducts = () => {
         <div className="text-center text-gray-600 text-lg mt-10">
           <p>Você ainda não possui nenhum produto em sua biblioteca.</p>
           <p>Explore nossos produtos para começar!</p>
-          {/* Optionally add a link to a products marketplace page */}
+          <a href="/" className="text-blue-500 hover:text-blue-700 underline mt-2 block">
+            Visite nossa loja
+          </a>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
