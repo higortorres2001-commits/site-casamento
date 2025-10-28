@@ -25,16 +25,16 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    const { name, email, cpf, whatsapp, productIds, coupon_code } = requestBody; // Receive whatsapp
+    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod } = requestBody; // Receive paymentMethod
 
-    if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
+    if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0 || !paymentMethod) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Missing name, email, cpf, whatsapp, or productIds in request body.',
+        message: 'Missing name, email, cpf, whatsapp, productIds, or paymentMethod in request body.',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'Missing name, email, cpf, whatsapp, or productIds in request body.' }), {
+      return new Response(JSON.stringify({ error: 'Missing name, email, cpf, whatsapp, productIds, or paymentMethod in request body.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -242,18 +242,42 @@ serve(async (req) => {
     // Asaas requires CPF/CNPJ without formatting
     const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
 
-    const asaasPayload = {
+    // CRITICAL: Convert totalPrice from Reais to Centavos for Asaas API
+    const totalPriceInCents = Math.round(totalPrice * 100);
+
+    let asaasPayload: any = {
       customer: {
         name: name,
         email: email,
         cpfCnpj: customerCpfCnpj,
-        phone: whatsapp, // Pass whatsapp as phone to Asaas
+        phone: whatsapp,
       },
-      billingType: 'PIX', // Defaulting to PIX, can be made dynamic if needed
-      value: totalPrice, // Agora enviando o valor em Reais diretamente
+      value: totalPrice, // Asaas expects value in BRL, not cents, for this endpoint
       description: `Order #${order.id} payment`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
     };
+
+    if (paymentMethod === 'PIX') {
+      asaasPayload.billingType = 'PIX';
+    } else if (paymentMethod === 'CREDIT_CARD') {
+      asaasPayload.billingType = 'CREDIT_CARD';
+      // For hosted checkout, Asaas might need these for redirection
+      asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
+      asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
+      // Asaas also requires a customer ID for credit card payments if not creating a new customer directly
+      // For simplicity, we'll rely on Asaas creating the customer if not found via cpfCnpj
+    } else {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment',
+        message: 'Invalid payment method provided.',
+        metadata: { paymentMethod, requestBody }
+      });
+      return new Response(JSON.stringify({ error: 'Invalid payment method provided.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const asaasResponse = await fetch(asaasApiUrl, {
       method: 'POST',
@@ -311,7 +335,7 @@ serve(async (req) => {
     });
 
     // Return Asaas response to the client
-    return new Response(JSON.stringify(asaasPaymentData), {
+    return new Response(JSON.stringify({ ...asaasPaymentData, orderId: order.id }), { // Include orderId in response
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

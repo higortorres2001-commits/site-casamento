@@ -17,6 +17,7 @@ import { formatWhatsapp } from "@/utils/whatsappValidation";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard"; // New import
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Import Tabs
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -27,19 +28,20 @@ const Checkout = () => {
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
   const [selectedOrderBumps, setSelectedOrderBumps] = useState<string[]>([]);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
-  const [originalTotalPrice, setOriginalTotalPrice] = useState(0); // New state for original total
+  const [originalTotalPrice, setOriginalTotalPrice] = useState(0);
   const [currentTotalPrice, setCurrentTotalPrice] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
   const [checkoutFormData, setCheckoutFormData] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX"); // New state for payment method
 
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [modalPixDetails, setModalPixDetails] = useState<any>(null);
   const [modalTotalPrice, setModalTotalPrice] = useState<number>(0);
   const [modalOrderId, setModalOrderId] = useState<string>("");
 
-  const checkoutFormRef = useRef<CheckoutFormRef>(null); // Ref for CheckoutForm
+  const checkoutFormRef = useRef<CheckoutFormRef>(null);
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -119,7 +121,7 @@ const Checkout = () => {
         calculatedOriginalTotal += bumpProduct.price;
       }
     });
-    setOriginalTotalPrice(calculatedOriginalTotal); // Set original total
+    setOriginalTotalPrice(calculatedOriginalTotal);
 
     let total = calculatedOriginalTotal;
     if (appliedCoupon) {
@@ -170,18 +172,27 @@ const Checkout = () => {
           whatsapp: cleanedWhatsapp,
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
+          paymentMethod: paymentMethod, // Pass the selected payment method
         },
       });
 
       if (error) {
         showError("Erro ao criar pagamento: " + error.message);
         console.error("Edge Function error:", error);
-      } else if (data && data.pix && data.id) {
-        showSuccess("Pagamento PIX criado com sucesso!");
-        setModalPixDetails(data.pix);
-        setModalTotalPrice(currentTotalPrice);
-        setModalOrderId(data.id);
-        setIsPixModalOpen(true);
+      } else if (data) {
+        if (paymentMethod === "PIX" && data.pix && data.orderId) {
+          showSuccess("Pagamento PIX criado com sucesso!");
+          setModalPixDetails(data.pix);
+          setModalTotalPrice(currentTotalPrice);
+          setModalOrderId(data.orderId);
+          setIsPixModalOpen(true);
+        } else if (paymentMethod === "CREDIT_CARD" && data.checkoutUrl) {
+          showSuccess("Redirecionando para o pagamento com cartão de crédito...");
+          window.location.href = data.checkoutUrl; // Redirect to Asaas hosted checkout
+        } else {
+          showError("Erro desconhecido ao processar pagamento.");
+          console.error("Unexpected response from Edge Function:", data);
+        }
       } else {
         showError("Erro desconhecido ao processar pagamento.");
         console.error("Unexpected response from Edge Function:", data);
@@ -216,9 +227,9 @@ const Checkout = () => {
     <OrderSummaryAccordion
       mainProduct={mainProduct}
       selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-      originalTotalPrice={originalTotalPrice} // Pass original total
+      originalTotalPrice={originalTotalPrice}
       currentTotalPrice={currentTotalPrice}
-      appliedCoupon={appliedCoupon} // Pass applied coupon
+      appliedCoupon={appliedCoupon}
     />
   );
 
@@ -239,7 +250,6 @@ const Checkout = () => {
   const couponInputSection = (
     <CouponInputCard
       onCouponApplied={handleCouponApplied}
-      // currentTotalPrice={currentTotalPrice} // Removed redundant display
     />
   );
 
@@ -260,6 +270,23 @@ const Checkout = () => {
 
             {/* Coupon Input Section */}
             {couponInputSection}
+
+            {/* Payment Method Selection */}
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+              <h2 className="text-2xl font-bold mb-4 text-gray-800">Selecione o Método de Pagamento:</h2>
+              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="PIX">PIX</TabsTrigger>
+                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
+                </TabsList>
+                <TabsContent value="PIX" className="mt-4 text-gray-600">
+                  Pague rapidamente com PIX. O acesso é liberado após a confirmação.
+                </TabsContent>
+                <TabsContent value="CREDIT_CARD" className="mt-4 text-gray-600">
+                  Pague com seu cartão de crédito. Você será redirecionado para uma página segura da Asaas.
+                </TabsContent>
+              </Tabs>
+            </div>
 
             {/* Checkout Form Section */}
             <div className="bg-white p-6 rounded-xl shadow-lg">
