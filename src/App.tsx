@@ -15,9 +15,10 @@ import Confirmation from "./pages/Confirmation";
 import ProcessingPayment from "./pages/ProcessingPayment";
 import Logs from "./pages/admin/Logs";
 import UpdatePassword from "./pages/UpdatePassword";
-import AdminLayout from "./components/layout/AdminLayout"; // Import AdminLayout
-import PublicLayout from "./components/layout/PublicLayout"; // Import PublicLayout
+import AdminLayout from "./components/layout/AdminLayout";
+import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
+import WhatsAppButton from "./components/WhatsAppButton"; // Importe o novo componente
 
 const queryClient = new QueryClient();
 
@@ -53,6 +54,7 @@ const App = () => (
             {/* Rota catch-all */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <WhatsAppButton /> {/* Adicione o botão do WhatsApp aqui */}
         </SessionContextProvider>
       </BrowserRouter>
     </TooltipProvider>
