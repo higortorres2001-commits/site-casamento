@@ -44,7 +44,7 @@ const PixPaymentModal = ({
   if (!pixDetails) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[425px] text-center">
+        <DialogContent className="sm:max-w-[425px] text-center max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-gray-800">Erro no Pagamento</DialogTitle>
             <DialogDescription className="text-lg text-gray-600">
@@ -61,7 +61,7 @@ const PixPaymentModal = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md p-6 text-center">
+      <DialogContent className="sm:max-w-md p-6 text-center max-h-[90vh] overflow-y-auto"> {/* Adicionado max-h-[90vh] e overflow-y-auto */}
         <DialogHeader className="pb-4">
           <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
           <DialogTitle className="text-3xl font-bold text-gray-800">
