@@ -265,7 +265,14 @@ serve(async (req) => {
     });
 
     if (!asaasResponse.ok) {
-      const errorData = await asaasResponse.json();
+      const contentType = asaasResponse.headers.get('Content-Type');
+      let errorData: any;
+      if (contentType && contentType.includes('application/json')) {
+        errorData = await asaasResponse.json();
+      } else {
+        errorData = await asaasResponse.text(); // Read as text if not JSON
+      }
+      
       console.error('Asaas API error:', errorData);
       await supabase.from('logs').insert({
         level: 'error',
