@@ -44,9 +44,6 @@ const Checkout = () => {
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null); // Ref for credit card form
 
-  // REMOVED: ASAAS_PUBLISHABLE_KEY is no longer needed in the frontend.
-  // All Asaas API calls are now handled by the Edge Function.
-
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
       showError("ID do produto não fornecido.");
@@ -325,10 +322,14 @@ const Checkout = () => {
                   <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
                 </TabsList>
                 <TabsContent value="PIX" className="mt-4 text-gray-600">
-                  Pague rapidamente com PIX. O acesso é liberado após a confirmação.
+                  Pague rapidamente com PIX. O QR Code será exibido após você preencher seus dados e finalizar a compra.
                 </TabsContent>
-                <TabsContent value="CREDIT_CARD" className="mt-4 text-gray-600">
-                  Preencha os dados do seu cartão para finalizar a compra.
+                <TabsContent value="CREDIT_CARD" className="mt-4 space-y-4"> {/* Added space-y-4 for spacing */}
+                  <p className="text-gray-600">Preencha os dados do seu cartão para finalizar a compra.</p>
+                  <CreditCardForm
+                    ref={creditCardFormRef}
+                    isLoading={isSubmitting}
+                  />
                 </TabsContent>
               </Tabs>
             </div>
@@ -343,17 +344,6 @@ const Checkout = () => {
                 initialData={userProfile || undefined}
               />
             </div>
-
-            {/* Credit Card Form Section (Conditional) */}
-            {paymentMethod === "CREDIT_CARD" && (
-              <div className="bg-white p-6 rounded-xl shadow-lg">
-                <h2 className="text-2xl font-bold mb-4 text-gray-800">Dados do Cartão de Crédito:</h2>
-                <CreditCardForm
-                  ref={creditCardFormRef}
-                  isLoading={isSubmitting}
-                />
-              </div>
-            )}
           </div>
           {/* Coluna Direita: Resumo do Pedido */}
           <div className="space-y-6">
