@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Product, Coupon } from "@/types";
+import { Product, Coupon, Profile } from "@/types"; // Import Profile type
 import { useSession } from "@/components/SessionContextProvider";
 import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
@@ -13,7 +13,8 @@ import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
 import CheckoutForm from "@/components/checkout/CheckoutForm";
 import { formatCPF } from "@/utils/cpfValidation";
-import PixPaymentModal from "@/components/checkout/PixPaymentModal"; // Import the new modal component
+import { formatWhatsapp } from "@/utils/whatsappValidation"; // Import formatWhatsapp
+import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -28,7 +29,7 @@ const Checkout = () => {
   const [currentTotalPrice, setCurrentTotalPrice] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userProfile, setUserProfile] = useState<{ name?: string; cpf?: string; email?: string; } | null>(null);
+  const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null); // Use Partial<Profile>
 
   // State for the PIX payment modal
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
@@ -78,19 +79,23 @@ const Checkout = () => {
     if (user) {
       const { data, error } = await supabase
         .from('profiles')
-        .select('name, cpf, email')
+        .select('name, cpf, email, whatsapp') // Select whatsapp
         .eq('id', user.id)
         .single();
 
       if (error) {
         console.error("Error fetching user profile:", error);
+        setUserProfile(null); // Clear profile if error
       } else if (data) {
         setUserProfile({
           name: data.name || '',
           cpf: data.cpf ? formatCPF(data.cpf) : '',
           email: data.email || user.email || '',
+          whatsapp: data.whatsapp ? formatWhatsapp(data.whatsapp) : '', // Format whatsapp
         });
       }
+    } else {
+      setUserProfile(null); // Ensure profile is null if no user is logged in
     }
   }, [user]);
 
@@ -136,7 +141,7 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
-  const handleCheckoutSubmit = async (formData: { name: string; cpf: string; email: string }) => {
+  const handleCheckoutSubmit = async (formData: { name: string; cpf: string; email: string; whatsapp: string }) => {
     if (!mainProduct) {
       showError("Nenhum produto principal selecionado.");
       return;
@@ -146,6 +151,7 @@ const Checkout = () => {
 
     const productIdsToPurchase = [mainProduct.id, ...selectedOrderBumps];
     const cleanedCpf = formData.cpf.replace(/[^\d]+/g, "");
+    const cleanedWhatsapp = formData.whatsapp.replace(/[^\d]+/g, ""); // Clean WhatsApp
 
     try {
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
@@ -153,6 +159,7 @@ const Checkout = () => {
           name: formData.name,
           email: formData.email,
           cpf: cleanedCpf,
+          whatsapp: cleanedWhatsapp, // Pass whatsapp to edge function
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
         },

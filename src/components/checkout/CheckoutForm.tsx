@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
 import { isValidCPF, formatCPF } from "@/utils/cpfValidation"; // Import CPF validation
+import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation"; // Import WhatsApp validation
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -26,15 +27,21 @@ const formSchema = z.object({
       message: "CPF inválido",
     }),
   email: z.string().email("Email inválido").min(1, "O email é obrigatório"),
+  whatsapp: z.string()
+    .min(1, "O WhatsApp é obrigatório")
+    .refine((phone) => isValidWhatsapp(phone.replace(/\D/g, "")), {
+      message: "Número de WhatsApp inválido",
+    }),
 });
 
 interface CheckoutFormProps {
   onSubmit: (data: z.infer<typeof formSchema>) => void;
   isLoading: boolean;
   initialData?: {
-    name?: string;
-    cpf?: string;
-    email?: string;
+    name?: string | null;
+    cpf?: string | null;
+    email?: string | null;
+    whatsapp?: string | null;
   };
 }
 
@@ -45,6 +52,7 @@ const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) =
       name: "",
       cpf: "",
       email: "",
+      whatsapp: "",
     },
   });
 
@@ -110,6 +118,28 @@ const CheckoutForm = ({ onSubmit, isLoading, initialData }: CheckoutFormProps) =
                   type="email"
                   placeholder="seu@email.com"
                   {...field}
+                  className="focus:ring-orange-500 focus:border-orange-500"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="whatsapp"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>WhatsApp</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="(XX) XXXXX-XXXX"
+                  {...field}
+                  onChange={(e) => {
+                    const formatted = formatWhatsapp(e.target.value);
+                    field.onChange(formatted);
+                  }}
+                  maxLength={15} // Max length for formatted WhatsApp (e.g., (99) 99999-9999)
                   className="focus:ring-orange-500 focus:border-orange-500"
                 />
               </FormControl>

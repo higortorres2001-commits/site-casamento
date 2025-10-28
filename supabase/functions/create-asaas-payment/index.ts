@@ -25,16 +25,16 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    const { name, email, cpf, productIds, coupon_code } = requestBody;
+    const { name, email, cpf, whatsapp, productIds, coupon_code } = requestBody; // Receive whatsapp
 
-    if (!name || !email || !cpf || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
+    if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Missing name, email, cpf, or productIds in request body.',
+        message: 'Missing name, email, cpf, whatsapp, or productIds in request body.',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'Missing name, email, cpf, or productIds in request body.' }), {
+      return new Response(JSON.stringify({ error: 'Missing name, email, cpf, whatsapp, or productIds in request body.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -86,10 +86,10 @@ serve(async (req) => {
         metadata: { email, userId }
       });
 
-      // Update profile if necessary (e.g., name or cpf might be new/updated)
+      // Update profile if necessary (e.g., name, cpf, email, whatsapp might be new/updated)
       const { error: updateProfileError } = await supabase
         .from('profiles')
-        .update({ name, cpf, email })
+        .update({ name, cpf, email, whatsapp }) // Update whatsapp
         .eq('id', userId);
 
       if (updateProfileError) {
@@ -109,7 +109,7 @@ serve(async (req) => {
         email,
         password: cpf, // CPF as password
         email_confirm: true, // Automatically confirm email
-        user_metadata: { name, cpf }, // Store name and cpf in user_metadata
+        user_metadata: { name, cpf, whatsapp }, // Store name, cpf, and whatsapp in user_metadata
       });
 
       if (createUserError || !newUser?.user) {
@@ -250,6 +250,7 @@ serve(async (req) => {
         name: name,
         email: email,
         cpfCnpj: customerCpfCnpj,
+        phone: whatsapp, // Pass whatsapp as phone to Asaas
       },
       billingType: 'PIX', // Defaulting to PIX, can be made dynamic if needed
       value: totalPriceInCents, // <-- AQUI! Use o valor em centavos

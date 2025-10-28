@@ -25,3 +25,14 @@ export type ProductAsset = {
   storage_path: string;
   created_at: string;
 };
+
+export type Profile = {
+  id: string;
+  name?: string | null;
+  cpf?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  access?: string[] | null;
+  created_at?: string;
+  updated_at?: string;
+};
