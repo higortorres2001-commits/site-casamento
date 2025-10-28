@@ -1,10 +1,8 @@
 "use client";
 
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MadeWithDyad } from '@/components/made-with-dyad';
+import LoginForm from '@/components/LoginForm'; // Import the new custom login form
 
 const Login = () => {
   return (
@@ -15,23 +13,7 @@ const Login = () => {
           <CardDescription>Faça login para acessar sua conta.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Auth
-            supabaseClient={supabase}
-            providers={[]}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: 'hsl(var(--primary))',
-                    brandAccent: 'hsl(var(--primary-foreground))',
-                  },
-                },
-              },
-            }}
-            theme="light"
-            redirectTo={window.location.origin}
-          />
+          <LoginForm /> {/* Use the new custom login form here */}
         </CardContent>
       </Card>
       <MadeWithDyad />
