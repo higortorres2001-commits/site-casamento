@@ -11,13 +11,14 @@ import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import OrderSummaryAccordion from "@/components/checkout/OrderSummaryAccordion";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
-import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm"; // Import CheckoutFormRef
+import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
+import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditCardForm"; // Import CreditCardForm and its ref
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
-import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard"; // New import
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Import Tabs
+import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -33,8 +34,7 @@ const Checkout = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
-  const [checkoutFormData, setCheckoutFormData] = useState<any>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX"); // New state for payment method
+  const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX");
 
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [modalPixDetails, setModalPixDetails] = useState<any>(null);
@@ -42,6 +42,11 @@ const Checkout = () => {
   const [modalOrderId, setModalOrderId] = useState<string>("");
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
+  const creditCardFormRef = useRef<CreditCardFormRef>(null); // Ref for credit card form
+
+  // IMPORTANT: Replace with your actual Asaas Publishable API Key
+  // This key is safe to be in the frontend. Do NOT use your ASAAS_API_KEY (service role key) here.
+  const ASAAS_PUBLISHABLE_KEY = import.meta.env.VITE_ASAAS_PUBLISHABLE_KEY || "YOUR_ASAAS_PUBLISHABLE_KEY_HERE";
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -146,12 +151,93 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
-  const handleFormSubmit = (data: { name: string; cpf: string; email: string; whatsapp: string }) => {
-    setCheckoutFormData(data);
-    handleProcessPayment(data);
+  const handleFinalizePurchase = async () => {
+    if (!checkoutFormRef.current) {
+      showError("Erro: Formulário de checkout não disponível.");
+      return;
+    }
+
+    const isCheckoutFormValid = await checkoutFormRef.current.submitForm();
+    if (!isCheckoutFormValid) {
+      showError("Por favor, preencha todos os dados do cliente corretamente.");
+      return;
+    }
+
+    const customerData = checkoutFormRef.current.getValues();
+
+    if (paymentMethod === "PIX") {
+      handleProcessPayment(customerData, null); // No credit card token for PIX
+    } else if (paymentMethod === "CREDIT_CARD") {
+      if (!creditCardFormRef.current) {
+        showError("Erro: Formulário de cartão de crédito não disponível.");
+        return;
+      }
+      const isCreditCardFormValid = await creditCardFormRef.current.submitForm();
+      if (!isCreditCardFormValid) {
+        showError("Por favor, preencha todos os dados do cartão corretamente.");
+        return;
+      }
+      const cardData = creditCardFormRef.current.getValues();
+      await handleCreditCardTokenization(customerData, cardData);
+    }
   };
 
-  const handleProcessPayment = async (formData: { name: string; cpf: string; email: string; whatsapp: string }) => {
+  const handleCreditCardTokenization = async (customerData: any, cardData: any) => {
+    setIsSubmitting(true);
+    try {
+      const asaasTokenizeUrl = 'https://api.asaas.com/api/v3/creditCard/tokenize';
+      const asaasTokenizeHeaders = {
+        'Content-Type': 'application/json',
+        'access_token': ASAAS_PUBLISHABLE_KEY, // Use the publishable key here
+      };
+
+      const tokenizePayload = {
+        customer: {
+          name: customerData.name,
+          email: customerData.email,
+          cpfCnpj: customerData.cpf.replace(/[^\d]+/g, ''),
+          phone: customerData.whatsapp.replace(/[^\d]+/g, ''),
+        },
+        creditCard: {
+          holderName: cardData.holderName,
+          number: cardData.cardNumber.replace(/\s/g, ''), // Remove spaces
+          expiryMonth: cardData.expiryMonth,
+          expiryYear: cardData.expiryYear,
+          ccv: cardData.ccv,
+        },
+      };
+
+      const tokenizeResponse = await fetch(asaasTokenizeUrl, {
+        method: 'POST',
+        headers: asaasTokenizeHeaders,
+        body: JSON.stringify(tokenizePayload),
+      });
+
+      if (!tokenizeResponse.ok) {
+        const errorData = await tokenizeResponse.json();
+        showError("Erro ao tokenizar cartão: " + (errorData.errors?.[0]?.description || "Verifique os dados do cartão."));
+        console.error("Asaas Tokenization Error:", errorData);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const tokenizeData = await tokenizeResponse.json();
+      const creditCardToken = tokenizeData.creditCardToken;
+      showSuccess("Cartão tokenizado com sucesso! Finalizando pagamento...");
+      await handleProcessPayment(customerData, creditCardToken);
+
+    } catch (error: any) {
+      showError("Erro inesperado na tokenização do cartão: " + error.message);
+      console.error("Tokenization error:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleProcessPayment = async (
+    customerData: { name: string; cpf: string; email: string; whatsapp: string },
+    creditCardToken: string | null
+  ) => {
     if (!mainProduct) {
       showError("Nenhum produto principal selecionado.");
       return;
@@ -160,19 +246,20 @@ const Checkout = () => {
     setIsSubmitting(true);
 
     const productIdsToPurchase = [mainProduct.id, ...selectedOrderBumps];
-    const cleanedCpf = formData.cpf.replace(/[^\d]+/g, "");
-    const cleanedWhatsapp = formData.whatsapp.replace(/[^\d]+/g, "");
+    const cleanedCpf = customerData.cpf.replace(/[^\d]+/g, "");
+    const cleanedWhatsapp = customerData.whatsapp.replace(/[^\d]+/g, "");
 
     try {
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: {
-          name: formData.name,
-          email: formData.email,
+          name: customerData.name,
+          email: customerData.email,
           cpf: cleanedCpf,
           whatsapp: cleanedWhatsapp,
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
-          paymentMethod: paymentMethod, // Pass the selected payment method
+          paymentMethod: paymentMethod,
+          creditCardToken: creditCardToken, // Pass the token if available
         },
       });
 
@@ -186,9 +273,14 @@ const Checkout = () => {
           setModalTotalPrice(currentTotalPrice);
           setModalOrderId(data.orderId);
           setIsPixModalOpen(true);
-        } else if (paymentMethod === "CREDIT_CARD" && data.checkoutUrl) {
-          showSuccess("Redirecionando para o pagamento com cartão de crédito...");
-          window.location.href = data.checkoutUrl; // Redirect to Asaas hosted checkout
+        } else if (paymentMethod === "CREDIT_CARD" && data.status === "CONFIRMED") {
+          showSuccess("Pagamento com cartão de crédito aprovado!");
+          navigate("/confirmacao"); // Redirect to confirmation page
+        } else if (paymentMethod === "CREDIT_CARD" && data.status === "PENDING") {
+          showSuccess("Pagamento com cartão de crédito pendente. Verifique seu e-mail.");
+          navigate("/processando-pagamento"); // Or a specific pending page
+        } else if (paymentMethod === "CREDIT_CARD" && data.status === "REFUSED") {
+          showError("Pagamento com cartão de crédito recusado. Tente novamente ou use outro cartão.");
         } else {
           showError("Erro desconhecido ao processar pagamento.");
           console.error("Unexpected response from Edge Function:", data);
@@ -283,7 +375,7 @@ const Checkout = () => {
                   Pague rapidamente com PIX. O acesso é liberado após a confirmação.
                 </TabsContent>
                 <TabsContent value="CREDIT_CARD" className="mt-4 text-gray-600">
-                  Pague com seu cartão de crédito. Você será redirecionado para uma página segura da Asaas.
+                  Preencha os dados do seu cartão para finalizar a compra.
                 </TabsContent>
               </Tabs>
             </div>
@@ -293,11 +385,22 @@ const Checkout = () => {
               <h2 className="text-2xl font-bold mb-4 text-gray-800">Estamos quase lá! Complete seus dados:</h2>
               <CheckoutForm
                 ref={checkoutFormRef}
-                onSubmit={handleFormSubmit}
+                onSubmit={() => { /* Handled by handleFinalizePurchase */ }}
                 isLoading={isSubmitting}
                 initialData={userProfile || undefined}
               />
             </div>
+
+            {/* Credit Card Form Section (Conditional) */}
+            {paymentMethod === "CREDIT_CARD" && (
+              <div className="bg-white p-6 rounded-xl shadow-lg">
+                <h2 className="text-2xl font-bold mb-4 text-gray-800">Dados do Cartão de Crédito:</h2>
+                <CreditCardForm
+                  ref={creditCardFormRef}
+                  isLoading={isSubmitting}
+                />
+              </div>
+            )}
           </div>
           {/* Coluna Direita: Resumo do Pedido */}
           <div className="space-y-6">
@@ -309,9 +412,7 @@ const Checkout = () => {
       <FixedBottomBar
         totalPrice={currentTotalPrice}
         isSubmitting={isSubmitting}
-        onSubmit={() => {
-          checkoutFormRef.current?.submitForm();
-        }}
+        onSubmit={handleFinalizePurchase} // Call the new unified handler
       />
 
       <PixPaymentModal

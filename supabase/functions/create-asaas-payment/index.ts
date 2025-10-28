@@ -26,7 +26,7 @@ serve(async (req) => {
   try {
     requestBody = await req.json();
     console.log('create-asaas-payment: Received request body:', requestBody); // Log para depuração
-    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod } = requestBody;
+    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCardToken } = requestBody; // Added creditCardToken
 
     if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
@@ -252,11 +252,8 @@ serve(async (req) => {
     // Asaas requires CPF/CNPJ without formatting
     const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
 
-    // CRITICAL: Asaas expects value in BRL (decimal), not cents, for this endpoint.
-    // However, if the user is reporting R$12.00 -> R$1200.00, it implies Asaas is interpreting BRL as cents.
-    // Let's try sending the value as a fixed 2-decimal string to ensure precision.
-    // If the problem persists, we might need to explicitly send in cents (totalPrice * 100).
-    const formattedTotalPrice = totalPrice.toFixed(2); // Ensure 2 decimal places
+    // Ensure total price is formatted to 2 decimal places for Asaas API
+    const formattedTotalPrice = totalPrice.toFixed(2);
 
     let asaasPayload: any = {
       customer: {
@@ -265,7 +262,7 @@ serve(async (req) => {
         cpfCnpj: customerCpfCnpj,
         phone: whatsapp,
       },
-      value: parseFloat(formattedTotalPrice), // Send as float with 2 decimal places
+      value: parseFloat(formattedTotalPrice), // Asaas expects value in BRL (decimal)
       description: `Order #${order.id} payment`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
     };
@@ -273,9 +270,24 @@ serve(async (req) => {
     if (paymentMethod === 'PIX') {
       asaasPayload.billingType = 'PIX';
     } else if (paymentMethod === 'CREDIT_CARD') {
+      if (!creditCardToken) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'creditCardToken is missing for CREDIT_CARD payment method.',
+          metadata: { requestBody }
+        });
+        return new Response(JSON.stringify({ error: 'creditCardToken is missing for CREDIT_CARD payment method.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       asaasPayload.billingType = 'CREDIT_CARD';
+      asaasPayload.creditCardToken = creditCardToken;
+      // Asaas will process the payment directly, no hosted checkout URL needed for this flow
+      // We can optionally add callbackUrl/returnUrl if Asaas needs them for status updates
       asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
-      asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`;
+      asaasPayload.remoteIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1'; // Get client IP
     } else {
       await supabase.from('logs').insert({
         level: 'error',
