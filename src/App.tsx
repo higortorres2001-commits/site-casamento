@@ -11,7 +11,7 @@ import Coupons from "./pages/admin/Coupons";
 import Checkout from "./pages/Checkout";
 import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
-import PaymentSuccess from "./pages/PaymentSuccess"; // Import the new PaymentSuccess page
+import Confirmation from "./pages/Confirmation"; // Import the new Confirmation page
 import Layout from "./components/layout/Layout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 
@@ -33,7 +33,7 @@ const App = () => (
               <Route path="/checkout/:productId" element={<Checkout />} />
               <Route path="/meus-produtos" element={<MyProducts />} />
               <Route path="/produto/:productId" element={<ProductDetails />} />
-              <Route path="/payment-success/:orderId" element={<PaymentSuccess />} /> {/* New route for PaymentSuccess */}
+              <Route path="/confirmacao" element={<Confirmation />} /> {/* New route for Confirmation */}
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             </Route>
             <Route path="*" element={<NotFound />} />

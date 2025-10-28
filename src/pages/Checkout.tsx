@@ -12,7 +12,8 @@ import OrderSummaryCard from "@/components/checkout/OrderSummaryCard";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
 import CheckoutForm from "@/components/checkout/CheckoutForm";
-import { formatCPF } from "@/utils/cpfValidation"; // Import formatCPF for initialData
+import { formatCPF } from "@/utils/cpfValidation";
+import PixPaymentModal from "@/components/checkout/PixPaymentModal"; // Import the new modal component
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -28,6 +29,12 @@ const Checkout = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userProfile, setUserProfile] = useState<{ name?: string; cpf?: string; email?: string; } | null>(null);
+
+  // State for the PIX payment modal
+  const [isPixModalOpen, setIsPixModalOpen] = useState(false);
+  const [modalPixDetails, setModalPixDetails] = useState<any>(null);
+  const [modalTotalPrice, setModalTotalPrice] = useState<number>(0);
+  const [modalOrderId, setModalOrderId] = useState<string>("");
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -80,7 +87,7 @@ const Checkout = () => {
       } else if (data) {
         setUserProfile({
           name: data.name || '',
-          cpf: data.cpf ? formatCPF(data.cpf) : '', // Format CPF for display
+          cpf: data.cpf ? formatCPF(data.cpf) : '',
           email: data.email || user.email || '',
         });
       }
@@ -138,10 +145,9 @@ const Checkout = () => {
     setIsSubmitting(true);
 
     const productIdsToPurchase = [mainProduct.id, ...selectedOrderBumps];
-    const cleanedCpf = formData.cpf.replace(/[^\d]+/g, ""); // Clean CPF for backend
+    const cleanedCpf = formData.cpf.replace(/[^\d]+/g, "");
 
     try {
-      // Invoke the Edge Function to create payment and handle user creation/lookup
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: {
           name: formData.name,
@@ -155,10 +161,12 @@ const Checkout = () => {
       if (error) {
         showError("Erro ao criar pagamento: " + error.message);
         console.error("Edge Function error:", error);
-      } else if (data && data.pix) {
+      } else if (data && data.pix && data.id) {
         showSuccess("Pagamento PIX criado com sucesso!");
-        // Redirect to PIX payment details or show QR code
-        navigate(`/payment-success/${data.id}`, { state: { pix: data.pix, total: currentTotalPrice } });
+        setModalPixDetails(data.pix);
+        setModalTotalPrice(currentTotalPrice);
+        setModalOrderId(data.id);
+        setIsPixModalOpen(true); // Open the modal
       } else {
         showError("Erro desconhecido ao processar pagamento.");
         console.error("Unexpected response from Edge Function:", data);
@@ -236,6 +244,15 @@ const Checkout = () => {
           </div>
         </div>
       )}
+
+      {/* PIX Payment Modal */}
+      <PixPaymentModal
+        isOpen={isPixModalOpen}
+        onClose={() => setIsPixModalOpen(false)}
+        orderId={modalOrderId}
+        pixDetails={modalPixDetails}
+        totalPrice={modalTotalPrice}
+      />
     </div>
   );
 };
