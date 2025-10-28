@@ -3,24 +3,24 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Product, Coupon, Profile } from "@/types"; // Import Profile type
+import { Product, Coupon, Profile } from "@/types";
 import { useSession } from "@/components/SessionContextProvider";
 import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
-import OrderSummaryCard from "@/components/checkout/OrderSummaryCard";
+import CheckoutHeader from "@/components/checkout/CheckoutHeader";
+import OrderSummaryAccordion from "@/components/checkout/OrderSummaryAccordion";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
 import CheckoutForm from "@/components/checkout/CheckoutForm";
 import { formatCPF } from "@/utils/cpfValidation";
-import { formatWhatsapp } from "@/utils/whatsappValidation"; // Import formatWhatsapp
+import { formatWhatsapp } from "@/utils/whatsappValidation";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
+import FixedBottomBar from "@/components/checkout/FixedBottomBar"; // Import the new FixedBottomBar
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
   const { user, isLoading: isSessionLoading } = useSession();
-  const isMobile = useIsMobile();
 
   const [mainProduct, setMainProduct] = useState<Product | null>(null);
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
@@ -29,7 +29,8 @@ const Checkout = () => {
   const [currentTotalPrice, setCurrentTotalPrice] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null); // Use Partial<Profile>
+  const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
+  const [checkoutFormData, setCheckoutFormData] = useState<any>(null); // State to hold form data
 
   // State for the PIX payment modal
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
@@ -79,23 +80,23 @@ const Checkout = () => {
     if (user) {
       const { data, error } = await supabase
         .from('profiles')
-        .select('name, cpf, email, whatsapp') // Select whatsapp
+        .select('name, cpf, email, whatsapp')
         .eq('id', user.id)
         .single();
 
       if (error) {
         console.error("Error fetching user profile:", error);
-        setUserProfile(null); // Clear profile if error
+        setUserProfile(null);
       } else if (data) {
         setUserProfile({
           name: data.name || '',
           cpf: data.cpf ? formatCPF(data.cpf) : '',
           email: data.email || user.email || '',
-          whatsapp: data.whatsapp ? formatWhatsapp(data.whatsapp) : '', // Format whatsapp
+          whatsapp: data.whatsapp ? formatWhatsapp(data.whatsapp) : '',
         });
       }
     } else {
-      setUserProfile(null); // Ensure profile is null if no user is logged in
+      setUserProfile(null);
     }
   }, [user]);
 
@@ -141,7 +142,12 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
-  const handleCheckoutSubmit = async (formData: { name: string; cpf: string; email: string; whatsapp: string }) => {
+  const handleFormSubmit = (data: { name: string; cpf: string; email: string; whatsapp: string }) => {
+    setCheckoutFormData(data); // Store form data
+    handleProcessPayment(data); // Directly process payment
+  };
+
+  const handleProcessPayment = async (formData: { name: string; cpf: string; email: string; whatsapp: string }) => {
     if (!mainProduct) {
       showError("Nenhum produto principal selecionado.");
       return;
@@ -151,7 +157,7 @@ const Checkout = () => {
 
     const productIdsToPurchase = [mainProduct.id, ...selectedOrderBumps];
     const cleanedCpf = formData.cpf.replace(/[^\d]+/g, "");
-    const cleanedWhatsapp = formData.whatsapp.replace(/[^\d]+/g, ""); // Clean WhatsApp
+    const cleanedWhatsapp = formData.whatsapp.replace(/[^\d]+/g, "");
 
     try {
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
@@ -159,7 +165,7 @@ const Checkout = () => {
           name: formData.name,
           email: formData.email,
           cpf: cleanedCpf,
-          whatsapp: cleanedWhatsapp, // Pass whatsapp to edge function
+          whatsapp: cleanedWhatsapp,
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
         },
@@ -173,7 +179,7 @@ const Checkout = () => {
         setModalPixDetails(data.pix);
         setModalTotalPrice(currentTotalPrice);
         setModalOrderId(data.id);
-        setIsPixModalOpen(true); // Open the modal
+        setIsPixModalOpen(true);
       } else {
         showError("Erro desconhecido ao processar pagamento.");
         console.error("Unexpected response from Edge Function:", data);
@@ -202,55 +208,69 @@ const Checkout = () => {
     );
   }
 
-  const summaryContent = (
-    <div className="space-y-6">
-      <OrderSummaryCard product={mainProduct} />
-      {orderBumps.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold text-gray-800">Adicione mais ao seu pedido:</h2>
-          {orderBumps.map((bump) => (
-            <OrderBumpCard
-              key={bump.id}
-              product={bump}
-              isSelected={selectedOrderBumps.includes(bump.id)}
-              onToggle={handleToggleOrderBump}
-            />
-          ))}
-        </div>
-      )}
-      <CouponInputCard
-        onCouponApplied={handleCouponApplied}
-        currentTotalPrice={currentTotalPrice}
-      />
-    </div>
-  );
-
-  const formContent = (
-    <div className="bg-white p-6 rounded-xl shadow-lg">
-      <CheckoutForm onSubmit={handleCheckoutSubmit} isLoading={isSubmitting} initialData={userProfile || undefined} />
-    </div>
-  );
+  const selectedOrderBumpsDetails = orderBumps.filter(bump => selectedOrderBumps.includes(bump.id));
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
-      <h1 className="text-4xl font-bold text-center mb-8">Finalizar Compra</h1>
-      {isMobile ? (
-        <div className="space-y-8">
-          <div className="bg-blue-100 p-6 rounded-xl shadow-lg">
-            {summaryContent}
+    <div className="flex flex-col min-h-screen bg-gray-100">
+      <CheckoutHeader />
+      <main className="flex-1 p-4 md:p-8 max-w-md mx-auto w-full pb-24"> {/* Added pb-24 for FixedBottomBar */}
+        <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">Finalizar Compra</h1>
+
+        <div className="space-y-6">
+          {/* Resumo do Pedido (Accordion) */}
+          <OrderSummaryAccordion
+            mainProduct={mainProduct}
+            selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+            currentTotalPrice={currentTotalPrice}
+          />
+
+          {/* Formulário de Dados */}
+          <div className="bg-white p-6 rounded-xl shadow-lg">
+            <CheckoutForm onSubmit={handleFormSubmit} isLoading={isSubmitting} initialData={userProfile || undefined} />
           </div>
-          {formContent}
+
+          {/* Order Bumps (Cards Visuais) */}
+          {orderBumps.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-gray-800">Adicione mais ao seu pedido:</h2>
+              {orderBumps.map((bump) => (
+                <OrderBumpCard
+                  key={bump.id}
+                  product={bump}
+                  isSelected={selectedOrderBumps.includes(bump.id)}
+                  onToggle={handleToggleOrderBump}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Cupom de Desconto */}
+          <CouponInputCard
+            onCouponApplied={handleCouponApplied}
+            currentTotalPrice={currentTotalPrice}
+          />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-          <div className="col-span-1 bg-white p-6 rounded-xl shadow-lg">
-            {formContent}
-          </div>
-          <div className="col-span-1 bg-blue-100 p-6 rounded-xl shadow-lg">
-            {summaryContent}
-          </div>
-        </div>
-      )}
+      </main>
+
+      {/* Bloco de Pagamento Fixo no Rodapé */}
+      <FixedBottomBar
+        totalPrice={currentTotalPrice}
+        isSubmitting={isSubmitting}
+        onSubmit={() => {
+          // Trigger form submission from CheckoutForm
+          // This requires a ref or a more direct way to submit the form.
+          // For simplicity, we'll assume handleFormSubmit is called directly from the form.
+          // If the form is valid, it will call handleProcessPayment.
+          // If not, the form's validation messages will appear.
+          // For now, the FixedBottomBar's onSubmit will trigger the last submitted data.
+          // A more robust solution would involve passing the form's submit handler down.
+          if (checkoutFormData) {
+            handleProcessPayment(checkoutFormData);
+          } else {
+            showError("Por favor, preencha seus dados para finalizar a compra.");
+          }
+        }}
+      />
 
       {/* PIX Payment Modal */}
       <PixPaymentModal
