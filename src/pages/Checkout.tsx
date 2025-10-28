@@ -27,6 +27,7 @@ const Checkout = () => {
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
   const [selectedOrderBumps, setSelectedOrderBumps] = useState<string[]>([]);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [originalTotalPrice, setOriginalTotalPrice] = useState(0); // New state for original total
   const [currentTotalPrice, setCurrentTotalPrice] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -111,15 +112,16 @@ const Checkout = () => {
   useEffect(() => {
     if (!mainProduct) return;
 
-    let total = mainProduct.price;
-
+    let calculatedOriginalTotal = mainProduct.price;
     selectedOrderBumps.forEach((bumpId) => {
       const bumpProduct = orderBumps.find((p) => p.id === bumpId);
       if (bumpProduct) {
-        total += bumpProduct.price;
+        calculatedOriginalTotal += bumpProduct.price;
       }
     });
+    setOriginalTotalPrice(calculatedOriginalTotal); // Set original total
 
+    let total = calculatedOriginalTotal;
     if (appliedCoupon) {
       if (appliedCoupon.discount_type === "percentage") {
         total = total * (1 - appliedCoupon.value / 100);
@@ -214,7 +216,9 @@ const Checkout = () => {
     <OrderSummaryAccordion
       mainProduct={mainProduct}
       selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+      originalTotalPrice={originalTotalPrice} // Pass original total
       currentTotalPrice={currentTotalPrice}
+      appliedCoupon={appliedCoupon} // Pass applied coupon
     />
   );
 
@@ -235,7 +239,7 @@ const Checkout = () => {
   const couponInputSection = (
     <CouponInputCard
       onCouponApplied={handleCouponApplied}
-      currentTotalPrice={currentTotalPrice}
+      // currentTotalPrice={currentTotalPrice} // Removed redundant display
     />
   );
 

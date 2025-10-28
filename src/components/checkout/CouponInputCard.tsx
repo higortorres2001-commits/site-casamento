@@ -11,10 +11,10 @@ import { Loader2 } from "lucide-react";
 
 interface CouponInputCardProps {
   onCouponApplied: (coupon: Coupon | null) => void;
-  currentTotalPrice: number;
+  // currentTotalPrice: number; // Removed as it's redundant
 }
 
-const CouponInputCard = ({ onCouponApplied, currentTotalPrice }: CouponInputCardProps) => {
+const CouponInputCard = ({ onCouponApplied }: CouponInputCardProps) => {
   const [couponCode, setCouponCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -46,7 +46,7 @@ const CouponInputCard = ({ onCouponApplied, currentTotalPrice }: CouponInputCard
   return (
     <Card className="bg-white rounded-xl shadow-lg">
       <CardHeader>
-        <CardTitle className="text-xl">Cupom de Desconto</CardTitle>
+        <CardTitle className="text-xl font-bold text-gray-800">Cupom de Desconto</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-2">
@@ -66,10 +66,7 @@ const CouponInputCard = ({ onCouponApplied, currentTotalPrice }: CouponInputCard
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Aplicar"}
           </Button>
         </div>
-        <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-          <span className="text-lg font-bold text-gray-900">Total:</span>
-          <span className="text-2xl font-extrabold text-gray-900">R$ {currentTotalPrice.toFixed(2)}</span>
-        </div>
+        {/* Removed redundant total price display */}
       </CardContent>
     </Card>
   );
