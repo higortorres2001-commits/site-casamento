@@ -13,6 +13,7 @@ import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
 import Confirmation from "./pages/Confirmation";
 import ProcessingPayment from "./pages/ProcessingPayment"; // Import the new ProcessingPayment page
+import Logs from "./pages/admin/Logs"; // Import the new Logs page
 import Layout from "./components/layout/Layout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
+              <Route path="/admin/logs" element={<Logs />} /> {/* New route for Logs */}
               <Route path="/checkout/:productId" element={<Checkout />} />
               <Route path="/meus-produtos" element={<MyProducts />} />
               <Route path="/produto/:productId" element={<ProductDetails />} />
