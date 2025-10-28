@@ -363,7 +363,7 @@ const Products = () => {
               <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto"> {/* Adicionado max-h e overflow-y-auto */}
             <DialogHeader>
               <DialogTitle>{editingProduct ? "Editar Produto" : "Criar Novo Produto"}</DialogTitle>
             </DialogHeader>

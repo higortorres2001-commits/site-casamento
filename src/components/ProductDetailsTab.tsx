@@ -212,25 +212,27 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
         )}
       </FormItem>
 
-      {/* Original image_url field, now potentially overridden by file upload */}
-      <FormField
-        control={form.control}
-        name="image_url"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>URL da Imagem do Produto (ou use o upload acima)</FormLabel>
-            <FormControl>
-              <Input
-                placeholder="Ex: https://seusite.com/imagem-produto.jpg"
-                {...field}
-                disabled={isLoading || !!selectedImageFile} // Disable if a file is selected
-                className="focus:ring-orange-500 focus:border-orange-500"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {/* Original image_url field, now conditionally rendered */}
+      {!selectedImageFile && ( // Only show URL input if no file is selected
+        <FormField
+          control={form.control}
+          name="image_url"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>URL da Imagem do Produto (ou use o upload acima)</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="Ex: https://seusite.com/imagem-produto.jpg"
+                  {...field}
+                  disabled={isLoading}
+                  className="focus:ring-orange-500 focus:border-orange-500"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
     </div>
   );
 };
