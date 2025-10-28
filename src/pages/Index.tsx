@@ -25,11 +25,18 @@ const Index = () => {
           {user ? `Olá, ${user.email}! Você está logado.` : "Faça login para começar."}
         </p>
         {user && (
-          <Link to="/admin/products">
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-              Gerenciar Produtos
-            </Button>
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link to="/meus-produtos">
+              <Button className="bg-blue-500 hover:bg-blue-600 text-white">
+                Meus Produtos
+              </Button>
+            </Link>
+            <Link to="/admin/products">
+              <Button className="bg-orange-500 hover:bg-orange-600 text-white">
+                Gerenciar Produtos
+              </Button>
+            </Link>
+          </div>
         )}
       </div>
       <div className="mt-auto">

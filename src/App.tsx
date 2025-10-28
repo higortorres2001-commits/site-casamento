@@ -8,7 +8,8 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import Products from "./pages/admin/Products";
 import Coupons from "./pages/admin/Coupons";
-import Checkout from "./pages/Checkout"; // Import the new Checkout page
+import Checkout from "./pages/Checkout";
+import MyProducts from "./pages/MyProducts"; // Import the new MyProducts page
 import Layout from "./components/layout/Layout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 
@@ -27,7 +28,8 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
-              <Route path="/checkout/:productId" element={<Checkout />} /> {/* New route for Checkout */}
+              <Route path="/checkout/:productId" element={<Checkout />} />
+              <Route path="/meus-produtos" element={<MyProducts />} /> {/* New route for MyProducts */}
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             </Route>
             <Route path="*" element={<NotFound />} />
