@@ -44,19 +44,24 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   }, [session, user]);
 
   const fetchUserProfile = async (userId: string): Promise<Partial<Profile> | null> => {
-    console.log('SessionContextProvider DEBUG: fetchUserProfile called for userId:', userId); // Novo log
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('is_admin, name, cpf, email, whatsapp, access, primeiro_acesso, has_changed_password')
-      .eq('id', userId)
-      .single();
+    console.log('SessionContextProvider DEBUG: fetchUserProfile called for userId:', userId);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('is_admin, name, cpf, email, whatsapp, access, primeiro_acesso, has_changed_password')
+        .eq('id', userId)
+        .single();
 
-    if (error) {
-      console.error("SessionContextProvider DEBUG: Error fetching user profile:", error); // Log aprimorado
+      if (error) {
+        console.error("SessionContextProvider DEBUG: Error fetching user profile:", error);
+        return null;
+      }
+      console.log('SessionContextProvider DEBUG: Raw profile data fetched:', data);
+      return data;
+    } catch (catchError: any) {
+      console.error("SessionContextProvider DEBUG: Uncaught error in fetchUserProfile:", catchError);
       return null;
     }
-    console.log('SessionContextProvider DEBUG: Raw profile data fetched:', data); // Novo log
-    return data;
   };
 
   useEffect(() => {
@@ -83,23 +88,20 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         let updatedUser: CustomUser | null = null;
         if (currentSession?.user) {
           const profileData = await fetchUserProfile(currentSession.user.id);
-          // Garante que profileData seja um objeto (mesmo que vazio) para a operação de spread
           updatedUser = { ...currentSession.user, ...(profileData || {}) }; 
           console.log('SessionContextProvider DEBUG: Fetched profile data:', profileData);
           console.log('SessionContextProvider DEBUG: Merged user object:', updatedUser);
         }
 
-        // Use os valores mais recentes dos refs para a comparação
         const currentSessionState = latestSessionRef.current;
         const currentUserState = latestUserRef.current;
 
-        // Verifica se a sessão ou o usuário realmente mudaram
         const hasSessionChanged = 
           updatedUser?.id !== currentUserState?.id || 
           currentSession?.expires_at !== currentSessionState?.expires_at ||
-          updatedUser?.is_admin !== currentUserState?.is_admin || // Check for admin status change
-          (currentSession === null && currentSessionState !== null) || // Detecta logout
-          (currentSession !== null && currentSessionState === null); // Detecta login
+          updatedUser?.is_admin !== currentUserState?.is_admin ||
+          (currentSession === null && currentSessionState !== null) ||
+          (currentSession !== null && currentSessionState === null);
 
         if (hasSessionChanged) {
           setSession(currentSession);
@@ -112,7 +114,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         console.log('SessionContextProvider DEBUG: setIsLoading(false) called.');
 
         if (event === 'SIGNED_OUT') {
-          if (!isPublicPath) { // Only redirect if not on a public path
+          if (!isPublicPath) {
             console.log('SessionContextProvider DEBUG: SIGNED_OUT, not public path. Redirecting to /login.');
             navigate('/login');
           } else {
@@ -133,12 +135,11 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       let initialUpdatedUser: CustomUser | null = null;
       if (initialSession?.user) {
         const profileData = await fetchUserProfile(initialSession.user.id);
-        initialUpdatedUser = { ...initialSession.user, ...(profileData || {}) }; // Garante que profileData seja um objeto
+        initialUpdatedUser = { ...initialSession.user, ...(profileData || {}) };
         console.log('SessionContextProvider DEBUG: Initial fetched profile data:', profileData);
         console.log('SessionContextProvider DEBUG: Initial merged user object:', initialUpdatedUser);
       }
 
-      // Aplica a mesma lógica de detecção de mudança para a sessão inicial
       const currentSessionState = latestSessionRef.current;
       const currentUserState = latestUserRef.current;
       const hasInitialSessionChanged = 
@@ -158,7 +159,6 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       setIsLoading(false);
       console.log('SessionContextProvider DEBUG: Initial setIsLoading(false) called.');
 
-      // If no session and not on a public path, redirect to login
       if (!initialSession && !isPublicPath) {
         console.log('SessionContextProvider DEBUG: No initial session and not public path. Redirecting to /login.');
         navigate('/login');
@@ -173,8 +173,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       console.log('SessionContextProvider DEBUG: Unsubscribing from auth listener.');
       authListener.subscription.unsubscribe();
     };
-  }, [navigate, location.pathname]); // As dependências deste useEffect são apenas navigate e location.pathname
-                                    // session e user são acessados via refs para evitar loops de re-renderização.
+  }, [navigate, location.pathname]);
 
   return (
     <SessionContext.Provider value={{ session, user, isLoading }}>
