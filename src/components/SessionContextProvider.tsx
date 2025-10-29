@@ -4,10 +4,23 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate, useLocation } from 'react-router-dom'; // Import useLocation
+import { Profile } from '@/types'; // Import Profile type
+
+// Estendendo o tipo User do Supabase para incluir dados do perfil
+interface CustomUser extends User {
+  is_admin?: boolean | null;
+  name?: string | null;
+  cpf?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  access?: string[] | null;
+  primeiro_acesso?: boolean | null;
+  has_changed_password?: boolean | null;
+}
 
 interface SessionContextType {
   session: Session | null;
-  user: User | null;
+  user: CustomUser | null;
   isLoading: boolean;
 }
 
@@ -15,20 +28,34 @@ const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export const SessionContextProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<CustomUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const location = useLocation(); // Use useLocation hook
 
   // Refs para armazenar os valores mais recentes de session e user
   const latestSessionRef = useRef<Session | null>(null);
-  const latestUserRef = useRef<User | null>(null);
+  const latestUserRef = useRef<CustomUser | null>(null);
 
   // Efeito para manter os refs atualizados com os estados mais recentes
   useEffect(() => {
     latestSessionRef.current = session;
     latestUserRef.current = user;
   }, [session, user]);
+
+  const fetchUserProfile = async (userId: string): Promise<Partial<Profile> | null> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('is_admin, name, cpf, email, whatsapp, access, primeiro_acesso, has_changed_password')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error("Error fetching user profile:", error);
+      return null;
+    }
+    return data;
+  };
 
   useEffect(() => {
     const publicPaths = [
@@ -51,20 +78,27 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       async (event, currentSession) => {
         console.log('SessionContextProvider DEBUG: Auth state change event:', event, 'Session:', currentSession ? 'exists' : 'null', 'User object reference:', currentSession?.user);
 
+        let updatedUser: CustomUser | null = null;
+        if (currentSession?.user) {
+          const profileData = await fetchUserProfile(currentSession.user.id);
+          updatedUser = { ...currentSession.user, ...profileData };
+        }
+
         // Use os valores mais recentes dos refs para a comparação
         const currentSessionState = latestSessionRef.current;
         const currentUserState = latestUserRef.current;
 
         // Verifica se a sessão ou o usuário realmente mudaram
         const hasSessionChanged = 
-          currentSession?.user?.id !== currentUserState?.id || 
+          updatedUser?.id !== currentUserState?.id || 
           currentSession?.expires_at !== currentSessionState?.expires_at ||
+          updatedUser?.is_admin !== currentUserState?.is_admin || // Check for admin status change
           (currentSession === null && currentSessionState !== null) || // Detecta logout
           (currentSession !== null && currentSessionState === null); // Detecta login
 
         if (hasSessionChanged) {
           setSession(currentSession);
-          setUser(currentSession?.user || null);
+          setUser(updatedUser);
           console.log('SessionContextProvider DEBUG: State updated due to session change.');
         } else {
           console.log('SessionContextProvider DEBUG: Session state unchanged, skipping state update.');
@@ -87,21 +121,28 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null', 'User object reference:', initialSession?.user);
       
+      let initialUpdatedUser: CustomUser | null = null;
+      if (initialSession?.user) {
+        const profileData = await fetchUserProfile(initialSession.user.id);
+        initialUpdatedUser = { ...initialSession.user, ...profileData };
+      }
+
       // Aplica a mesma lógica de detecção de mudança para a sessão inicial
       const currentSessionState = latestSessionRef.current;
       const currentUserState = latestUserRef.current;
       const hasInitialSessionChanged = 
-        initialSession?.user?.id !== currentUserState?.id || 
+        initialUpdatedUser?.id !== currentUserState?.id || 
         initialSession?.expires_at !== currentSessionState?.expires_at ||
+        initialUpdatedUser?.is_admin !== currentUserState?.is_admin || // Check for admin status change
         (initialSession === null && currentSessionState !== null) ||
         (initialSession !== null && currentSessionState === null);
 
       if (hasInitialSessionChanged) {
         setSession(initialSession);
-        setUser(initialSession?.user || null);
+        setUser(initialUpdatedUser);
         console.log('SessionContextProvider DEBUG: Initial state updated due to session change.');
       } else {
         console.log('SessionContextProvider DEBUG: Initial session state unchanged, skipping state update.');

@@ -10,8 +10,6 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useSession } from '@/components/SessionContextProvider';
 import { showError } from '@/utils/toast';
 
-const ADMIN_EMAIL = "higor.torres8@gmail.com";
-
 const AdminLayout = () => {
   const isMobile = useIsMobile();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -22,7 +20,8 @@ const AdminLayout = () => {
   useEffect(() => {
     if (!isSessionLoading && user) {
       const isAdminRoute = location.pathname.startsWith('/admin');
-      if (isAdminRoute && user.email !== ADMIN_EMAIL) {
+      // Verifica se o usuário é admin usando a propriedade is_admin do perfil
+      if (isAdminRoute && !user.is_admin) {
         showError("Você não tem permissão para acessar esta área.");
         navigate('/meus-produtos');
       }

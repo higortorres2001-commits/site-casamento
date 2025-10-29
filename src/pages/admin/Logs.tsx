@@ -31,8 +31,6 @@ interface Log {
   metadata: any;
 }
 
-const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
-
 const Logs = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [logs, setLogs] = useState<Log[]>([]);
@@ -41,7 +39,7 @@ const Logs = () => {
   const [contextFilter, setContextFilter] = useState<string>("all");
   const [availableContexts, setAvailableContexts] = useState<string[]>([]);
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = user?.is_admin === true; // Verificar se é administrador usando a nova propriedade
 
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
