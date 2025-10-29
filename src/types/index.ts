@@ -39,5 +39,4 @@ export type Profile = {
   updated_at?: string;
   primeiro_acesso?: boolean | null;
   has_changed_password?: boolean | null;
-  is_admin?: boolean | null; // Adicionado o campo is_admin
 };

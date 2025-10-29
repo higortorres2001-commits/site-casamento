@@ -13,9 +13,11 @@ interface SidebarProps {
   onCloseMobileMenu?: () => void;
 }
 
+const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
+
 const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
   const { user } = useSession(); // Obter o usuário da sessão
-  const isAdmin = user?.is_admin === true; // Verificar se é administrador usando a nova propriedade
+  const isAdmin = user?.email === ADMIN_EMAIL; // Verificar se é administrador
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();

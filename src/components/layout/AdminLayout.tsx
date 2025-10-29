@@ -10,6 +10,8 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useSession } from '@/components/SessionContextProvider';
 import { showError } from '@/utils/toast';
 
+const ADMIN_EMAIL = "higor.torres8@gmail.com";
+
 const AdminLayout = () => {
   const isMobile = useIsMobile();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -18,13 +20,10 @@ const AdminLayout = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    console.log('AdminLayout DEBUG: useEffect running. isSessionLoading:', isSessionLoading, 'user:', user ? 'exists' : 'null', 'user.is_admin:', user?.is_admin);
     if (!isSessionLoading && user) {
       const isAdminRoute = location.pathname.startsWith('/admin');
-      console.log('AdminLayout DEBUG: isAdminRoute:', isAdminRoute, '!user.is_admin:', !user.is_admin);
-      if (isAdminRoute && !user.is_admin) {
+      if (isAdminRoute && user.email !== ADMIN_EMAIL) {
         showError("Você não tem permissão para acessar esta área.");
-        console.log('AdminLayout DEBUG: Redirecting non-admin user.');
         navigate('/meus-produtos');
       }
     }
@@ -33,14 +32,13 @@ const AdminLayout = () => {
   const handleCloseMobileMenu = () => setIsMobileMenuOpen(false);
 
   if (isSessionLoading) {
-    console.log('AdminLayout DEBUG: Rendering loading state due to isSessionLoading.');
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
-  console.log('AdminLayout DEBUG: isSessionLoading is false, rendering children.');
+
   return (
     <div className="flex min-h-screen bg-gray-100">
       {isMobile ? (
