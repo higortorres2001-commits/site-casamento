@@ -13,6 +13,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Info } from "lucide-react"; // Importar o ícone de informação
 
 export interface CreditCardFormRef {
   submitForm: () => Promise<boolean>;
@@ -25,6 +26,10 @@ const formSchema = z.object({
   expiryMonth: z.string().regex(/^(0[1-9]|1[0-2])$/, "Mês inválido (MM)"),
   expiryYear: z.string().regex(/^\d{2}$/, "Ano inválido (AA)"),
   ccv: z.string().min(3, "CVV inválido").max(4, "CVV inválido"),
+  postalCode: z.string()
+    .min(1, "O CEP é obrigatório")
+    .regex(/^\d{5}-?\d{3}$/, "CEP inválido (formato XXXXX-XXX)"),
+  addressNumber: z.string().min(1, "O número é obrigatório"),
 });
 
 interface CreditCardFormProps {
@@ -41,6 +46,8 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
         expiryMonth: "",
         expiryYear: "",
         ccv: "",
+        postalCode: "",
+        addressNumber: "",
       },
     });
 
@@ -51,6 +58,13 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
       },
       getValues: () => form.getValues(),
     }));
+
+    const formatCEP = (value: string) => {
+      if (!value) return "";
+      value = value.replace(/\D/g, ""); // Remove tudo o que não é dígito
+      value = value.replace(/^(\d{5})(\d)/, "$1-$2"); // Coloca o hífen após o 5º dígito
+      return value;
+    };
 
     return (
       <Form {...form}>
@@ -168,6 +182,55 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
                 </FormItem>
               )}
             />
+          </div>
+
+          {/* Novos campos de endereço para cobrança */}
+          <div className="space-y-4 pt-4 border-t border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-800">Dados de Cobrança do Cartão</h3>
+            <FormField
+              control={form.control}
+              name="postalCode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CEP</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="XXXXX-XXX"
+                      {...field}
+                      disabled={isLoading}
+                      maxLength={9} // 5 dígitos + hífen + 3 dígitos
+                      onChange={(e) => {
+                        field.onChange(formatCEP(e.target.value));
+                      }}
+                      className="focus:ring-orange-500 focus:border-orange-500"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="addressNumber"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Número</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Número do endereço"
+                      {...field}
+                      disabled={isLoading}
+                      className="focus:ring-orange-500 focus:border-orange-500"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <p className="flex items-center text-sm text-gray-500 mt-2">
+              <Info className="h-4 w-4 mr-1 text-blue-500" />
+              Estas informações são usadas apenas para a validação anti-fraude do seu cartão.
+            </p>
           </div>
         </form>
       </Form>

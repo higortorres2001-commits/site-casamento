@@ -471,6 +471,8 @@ serve(async (req) => {
         email: email,
         cpfCnpj: customerCpfCnpj,
         phone: whatsapp,
+        postalCode: creditCard.postalCode.replace(/\D/g, ''), // Clean postal code
+        addressNumber: creditCard.addressNumber,
       };
       asaasPayload.remoteIp = clientIpAddress; // Use captured IP
       asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional callback
