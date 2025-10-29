@@ -33,7 +33,7 @@ const App = () => (
             {/* Rotas autônomas que gerenciam seu próprio layout de página inteira */}
             <Route path="/login" element={<Login />} />
             <Route path="/checkout/:productId" element={<Checkout />} />
-            <Route path="/primeira-senha" element={<UpdatePassword />} />
+            <Route path="/update-password" element={<UpdatePassword />} /> {/* Rota atualizada */}
 
             {/* Rotas de administração usando AdminLayout (com sidebar e verificação de admin) */}
             <Route element={<AdminLayout />}>

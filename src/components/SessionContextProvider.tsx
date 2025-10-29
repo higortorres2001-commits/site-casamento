@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useNavigate, useLocation } from 'react-router-dom'; // Import useLocation
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface SessionContextType {
   session: Session | null;
@@ -18,13 +18,11 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
-  const location = useLocation(); // Use useLocation hook
+  const location = useLocation();
 
-  // Refs para armazenar os valores mais recentes de session e user
   const latestSessionRef = useRef<Session | null>(null);
   const latestUserRef = useRef<User | null>(null);
 
-  // Efeito para manter os refs atualizados com os estados mais recentes
   useEffect(() => {
     latestSessionRef.current = session;
     latestUserRef.current = user;
@@ -32,13 +30,12 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
 
   useEffect(() => {
     const publicPaths = [
-      '/', // Adicionado: A rota raiz deve ser pública
+      '/',
       '/login',
-      '/checkout/', // Dynamic path, check with startsWith
+      '/checkout/',
       '/confirmacao',
       '/processando-pagamento',
-      '/primeira-senha', // Adicionado como rota pública
-      '/update-password', // Adicionado como rota pública
+      '/update-password', // Atualizado: Usar '/update-password'
     ];
 
     const isPublicPath = publicPaths.some(path => 
@@ -52,16 +49,14 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       async (event, currentSession) => {
         console.log('SessionContextProvider DEBUG: Auth state change event:', event, 'Session:', currentSession ? 'exists' : 'null', 'User object reference:', currentSession?.user);
 
-        // Use os valores mais recentes dos refs para a comparação
         const currentSessionState = latestSessionRef.current;
         const currentUserState = latestUserRef.current;
 
-        // Verifica se a sessão ou o usuário realmente mudaram
         const hasSessionChanged = 
           currentSession?.user?.id !== currentUserState?.id || 
           currentSession?.expires_at !== currentSessionState?.expires_at ||
-          (currentSession === null && currentSessionState !== null) || // Detecta logout
-          (currentSession !== null && currentSessionState === null); // Detecta login
+          (currentSession === null && currentSessionState !== null) ||
+          (currentSession !== null && currentSessionState === null);
 
         if (hasSessionChanged) {
           setSession(currentSession);
@@ -73,7 +68,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         setIsLoading(false);
 
         if (event === 'SIGNED_OUT') {
-          if (!isPublicPath) { // Only redirect if not on a public path
+          if (!isPublicPath) {
             console.log('SessionContextProvider DEBUG: SIGNED_OUT, not public path. Redirecting to /login.');
             navigate('/login');
           } else {
@@ -91,7 +86,6 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null', 'User object reference:', initialSession?.user);
       
-      // Aplica a mesma lógica de detecção de mudança para a sessão inicial
       const currentSessionState = latestSessionRef.current;
       const currentUserState = latestUserRef.current;
       const hasInitialSessionChanged = 
@@ -109,7 +103,6 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       }
       setIsLoading(false);
 
-      // If no session and not on a public path, redirect to login
       if (!initialSession && !isPublicPath) {
         console.log('SessionContextProvider DEBUG: No initial session and not public path. Redirecting to /login.');
         navigate('/login');
@@ -124,8 +117,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       console.log('SessionContextProvider DEBUG: Unsubscribing from auth listener.');
       authListener.subscription.unsubscribe();
     };
-  }, [navigate, location.pathname]); // As dependências deste useEffect são apenas navigate e location.pathname
-                                    // session e user são acessados via refs para evitar loops de re-renderização.
+  }, [navigate, location.pathname]);
 
   return (
     <SessionContext.Provider value={{ session, user, isLoading }}>
