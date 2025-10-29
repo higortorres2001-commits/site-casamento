@@ -76,29 +76,31 @@ const ProductDetails = () => {
   };
 
   const handleViewPdf = async (storagePath: string, fileName: string) => {
+    // Usar createSignedUrl para gerar um link temporário para visualização
     const { data, error } = await supabase.storage
       .from('product-assets')
-      .download(storagePath);
+      .createSignedUrl(storagePath, 3600); // URL válida por 1 hora
 
     if (error) {
-      showError("Erro ao carregar PDF para visualização: " + error.message);
-      console.error("Error downloading PDF for view:", error);
+      showError("Erro ao gerar link de visualização do PDF: " + error.message);
+      console.error("Error creating signed URL for PDF view:", error);
       return;
     }
 
-    const url = URL.createObjectURL(data);
-    setCurrentPdfUrl(url);
-    setCurrentPdfName(fileName);
-    setIsPdfViewerOpen(true);
+    if (data?.signedUrl) {
+      setCurrentPdfUrl(data.signedUrl);
+      setCurrentPdfName(fileName);
+      setIsPdfViewerOpen(true);
+    } else {
+      showError("Não foi possível obter o link de visualização do PDF.");
+    }
   };
 
   const handleClosePdfViewer = () => {
     setIsPdfViewerOpen(false);
-    if (currentPdfUrl) {
-      URL.revokeObjectURL(currentPdfUrl); // Clean up the object URL
-      setCurrentPdfUrl(null);
-      setCurrentPdfName(null);
-    }
+    // Não é necessário revogar Object URL, pois estamos usando signed URL diretamente
+    setCurrentPdfUrl(null);
+    setCurrentPdfName(null);
   };
 
   if (isLoading) {
