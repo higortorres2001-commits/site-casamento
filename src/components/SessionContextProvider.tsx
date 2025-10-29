@@ -3,10 +3,9 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useNavigate, useLocation } from 'react-router-dom'; // Import useLocation
-import { Profile } from '@/types'; // Import Profile type
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Profile } from '@/types';
 
-// Estendendo o tipo User do Supabase para incluir dados do perfil
 interface CustomUser extends User {
   is_admin?: boolean | null;
   name?: string | null;
@@ -31,13 +30,11 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   const [user, setUser] = useState<CustomUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
-  const location = useLocation(); // Use useLocation hook
+  const location = useLocation();
 
-  // Refs para armazenar os valores mais recentes de session e user
   const latestSessionRef = useRef<Session | null>(null);
   const latestUserRef = useRef<CustomUser | null>(null);
 
-  // Efeito para manter os refs atualizados com os estados mais recentes
   useEffect(() => {
     latestSessionRef.current = session;
     latestUserRef.current = user;
@@ -46,11 +43,15 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   const fetchUserProfile = async (userId: string): Promise<Partial<Profile> | null> => {
     console.log('SessionContextProvider DEBUG: fetchUserProfile called for userId:', userId);
     try {
+      // NOVO LOG AQUI
+      console.log('SessionContextProvider DEBUG: Executing Supabase profile query...'); 
       const { data, error } = await supabase
         .from('profiles')
         .select('is_admin, name, cpf, email, whatsapp, access, primeiro_acesso, has_changed_password')
         .eq('id', userId)
         .single();
+
+      console.log('SessionContextProvider DEBUG: Supabase query resolved. Data:', data, 'Error:', error);
 
       if (error) {
         console.error("SessionContextProvider DEBUG: Error fetching user profile:", error);
@@ -67,14 +68,14 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   useEffect(() => {
     const publicPaths = [
       '/login',
-      '/checkout/', // Dynamic path, check with startsWith
+      '/checkout/',
       '/confirmacao',
       '/processando-pagamento',
-      '/primeira-senha', // Adicionado como rota pública
-      '/update-password', // Adicionado como rota pública
+      '/primeira-senha',
+      '/update-password',
     ];
 
-    const isPublicPath = publicPaths.some(path => 
+    const isPublicPath = publicPaths.some(path =>
       path.endsWith('/') ? location.pathname.startsWith(path) : location.pathname === path
     );
 
@@ -88,7 +89,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         let updatedUser: CustomUser | null = null;
         if (currentSession?.user) {
           const profileData = await fetchUserProfile(currentSession.user.id);
-          updatedUser = { ...currentSession.user, ...(profileData || {}) }; 
+          updatedUser = { ...currentSession.user, ...(profileData || {}) };
           console.log('SessionContextProvider DEBUG: Fetched profile data:', profileData);
           console.log('SessionContextProvider DEBUG: Merged user object:', updatedUser);
         }
@@ -96,8 +97,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         const currentSessionState = latestSessionRef.current;
         const currentUserState = latestUserRef.current;
 
-        const hasSessionChanged = 
-          updatedUser?.id !== currentUserState?.id || 
+        const hasSessionChanged =
+          updatedUser?.id !== currentUserState?.id ||
           currentSession?.expires_at !== currentSessionState?.expires_at ||
           updatedUser?.is_admin !== currentUserState?.is_admin ||
           (currentSession === null && currentSessionState !== null) ||
@@ -131,7 +132,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
 
     supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null', 'User object reference:', initialSession?.user);
-      
+
       let initialUpdatedUser: CustomUser | null = null;
       if (initialSession?.user) {
         const profileData = await fetchUserProfile(initialSession.user.id);
@@ -142,8 +143,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
 
       const currentSessionState = latestSessionRef.current;
       const currentUserState = latestUserRef.current;
-      const hasInitialSessionChanged = 
-        initialUpdatedUser?.id !== currentUserState?.id || 
+      const hasInitialSessionChanged =
+        initialUpdatedUser?.id !== currentUserState?.id ||
         initialSession?.expires_at !== currentSessionState?.expires_at ||
         initialUpdatedUser?.is_admin !== currentUserState?.is_admin ||
         (initialSession === null && currentSessionState !== null) ||
