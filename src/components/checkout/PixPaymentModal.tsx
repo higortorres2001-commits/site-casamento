@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CheckCircle, Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { showError, showSuccess } from "@/utils/toast";
+import { supabase } from "@/integrations/supabase/client"; // Import supabase client
 
 interface PixPaymentModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ interface PixPaymentModalProps {
   orderId: string;
   pixDetails: any;
   totalPrice: number;
+  asaasPaymentId: string; // New prop: Asaas payment ID
 }
 
 const PixPaymentModal = ({
@@ -27,8 +29,67 @@ const PixPaymentModal = ({
   orderId,
   pixDetails,
   totalPrice,
+  asaasPaymentId,
 }: PixPaymentModalProps) => {
   const navigate = useNavigate();
+  const pollingIntervalRef = useRef<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+
+  const checkPaymentStatus = async () => {
+    if (!asaasPaymentId) {
+      console.error("Asaas Payment ID is missing for status check.");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("check-payment-status", {
+        body: { payment_id: asaasPaymentId },
+      });
+
+      if (error) {
+        console.error("Error checking payment status:", error);
+        // showError("Erro ao verificar status do pagamento."); // Avoid spamming toasts
+      } else if (data && (data.status === "CONFIRMED" || data.status === "RECEIVED")) {
+        showSuccess("Seu pagamento foi confirmado!");
+        stopPolling();
+        onClose(); // Close the modal
+        navigate("/confirmacao");
+      } else {
+        console.log("Payment status still pending:", data?.status);
+      }
+    } catch (err: any) {
+      console.error("Unexpected error during payment status check:", err);
+      // showError("Erro inesperado ao verificar status do pagamento.");
+    }
+  };
+
+  const startPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    setIsPolling(true);
+    // Check immediately, then every 5 seconds
+    checkPaymentStatus();
+    pollingIntervalRef.current = setInterval(checkPaymentStatus, 5000) as unknown as number;
+  };
+
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    setIsPolling(false);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopPolling(); // Stop polling when modal closes
+    }
+    // Cleanup on unmount
+    return () => {
+      stopPolling();
+    };
+  }, [isOpen]);
 
   const copyToClipboard = (text: string, message: string) => {
     navigator.clipboard.writeText(text)
@@ -61,7 +122,7 @@ const PixPaymentModal = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md p-6 text-center max-h-[90vh] overflow-y-auto"> {/* Adicionado max-h-[90vh] e overflow-y-auto */}
+      <DialogContent className="sm:max-w-md p-6 text-center max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-4">
           <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
           <DialogTitle className="text-3xl font-bold text-gray-800">
@@ -120,9 +181,16 @@ const PixPaymentModal = ({
             <Button
               variant="secondary"
               className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg shadow-md py-3 text-lg"
-              onClick={handleGoToProcessing}
+              onClick={startPolling} // Start polling when this button is clicked
+              disabled={isPolling}
             >
-              Já paguei, ir para o acesso
+              {isPolling ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" /> Verificando Pagamento...
+                </>
+              ) : (
+                "Já paguei, verificar acesso"
+              )}
             </Button>
           </div>
         </div>

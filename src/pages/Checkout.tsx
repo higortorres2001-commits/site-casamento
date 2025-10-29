@@ -41,6 +41,7 @@ const Checkout = () => {
   const [modalPixDetails, setModalPixDetails] = useState<any>(null);
   const [modalTotalPrice, setModalTotalPrice] = useState<number>(0);
   const [modalOrderId, setModalOrderId] = useState<string>("");
+  const [modalAsaasPaymentId, setModalAsaasPaymentId] = useState<string>(""); // New state for Asaas Payment ID
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null); // Ref for credit card form
@@ -113,43 +114,43 @@ const Checkout = () => {
     }
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
 
-  // Realtime listener for PIX payment confirmation
-  useEffect(() => {
-    let orderSubscription: RealtimeChannel | null = null;
+  // Realtime listener for PIX payment confirmation - REMOVED as per new requirements
+  // useEffect(() => {
+  //   let orderSubscription: RealtimeChannel | null = null;
 
-    if (isPixModalOpen && modalOrderId) {
-      console.log(`Subscribing to order updates for order ID: ${modalOrderId}`);
-      orderSubscription = supabase
-        .channel(`order_status_update:${modalOrderId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'orders',
-            filter: `id=eq.${modalOrderId}`,
-          },
-          (payload) => {
-            console.log('Realtime update received for order:', payload);
-            if (payload.new.status === 'paid') {
-              showSuccess("Seu pagamento foi confirmado!");
-              if (orderSubscription) {
-                orderSubscription.unsubscribe();
-              }
-              navigate("/confirmacao");
-            }
-          }
-        )
-        .subscribe();
-    }
+  //   if (isPixModalOpen && modalOrderId) {
+  //     console.log(`Subscribing to order updates for order ID: ${modalOrderId}`);
+  //     orderSubscription = supabase
+  //       .channel(`order_status_update:${modalOrderId}`)
+  //       .on(
+  //         'postgres_changes',
+  //         {
+  //           event: 'UPDATE',
+  //           schema: 'public',
+  //           table: 'orders',
+  //           filter: `id=eq.${modalOrderId}`,
+  //         },
+  //         (payload) => {
+  //           console.log('Realtime update received for order:', payload);
+  //           if (payload.new.status === 'paid') {
+  //             showSuccess("Seu pagamento foi confirmado!");
+  //             if (orderSubscription) {
+  //               orderSubscription.unsubscribe();
+  //             }
+  //             navigate("/confirmacao");
+  //           }
+  //         }
+  //       )
+  //       .subscribe();
+  //   }
 
-    return () => {
-      if (orderSubscription) {
-        console.log(`Unsubscribing from order updates for order ID: ${modalOrderId}`);
-        orderSubscription.unsubscribe();
-      }
-    };
-  }, [isPixModalOpen, modalOrderId, navigate]); // Dependencies for the listener
+  //   return () => {
+  //     if (orderSubscription) {
+  //       console.log(`Unsubscribing from order updates for order ID: ${modalOrderId}`);
+  //       orderSubscription.unsubscribe();
+  //     }
+  //   };
+  // }, [isPixModalOpen, modalOrderId, navigate]); // Dependencies for the listener
 
   useEffect(() => {
     if (!mainProduct) return;
@@ -257,11 +258,12 @@ const Checkout = () => {
         showError("Erro ao criar pagamento: " + error.message);
         console.error("Edge Function error:", error);
       } else if (data) {
-        if (paymentMethod === "PIX" && data.pix && data.orderId) {
+        if (paymentMethod === "PIX" && data.pix && data.orderId && data.id) { // Ensure data.id (asaasPaymentId) is present
           showSuccess("Pagamento PIX criado com sucesso!");
           setModalPixDetails(data.pix);
           setModalTotalPrice(currentTotalPrice);
           setModalOrderId(data.orderId);
+          setModalAsaasPaymentId(data.id); // Set Asaas Payment ID
           setIsPixModalOpen(true);
         } else if (paymentMethod === "CREDIT_CARD") {
           // Asaas response for credit card payment status
@@ -410,6 +412,7 @@ const Checkout = () => {
         orderId={modalOrderId}
         pixDetails={modalPixDetails}
         totalPrice={modalTotalPrice}
+        asaasPaymentId={modalAsaasPaymentId} // Pass the Asaas Payment ID
       />
     </div>
   );
