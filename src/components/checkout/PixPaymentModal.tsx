@@ -33,6 +33,7 @@ const PixPaymentModal = ({
 }: PixPaymentModalProps) => {
   const navigate = useNavigate();
   const pollingIntervalRef = useRef<number | null>(null);
+  const pollingTimeoutRef = useRef<number | null>(null); // Ref for the timeout
   const [isPolling, setIsPolling] = useState(false);
 
   const checkPaymentStatus = async () => {
@@ -71,6 +72,17 @@ const PixPaymentModal = ({
     // Check immediately, then every 5 seconds
     checkPaymentStatus();
     pollingIntervalRef.current = setInterval(checkPaymentStatus, 5000) as unknown as number;
+
+    // Set a timeout to stop polling after 10 minutes (600,000 ms)
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+    }
+    pollingTimeoutRef.current = setTimeout(() => {
+      stopPolling();
+      showError("A verificação do pagamento expirou. Por favor, verifique seu e-mail para confirmação.");
+      onClose(); // Close modal if polling stops due to timeout
+      navigate("/processando-pagamento"); // Redirect to a generic processing page
+    }, 600000) as unknown as number; // 10 minutes
   };
 
   const stopPolling = () => {
@@ -78,18 +90,24 @@ const PixPaymentModal = ({
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
     setIsPolling(false);
   };
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      startPolling(); // Start polling when modal opens
+    } else {
       stopPolling(); // Stop polling when modal closes
     }
     // Cleanup on unmount
     return () => {
       stopPolling();
     };
-  }, [isOpen]);
+  }, [isOpen, navigate]); // Added navigate to dependencies
 
   const copyToClipboard = (text: string, message: string) => {
     navigator.clipboard.writeText(text)
