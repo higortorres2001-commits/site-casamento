@@ -33,10 +33,7 @@ const OrderSummaryAccordion = ({
         <div className="bg-blue-100 rounded-xl shadow-md"> {/* Changed to rounded-xl for consistency */}
           <AccordionTrigger className="flex justify-between items-center p-4 text-xl font-bold text-gray-800 hover:no-underline"> {/* Increased font size */}
             <span>Resumo do Pedido</span> {/* Simplified title */}
-            <span className="flex items-center text-xl text-gray-500"> {/* Ajustado: cinza claro, sem negrito, menor */}
-              R$ {currentTotalPrice.toFixed(2)}
-              <ChevronDown className="h-6 w-6 ml-2 shrink-0 transition-transform duration-200" /> {/* Increased icon size */}
-            </span>
+            {/* Removido o preço e o ícone ChevronDown daqui, o ícone padrão do AccordionTrigger será mantido */}
           </AccordionTrigger>
           <AccordionContent className="p-4 border-t border-blue-200 bg-white rounded-b-xl"> {/* Changed to rounded-b-xl */}
             <div className="space-y-3">
