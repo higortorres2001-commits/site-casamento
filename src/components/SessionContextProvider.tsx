@@ -43,7 +43,6 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   const fetchUserProfile = async (userId: string): Promise<Partial<Profile> | null> => {
     console.log('SessionContextProvider DEBUG: fetchUserProfile called for userId:', userId);
     try {
-      // NOVO LOG AQUI
       console.log('SessionContextProvider DEBUG: Executing Supabase profile query...'); 
       const { data, error } = await supabase
         .from('profiles')
@@ -58,6 +57,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         return null;
       }
       console.log('SessionContextProvider DEBUG: Raw profile data fetched:', data);
+      console.log('SessionContextProvider DEBUG: is_admin from profile data:', data?.is_admin); // NOVO LOG AQUI
       return data;
     } catch (catchError: any) {
       console.error("SessionContextProvider DEBUG: Uncaught error in fetchUserProfile:", catchError);
@@ -92,6 +92,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
           updatedUser = { ...currentSession.user, ...(profileData || {}) };
           console.log('SessionContextProvider DEBUG: Fetched profile data:', profileData);
           console.log('SessionContextProvider DEBUG: Merged user object:', updatedUser);
+          console.log('SessionContextProvider DEBUG: Merged user.is_admin:', updatedUser?.is_admin); // NOVO LOG AQUI
         }
 
         const currentSessionState = latestSessionRef.current;
@@ -139,6 +140,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         initialUpdatedUser = { ...initialSession.user, ...(profileData || {}) };
         console.log('SessionContextProvider DEBUG: Initial fetched profile data:', profileData);
         console.log('SessionContextProvider DEBUG: Initial merged user object:', initialUpdatedUser);
+        console.log('SessionContextProvider DEBUG: Initial merged user.is_admin:', initialUpdatedUser?.is_admin); // NOVO LOG AQUI
       }
 
       const currentSessionState = latestSessionRef.current;
