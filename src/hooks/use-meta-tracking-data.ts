@@ -10,7 +10,6 @@ interface MetaTrackingData {
   utm_term?: string;
   fbp?: string;
   fbc?: string;
-  event_source_url?: string; // Adicionado para capturar a URL completa
 }
 
 const getCookie = (name: string): string | undefined => {
@@ -41,9 +40,6 @@ export function useMetaTrackingData(): MetaTrackingData {
     // Capture Meta cookies
     data.fbp = getCookie('_fbp') || undefined;
     data.fbc = getCookie('_fbc') || undefined;
-
-    // Capture the full current URL
-    data.event_source_url = window.location.href;
 
     setTrackingData(data);
   }, []);

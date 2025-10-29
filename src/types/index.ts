@@ -40,27 +40,3 @@ export type Profile = {
   primeiro_acesso?: boolean | null;
   has_changed_password?: boolean | null;
 };
-
-export type MetaTrackingData = {
-  utm_source?: string;
-  utm_medium?: string;
-  utm_campaign?: string;
-  utm_content?: string;
-  utm_term?: string;
-  fbp?: string;
-  fbc?: string;
-  event_source_url?: string;
-  client_ip_address?: string;
-  client_user_agent?: string;
-};
-
-export type Order = {
-  id: string;
-  created_at: string;
-  user_id: string;
-  ordered_product_ids: string[];
-  total_price: number;
-  status: 'pending' | 'paid' | 'refunded' | 'cancelled';
-  asaas_payment_id: string | null;
-  meta_tracking_data: MetaTrackingData | null; // Adicionado para rastreamento do Meta Ads
-};

@@ -42,13 +42,19 @@ const UpdatePassword = () => {
     },
   });
 
-  // Removido o useEffect que redirecionava para /login, pois esta página agora é pública
-  // e deve permitir a redefinição de senha mesmo sem uma sessão ativa persistente.
+  useEffect(() => {
+    if (!isSessionLoading && !user) {
+      // If not logged in, redirect to login
+      navigate("/login");
+    }
+  }, [user, isSessionLoading, navigate]);
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
-    // Para redefinição de senha via link, o 'user' pode ser nulo inicialmente,
-    // mas o Supabase gerencia a sessão temporária.
-    // Se o usuário estiver logado (primeiro acesso), 'user' estará presente.
+    if (!user) {
+      showError("Você precisa estar logado para trocar a senha.");
+      navigate("/login");
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -63,23 +69,16 @@ const UpdatePassword = () => {
         return;
       }
 
-      // 2. Update has_changed_password in profiles table if a user is available
-      if (user) {
-        const { error: updateProfileError } = await supabase
-          .from('profiles')
-          .update({ has_changed_password: true })
-          .eq('id', user.id);
+      // 2. Update has_changed_password in profiles table
+      const { error: updateProfileError } = await supabase
+        .from('profiles')
+        .update({ has_changed_password: true })
+        .eq('id', user.id);
 
-        if (updateProfileError) {
-          showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
-          console.error("Update profile has_changed_password error:", updateProfileError);
-          // Even if profile update fails, password is changed, so proceed.
-        }
-      } else {
-        // This case handles password reset via email link where 'user' might be null initially
-        // but the password was successfully updated in auth.users.
-        // We might need to fetch the user after update or rely on the next session check.
-        console.log("Password updated for a user not yet in session context (e.g., password reset link).");
+      if (updateProfileError) {
+        showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
+        console.error("Update profile has_changed_password error:", updateProfileError);
+        // Even if profile update fails, password is changed, so proceed.
       }
 
       showSuccess("Senha atualizada com sucesso! Você será redirecionado.");
@@ -92,8 +91,7 @@ const UpdatePassword = () => {
     }
   };
 
-  // Se estiver carregando a sessão, mostre um loader
-  if (isSessionLoading) {
+  if (isSessionLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -106,7 +104,7 @@ const UpdatePassword = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-gray-800 mb-2">
-            {user?.email ? "Atualize sua Senha" : "Defina sua Nova Senha"}
+            Primeiro Acesso: Troque sua Senha
           </CardTitle>
           <p className="text-md text-gray-600">
             Por segurança, por favor, defina uma nova senha.

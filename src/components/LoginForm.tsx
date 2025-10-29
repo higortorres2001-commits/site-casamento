@@ -25,7 +25,6 @@ const formSchema = z.object({
 });
 
 const LoginForm = () => {
-  console.log("LoginForm component rendered"); // Adicionado para depuração
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -63,7 +62,7 @@ const LoginForm = () => {
 
     setIsLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`, // Agora corresponde à rota em App.tsx
+      redirectTo: `${window.location.origin}/update-password`, // Você pode precisar de uma página para lidar com a redefinição de senha
     });
 
     if (error) {
