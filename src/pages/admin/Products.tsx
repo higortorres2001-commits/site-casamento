@@ -57,8 +57,37 @@ const Products = () => {
     if (error) {
       showError("Erro ao carregar produtos: " + error.message);
       console.error("Error fetching products:", error);
+      setProducts([]);
     } else {
-      setProducts(data || []);
+      // Generate signed URLs for each asset
+      const productsWithSignedUrls = await Promise.all(
+        (data || []).map(async (product) => {
+          if (product.product_assets && product.product_assets.length > 0) {
+            const assetsWithSignedUrls = await Promise.all(
+              product.product_assets.map(async (asset) => {
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                  .from('product-assets')
+                  .createSignedUrl(asset.storage_path, 3600); // URL válida por 1 hora
+
+                if (signedUrlError) {
+                  console.error(`Error generating signed URL for asset ${asset.id}:`, signedUrlError.message);
+                  await supabase.from('logs').insert({
+                    level: 'error',
+                    context: 'admin-product-list',
+                    message: `Failed to generate signed URL for asset ${asset.id}: ${signedUrlError.message}`,
+                    metadata: { userId: user.id, productId: product.id, assetId: asset.id, storagePath: asset.storage_path, error: signedUrlError.message }
+                  });
+                  return { ...asset, signed_url: null }; // Return asset with null signed_url on error
+                }
+                return { ...asset, signed_url: signedUrlData?.signedUrl || null };
+              })
+            );
+            return { ...product, product_assets: assetsWithSignedUrls };
+          }
+          return product;
+        })
+      );
+      setProducts(productsWithSignedUrls as (Product & { assets?: ProductAsset[] })[]);
     }
     setIsLoadingProducts(false);
   }, [user]); // Depende de user
@@ -480,25 +509,15 @@ const Products = () => {
     }
   };
 
-  const handleDownloadAsset = async (storagePath: string, fileName: string) => {
-    const { data, error } = await supabase.storage
-      .from('product-assets')
-      .download(storagePath);
-
-    if (error) {
-      showError("Erro ao baixar arquivo: " + error.message);
-      console.error("Error downloading file:", error);
-      return;
-    }
-
-    const url = URL.createObjectURL(data);
+  const handleDownloadAsset = async (signedUrl: string, fileName: string) => {
+    // For download, we can directly use the signed URL
     const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
+    link.href = signedUrl;
+    link.download = fileName; // Suggest a filename
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    showSuccess(`Download de "${fileName}" iniciado!`);
   };
 
   const handleGenerateCheckoutLink = (productId: string) => {
@@ -574,18 +593,22 @@ const Products = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {product.assets && product.assets.length > 0 ? (
+                    {product.product_assets && product.product_assets.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
-                        {product.assets.map((asset) => (
-                          <Button
-                            key={asset.id}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDownloadAsset(asset.storage_path, asset.file_name)}
-                            className="flex items-center gap-1"
-                          >
-                            <FileText className="h-3 w-3" /> {asset.file_name}
-                          </Button>
+                        {product.product_assets.map((asset) => (
+                          asset.signed_url ? (
+                            <Button
+                              key={asset.id}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadAsset(asset.signed_url!, asset.file_name)}
+                              className="flex items-center gap-1"
+                            >
+                              <FileText className="h-3 w-3" /> {asset.file_name}
+                            </Button>
+                          ) : (
+                            <span key={asset.id} className="text-red-500 text-xs">Erro no arquivo</span>
+                          )
                         ))}
                       </div>
                     ) : (

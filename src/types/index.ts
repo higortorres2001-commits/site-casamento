@@ -25,6 +25,7 @@ export type ProductAsset = {
   file_name: string;
   storage_path: string;
   created_at: string;
+  signed_url?: string | null; // Adicionado para armazenar a URL assinada
 };
 
 export type Profile = {

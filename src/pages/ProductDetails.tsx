@@ -47,75 +47,66 @@ const ProductDetails = () => {
       navigate("/meus-produtos"); // Redirect if product not found
       return;
     }
-    setProduct(data);
+
+    // Generate signed URLs for each asset
+    if (data.product_assets && data.product_assets.length > 0) {
+      const assetsWithSignedUrls = await Promise.all(
+        data.product_assets.map(async (asset) => {
+          const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+            .from('product-assets')
+            .createSignedUrl(asset.storage_path, 3600); // URL válida por 1 hora
+
+          if (signedUrlError) {
+            console.error(`Error generating signed URL for asset ${asset.id}:`, signedUrlError.message);
+            await supabase.from('logs').insert({
+              level: 'error',
+              context: 'client-product-details',
+              message: `Failed to generate signed URL for asset ${asset.id}: ${signedUrlError.message}`,
+              metadata: { userId: user?.id, productId: data.id, assetId: asset.id, storagePath: asset.storage_path, error: signedUrlError.message }
+            });
+            return { ...asset, signed_url: null }; // Return asset with null signed_url on error
+          }
+          return { ...asset, signed_url: signedUrlData?.signedUrl || null };
+        })
+      );
+      setProduct({ ...data, product_assets: assetsWithSignedUrls });
+    } else {
+      setProduct(data);
+    }
     setIsLoading(false);
-  }, [productId, navigate]);
+  }, [productId, navigate, user]); // Adicionado user como dependência
 
   useEffect(() => {
     fetchProductDetails();
   }, [fetchProductDetails]);
 
-  const handleDownloadAsset = async (storagePath: string, fileName: string) => {
-    const { data, error } = await supabase.storage
-      .from('product-assets')
-      .download(storagePath);
-
-    if (error) {
-      showError("Erro ao baixar arquivo: " + error.message);
-      console.error("Error downloading file:", error);
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'client-asset-download',
-        message: `Failed to download product asset: ${error.message}`,
-        metadata: { userId: user?.id, productId, fileName, storagePath, error: error.message }
-      });
-      return;
-    }
-
-    const url = URL.createObjectURL(data);
+  const handleDownloadAsset = async (signedUrl: string, fileName: string) => {
+    // For download, we can directly use the signed URL
     const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
+    link.href = signedUrl;
+    link.download = fileName; // Suggest a filename
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
     showSuccess(`Download de "${fileName}" iniciado!`);
     await supabase.from('logs').insert({
       level: 'info',
       context: 'client-asset-download',
       message: 'Client downloaded product asset successfully.',
-      metadata: { userId: user?.id, productId, fileName, storagePath }
+      metadata: { userId: user?.id, productId, fileName, signedUrl }
     });
   };
 
-  const handleViewPdf = async (storagePath: string, fileName: string) => {
-    // Usar createSignedUrl para gerar um link temporário para visualização
-    const { data, error } = await supabase.storage
-      .from('product-assets')
-      .createSignedUrl(storagePath, 3600); // URL válida por 1 hora
-
-    if (error) {
-      showError("Erro ao gerar link de visualização do PDF: " + error.message);
-      console.error("Error creating signed URL for PDF view:", error);
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'client-asset-view',
-        message: `Failed to generate signed URL for PDF view: ${error.message}`,
-        metadata: { userId: user?.id, productId, fileName, storagePath, error: error.message }
-      });
-      return;
-    }
-
-    if (data?.signedUrl) {
-      setCurrentPdfUrl(data.signedUrl);
+  const handleViewPdf = async (signedUrl: string, fileName: string) => {
+    if (signedUrl) {
+      setCurrentPdfUrl(signedUrl);
       setCurrentPdfName(fileName);
       setIsPdfViewerOpen(true);
       await supabase.from('logs').insert({
         level: 'info',
         context: 'client-asset-view',
         message: 'Client viewed product asset successfully.',
-        metadata: { userId: user?.id, productId, fileName, storagePath }
+        metadata: { userId: user?.id, productId, fileName, signedUrl }
       });
     } else {
       showError("Não foi possível obter o link de visualização do PDF.");
@@ -123,14 +114,13 @@ const ProductDetails = () => {
         level: 'error',
         context: 'client-asset-view',
         message: 'Signed URL for PDF view was null or undefined.',
-        metadata: { userId: user?.id, productId, fileName, storagePath }
+        metadata: { userId: user?.id, productId, fileName }
       });
     }
   };
 
   const handleClosePdfViewer = () => {
     setIsPdfViewerOpen(false);
-    // Não é necessário revogar Object URL, pois estamos usando signed URL diretamente
     setCurrentPdfUrl(null);
     setCurrentPdfName(null);
   };
@@ -177,9 +167,9 @@ const ProductDetails = () => {
           <h2 className="text-2xl font-semibold text-gray-800 pt-4 border-t border-gray-200">
             Arquivos do Produto
           </h2>
-          {product.assets && product.assets.length > 0 ? (
+          {product.product_assets && product.product_assets.length > 0 ? (
             <div className="space-y-4">
-              {product.assets.map((asset) => (
+              {product.product_assets.map((asset) => (
                 <div
                   key={asset.id}
                   className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg bg-gray-50"
@@ -189,19 +179,25 @@ const ProductDetails = () => {
                     <span className="text-gray-700 font-medium">{asset.file_name}</span>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="text-blue-500 hover:text-blue-700"
-                      onClick={() => handleViewPdf(asset.storage_path, asset.file_name)}
-                    >
-                      <Eye className="h-4 w-4 mr-2" /> Visualizar
-                    </Button>
-                    <Button
-                      className="bg-orange-500 hover:bg-orange-600 text-white"
-                      onClick={() => handleDownloadAsset(asset.storage_path, asset.file_name)}
-                    >
-                      Baixar
-                    </Button>
+                    {asset.signed_url ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          className="text-blue-500 hover:text-blue-700"
+                          onClick={() => handleViewPdf(asset.signed_url!, asset.file_name)}
+                        >
+                          <Eye className="h-4 w-4 mr-2" /> Visualizar
+                        </Button>
+                        <Button
+                          className="bg-orange-500 hover:bg-orange-600 text-white"
+                          onClick={() => handleDownloadAsset(asset.signed_url!, asset.file_name)}
+                        >
+                          Baixar
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-red-500 text-sm">Erro ao carregar arquivo</span>
+                    )}
                   </div>
                 </div>
               ))}
