@@ -66,7 +66,7 @@ serve(async (req) => {
     // 1. Find the order in the 'orders' table
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('id, user_id, ordered_product_ids, status')
+      .select('id, user_id, ordered_product_ids, status, total_price, meta_tracking_data') // Select meta_tracking_data
       .eq('asaas_payment_id', asaasPaymentId)
       .single();
 
@@ -177,6 +177,81 @@ serve(async (req) => {
       message: `Profile ${userId} access updated with new products and primeiro_acesso set to true.`,
       metadata: { userId, orderId, asaasPaymentId, newAccess }
     });
+
+    // --- Meta CAPI Purchase Event ---
+    const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
+    const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
+
+    if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN && process.env.NODE_ENV === 'production') {
+      const capiPayload = {
+        data: [
+          {
+            event_name: 'Purchase',
+            event_time: Math.floor(Date.now() / 1000), // Unix timestamp of payment confirmation
+            event_source_url: order.meta_tracking_data?.event_source_url || '', // Use URL from meta_tracking_data
+            action_source: 'website',
+            user_data: {
+              em: profile.email,
+              ph: profile.whatsapp,
+              fbc: order.meta_tracking_data?.fbc,
+              fbp: order.meta_tracking_data?.fbp,
+              client_ip_address: order.meta_tracking_data?.client_ip_address,
+              client_user_agent: order.meta_tracking_data?.client_user_agent,
+            },
+            custom_data: {
+              value: order.total_price.toFixed(2),
+              currency: 'BRL',
+              order_id: order.id,
+            },
+            event_id: `purchase_capi_${order.id}_${Date.now()}`, // Unique event ID for CAPI, includes order_id for deduplication
+          },
+        ],
+      };
+
+      try {
+        const metaResponse = await fetch(`https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?access_token=${META_CAPI_ACCESS_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(capiPayload),
+        });
+
+        if (!metaResponse.ok) {
+          const errorData = await metaResponse.json();
+          console.error('Meta CAPI Purchase error:', errorData);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'meta-capi-purchase',
+            message: 'Failed to send Purchase event to Meta CAPI.',
+            metadata: { orderId, userId, capiPayload, metaError: errorData, statusCode: metaResponse.status }
+          });
+        } else {
+          console.log('Meta CAPI Purchase event sent successfully.');
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'meta-capi-purchase',
+            message: 'Purchase event sent to Meta CAPI successfully.',
+            metadata: { orderId, userId, capiPayload }
+          });
+        }
+      } catch (metaError: any) {
+        console.error('Error sending Meta CAPI Purchase event:', metaError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'meta-capi-purchase',
+          message: `Unhandled error sending Purchase event to Meta CAPI: ${metaError.message}`,
+          metadata: { orderId, userId, capiPayload, errorStack: metaError.stack }
+        });
+      }
+    } else {
+      console.warn('Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping Purchase CAPI event.');
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'meta-capi-purchase',
+        message: 'Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping Purchase CAPI event.',
+        metadata: { userId, metaPixelIdSet: !!META_PIXEL_ID, capiAccessTokenSet: !!META_CAPI_ACCESS_TOKEN, isProduction: process.env.NODE_ENV === 'production' }
+      });
+    }
+    // --- End Meta CAPI Purchase Event ---
 
     // 7. Send "Acesso Liberado" email with login details
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY'); // Assuming Resend for email

@@ -56,6 +56,8 @@ serve(async (req) => {
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
     const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL'); // Get the base URL from environment variable
+    const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
+    const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
 
     if (!ASAAS_API_KEY) {
       await supabase.from('logs').insert({
@@ -221,6 +223,91 @@ serve(async (req) => {
       });
     }
 
+    // Capture client IP and User Agent from request headers
+    const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
+    const clientUserAgent = req.headers.get('user-agent') || '';
+
+    // Enhance metaTrackingData with server-side captured info
+    const fullMetaTrackingData = {
+      ...metaTrackingData,
+      client_ip_address: clientIpAddress,
+      client_user_agent: clientUserAgent,
+    };
+
+    // --- Meta CAPI InitiateCheckout Event ---
+    if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN && process.env.NODE_ENV === 'production') {
+      const capiPayload = {
+        data: [
+          {
+            event_name: 'InitiateCheckout',
+            event_time: Math.floor(Date.now() / 1000), // Unix timestamp
+            event_source_url: fullMetaTrackingData.event_source_url,
+            user_data: {
+              em: email,
+              ph: whatsapp,
+              fbc: fullMetaTrackingData.fbc,
+              fbp: fullMetaTrackingData.fbp,
+              client_ip_address: fullMetaTrackingData.client_ip_address,
+              client_user_agent: fullMetaTrackingData.client_user_agent,
+            },
+            custom_data: {
+              value: totalPrice.toFixed(2),
+              currency: 'BRL',
+              content_ids: productIds,
+              num_items: productIds.length,
+            },
+            action_source: 'website',
+            event_id: `initiate_checkout_capi_${Date.now()}`, // Unique event ID for CAPI
+          },
+        ],
+      };
+
+      try {
+        const metaResponse = await fetch(`https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?access_token=${META_CAPI_ACCESS_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(capiPayload),
+        });
+
+        if (!metaResponse.ok) {
+          const errorData = await metaResponse.json();
+          console.error('Meta CAPI InitiateCheckout error:', errorData);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'meta-capi-initiate-checkout',
+            message: 'Failed to send InitiateCheckout event to Meta CAPI.',
+            metadata: { orderId, userId, capiPayload, metaError: errorData, statusCode: metaResponse.status }
+          });
+        } else {
+          console.log('Meta CAPI InitiateCheckout event sent successfully.');
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'meta-capi-initiate-checkout',
+            message: 'InitiateCheckout event sent to Meta CAPI successfully.',
+            metadata: { orderId, userId, capiPayload }
+          });
+        }
+      } catch (metaError: any) {
+        console.error('Error sending Meta CAPI InitiateCheckout event:', metaError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'meta-capi-initiate-checkout',
+          message: `Unhandled error sending InitiateCheckout event to Meta CAPI: ${metaError.message}`,
+          metadata: { orderId, userId, capiPayload, errorStack: metaError.stack }
+        });
+      }
+    } else {
+      console.warn('Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping InitiateCheckout CAPI event.');
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'meta-capi-initiate-checkout',
+        message: 'Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping InitiateCheckout CAPI event.',
+        metadata: { userId, metaPixelIdSet: !!META_PIXEL_ID, capiAccessTokenSet: !!META_CAPI_ACCESS_TOKEN, isProduction: process.env.NODE_ENV === 'production' }
+      });
+    }
+    // --- End Meta CAPI InitiateCheckout Event ---
+
+
     // 5. Insert new order with 'pending' status
     const { data: order, error: orderInsertError } = await supabase
       .from('orders')
@@ -230,7 +317,7 @@ serve(async (req) => {
         total_price: totalPrice,
         status: 'pending',
         // Store Meta tracking data with the order
-        meta_tracking_data: metaTrackingData, 
+        meta_tracking_data: fullMetaTrackingData, 
       })
       .select()
       .single();
@@ -253,7 +340,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-asaas-payment',
       message: `Order created successfully: ${orderId}`,
-      metadata: { orderId, userId, productIds, totalPrice, metaTrackingData }
+      metadata: { orderId, userId, productIds, totalPrice, metaTrackingData: fullMetaTrackingData }
     });
 
     // 6. Make request to Asaas API to create payment
@@ -422,7 +509,7 @@ serve(async (req) => {
       // Step B: Create Payment with Token
       asaasPayload.billingType = 'CREDIT_CARD';
       asaasPayload.creditCardToken = creditCardToken;
-      asaasPayload.remoteIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1'; // Get client IP
+      asaasPayload.remoteIp = fullMetaTrackingData.client_ip_address; // Use captured IP
       asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional callback
       asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional return URL
 

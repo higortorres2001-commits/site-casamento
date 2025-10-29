@@ -241,7 +241,10 @@ const Checkout = () => {
           coupon_code: appliedCoupon?.code,
           paymentMethod: paymentMethod,
           creditCard: cardData, // Pass raw card data to Edge Function
-          metaTrackingData: metaTrackingData, // Pass Meta tracking data
+          metaTrackingData: { // Pass Meta tracking data including current URL
+            ...metaTrackingData,
+            event_source_url: window.location.href,
+          },
         },
       });
 
