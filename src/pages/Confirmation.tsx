@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,6 @@ const Confirmation = () => {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [totalPrice, setTotalPrice] = useState<number | null>(null);
   const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
-
-  // Ref para garantir que o evento Purchase seja rastreado apenas uma vez
-  const hasTrackedPurchase = useRef(false);
 
   useEffect(() => {
     const fetchOrderAndProfileData = async () => {
@@ -76,7 +73,7 @@ const Confirmation = () => {
       setIsLoadingData(false);
 
       // Track Purchase event if all data is available and in production
-      if (!hasTrackedPurchase.current && currentOrderId && currentTotalPrice !== null && user && data && process.env.NODE_ENV === 'production') {
+      if (currentOrderId && currentTotalPrice !== null && user && data && process.env.NODE_ENV === 'production') {
         const firstName = data.name?.split(' ')[0] || null;
         const lastName = data.name?.split(' ').slice(1).join(' ') || null;
 
@@ -91,7 +88,6 @@ const Confirmation = () => {
             lastName: lastName,
           }
         );
-        hasTrackedPurchase.current = true; // Marca como rastreado para não disparar novamente
       }
     };
 
