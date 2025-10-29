@@ -20,11 +20,13 @@ import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RealtimeChannel } from '@supabase/supabase-js'; // Import RealtimeChannel
+import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data"; // Import the new hook
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
   const { user, isLoading: isSessionLoading } = useSession();
+  const metaTrackingData = useMetaTrackingData(); // Use the new hook
 
   const [mainProduct, setMainProduct] = useState<Product | null>(null);
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
@@ -251,6 +253,7 @@ const Checkout = () => {
           coupon_code: appliedCoupon?.code,
           paymentMethod: paymentMethod,
           creditCard: cardData, // Pass raw card data to Edge Function
+          metaTrackingData: metaTrackingData, // Pass Meta tracking data
         },
       });
 

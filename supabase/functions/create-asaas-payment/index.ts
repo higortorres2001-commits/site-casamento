@@ -26,7 +26,7 @@ serve(async (req) => {
   try {
     requestBody = await req.json();
     console.log('create-asaas-payment: Received request body:', requestBody); // Log para depuração
-    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard } = requestBody; // 'creditCard' will contain raw card data if paymentMethod is CREDIT_CARD
+    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = requestBody; // Added metaTrackingData
 
     if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
@@ -229,6 +229,8 @@ serve(async (req) => {
         ordered_product_ids: productIds,
         total_price: totalPrice,
         status: 'pending',
+        // Store Meta tracking data with the order
+        meta_tracking_data: metaTrackingData, 
       })
       .select()
       .single();
@@ -251,7 +253,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-asaas-payment',
       message: `Order created successfully: ${orderId}`,
-      metadata: { orderId, userId, productIds, totalPrice }
+      metadata: { orderId, userId, productIds, totalPrice, metaTrackingData }
     });
 
     // 6. Make request to Asaas API to create payment
