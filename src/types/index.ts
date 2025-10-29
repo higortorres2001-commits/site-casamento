@@ -40,3 +40,9 @@ export type Profile = {
   primeiro_acesso?: boolean | null;
   has_changed_password?: boolean | null;
 };
+
+// Novo tipo para dados de tokenização de cartão de crédito
+export type CreditCardTokenData = {
+  creditCardToken: string;
+  holderName: string;
+};

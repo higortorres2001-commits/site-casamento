@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Product, Coupon, Profile } from "@/types";
+import { Product, Coupon, Profile, CreditCardTokenData } from "@/types"; // Import CreditCardTokenData
 import { useSession } from "@/components/SessionContextProvider";
 import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RealtimeChannel } from '@supabase/supabase-js'; // Import RealtimeChannel
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data"; // Import the new hook
 import { trackInitiateCheckout } from "@/utils/metaPixel"; // Import trackInitiateCheckout
+import Asaas from "@asaas/asaas-js"; // Import Asaas.js
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -206,27 +207,32 @@ const Checkout = () => {
     }
 
     const customerData = checkoutFormRef.current.getValues();
-    let cardData = null;
+    let creditCardTokenData: CreditCardTokenData | null = null;
 
     if (paymentMethod === "CREDIT_CARD") {
       if (!creditCardFormRef.current) {
         showError("Erro: Formulário de cartão de crédito não disponível.");
         return;
       }
-      const isCreditCardFormValid = await creditCardFormRef.current.submitForm();
+      const isCreditCardFormValid = await creditCardFormRef.current.isValid(); // Validate Asaas.js fields
       if (!isCreditCardFormValid) {
         showError("Por favor, preencha todos os dados do cartão corretamente.");
         return;
       }
-      cardData = creditCardFormRef.current.getValues(); // Get raw card data
+      
+      creditCardTokenData = await creditCardFormRef.current.tokenizeCard(); // Tokenize card
+      if (!creditCardTokenData) {
+        showError("Falha ao tokenizar o cartão de crédito. Tente novamente.");
+        return;
+      }
     }
 
-    await handleProcessPayment(customerData, cardData);
+    await handleProcessPayment(customerData, creditCardTokenData);
   };
 
   const handleProcessPayment = async (
     customerData: { name: string; cpf: string; email: string; whatsapp: string },
-    cardData: any | null // Raw card data, or null for PIX
+    creditCardTokenData: CreditCardTokenData | null // Now expects token data or null
   ) => {
     if (!mainProduct) {
       showError("Nenhum produto principal selecionado.");
@@ -249,7 +255,8 @@ const Checkout = () => {
           productIds: productIdsToPurchase,
           coupon_code: appliedCoupon?.code,
           paymentMethod: paymentMethod,
-          creditCard: cardData, // Pass raw card data to Edge Function
+          creditCardToken: creditCardTokenData?.creditCardToken, // Pass only the token
+          holderName: creditCardTokenData?.holderName, // Pass holder name separately
           metaTrackingData: { // Pass Meta tracking data including current URL
             ...metaTrackingData,
             event_source_url: window.location.href,
