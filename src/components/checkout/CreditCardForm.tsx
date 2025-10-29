@@ -229,7 +229,7 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
             />
             <p className="flex items-center text-sm text-gray-500 mt-2">
               <Info className="h-4 w-4 mr-1 text-blue-500" />
-              Estas informações são usadas apenas para a validação anti-fraude do seu cartão.
+              Estas informações são usadas apenas para a validação de segurança do seu cartão.
             </p>
           </div>
         </form>
