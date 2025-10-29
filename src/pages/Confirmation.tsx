@@ -78,7 +78,6 @@ const Confirmation = () => {
         const lastName = data.name?.split(' ').slice(1).join(' ') || null;
 
         trackPurchase(
-          "$$META_PIXEL_ID$$", // Replace with your Meta Pixel ID
           currentTotalPrice,
           'BRL',
           currentOrderId,

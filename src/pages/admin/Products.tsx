@@ -35,6 +35,7 @@ const formSchema = z.object({
 });
 
 const Products = () => {
+  console.log("Products component rendered"); // Log de renderização
   const { user, isLoading: isSessionLoading } = useSession();
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true); // Renomeado para clareza
@@ -43,6 +44,7 @@ const Products = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchProducts = useCallback(async () => {
+    console.log("fetchProducts called"); // Log de chamada da função
     if (!user?.id) {
       setIsLoadingProducts(false);
       return;
@@ -93,14 +95,11 @@ const Products = () => {
   }, [user]); // Depende de user
 
   useEffect(() => {
-    if (!isSessionLoading) {
-      if (user) {
-        fetchProducts();
-      } else {
-        // Se a sessão carregou mas não há usuário, parar o carregamento interno.
-        // O SessionContextProvider cuidará do redirecionamento para o login se não for uma rota pública.
-        setIsLoadingProducts(false); 
-      }
+    console.log("useEffect in Products running. isSessionLoading:", isSessionLoading, "user:", user); // Log de execução do useEffect
+    if (!isSessionLoading && user) { // Only run if session is loaded AND user is present
+      fetchProducts();
+    } else if (!isSessionLoading && !user) { // If session loaded but no user
+      setIsLoadingProducts(false); // Ensure loading state is false
     }
   }, [user, isSessionLoading, fetchProducts]); // Depende de user, isSessionLoading e fetchProducts
 

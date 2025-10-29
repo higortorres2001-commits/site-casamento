@@ -22,7 +22,6 @@ const getHashedCustomerData = (email?: string | null, phone?: string | null, fir
 
 // Função para disparar o evento InitiateCheckout
 export const trackInitiateCheckout = (
-  pixelId: string, // This parameter is now redundant as the ID is hardcoded, but kept for function signature consistency
   value: number,
   currency: string,
   content_ids: string[],
@@ -50,7 +49,6 @@ export const trackInitiateCheckout = (
 
 // Função para disparar o evento Purchase
 export const trackPurchase = (
-  pixelId: string, // This parameter is now redundant as the ID is hardcoded, but kept for function signature consistency
   value: number,
   currency: string,
   order_id: string,

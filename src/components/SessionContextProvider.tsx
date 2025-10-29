@@ -39,7 +39,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
-        console.log('SessionContextProvider DEBUG: Auth state change event:', event, 'Session:', currentSession ? 'exists' : 'null');
+        console.log('SessionContextProvider DEBUG: Auth state change event:', event, 'Session:', currentSession ? 'exists' : 'null', 'User object reference:', currentSession?.user);
         setSession(currentSession);
         setUser(currentSession?.user || null);
         setIsLoading(false);
@@ -61,7 +61,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
     );
 
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null');
+      console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null', 'User object reference:', initialSession?.user);
       setSession(initialSession);
       setUser(initialSession?.user || null);
       setIsLoading(false);

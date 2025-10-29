@@ -63,9 +63,15 @@ const Checkout = () => {
       .eq("id", productId)
       .single();
 
-    if (productError || !productData) {
+    if (productError) {
+      console.error("Supabase error fetching main product:", productError); // Log de erro mais específico
+      showError("Produto não encontrado ou erro ao carregar: " + productError.message);
+      navigate("/");
+      return;
+    }
+    if (!productData) {
+      console.error("No product data found for ID:", productId); // Log para quando não há dados
       showError("Produto não encontrado ou erro ao carregar.");
-      console.error("Error fetching main product:", productError);
       navigate("/");
       return;
     }
@@ -126,7 +132,6 @@ const Checkout = () => {
       const lastName = userProfile.name?.split(' ').slice(1).join(' ') || null;
 
       trackInitiateCheckout(
-        "$$META_PIXEL_ID$$", // Replace with your Meta Pixel ID
         currentTotalPrice,
         'BRL',
         productIds,
