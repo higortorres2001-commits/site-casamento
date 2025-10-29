@@ -82,6 +82,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         if (currentSession?.user) {
           const profileData = await fetchUserProfile(currentSession.user.id);
           updatedUser = { ...currentSession.user, ...profileData };
+          console.log('SessionContextProvider DEBUG: Fetched profile data:', profileData);
+          console.log('SessionContextProvider DEBUG: Merged user object:', updatedUser);
         }
 
         // Use os valores mais recentes dos refs para a comparação
@@ -99,11 +101,12 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         if (hasSessionChanged) {
           setSession(currentSession);
           setUser(updatedUser);
-          console.log('SessionContextProvider DEBUG: State updated due to session change.');
+          console.log('SessionContextProvider DEBUG: State updated due to session change. New user.is_admin:', updatedUser?.is_admin);
         } else {
           console.log('SessionContextProvider DEBUG: Session state unchanged, skipping state update.');
         }
         setIsLoading(false);
+        console.log('SessionContextProvider DEBUG: setIsLoading(false) called.');
 
         if (event === 'SIGNED_OUT') {
           if (!isPublicPath) { // Only redirect if not on a public path
@@ -128,6 +131,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       if (initialSession?.user) {
         const profileData = await fetchUserProfile(initialSession.user.id);
         initialUpdatedUser = { ...initialSession.user, ...profileData };
+        console.log('SessionContextProvider DEBUG: Initial fetched profile data:', profileData);
+        console.log('SessionContextProvider DEBUG: Initial merged user object:', initialUpdatedUser);
       }
 
       // Aplica a mesma lógica de detecção de mudança para a sessão inicial
@@ -136,18 +141,19 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       const hasInitialSessionChanged = 
         initialUpdatedUser?.id !== currentUserState?.id || 
         initialSession?.expires_at !== currentSessionState?.expires_at ||
-        initialUpdatedUser?.is_admin !== currentUserState?.is_admin || // Check for admin status change
+        initialUpdatedUser?.is_admin !== currentUserState?.is_admin ||
         (initialSession === null && currentSessionState !== null) ||
         (initialSession !== null && currentSessionState === null);
 
       if (hasInitialSessionChanged) {
         setSession(initialSession);
         setUser(initialUpdatedUser);
-        console.log('SessionContextProvider DEBUG: Initial state updated due to session change.');
+        console.log('SessionContextProvider DEBUG: Initial state updated due to session change. New user.is_admin:', initialUpdatedUser?.is_admin);
       } else {
         console.log('SessionContextProvider DEBUG: Initial session state unchanged, skipping state update.');
       }
       setIsLoading(false);
+      console.log('SessionContextProvider DEBUG: Initial setIsLoading(false) called.');
 
       // If no session and not on a public path, redirect to login
       if (!initialSession && !isPublicPath) {

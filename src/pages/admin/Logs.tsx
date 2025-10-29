@@ -42,6 +42,7 @@ const Logs = () => {
   const isAdmin = user?.is_admin === true; // Verificar se é administrador usando a nova propriedade
 
   const fetchLogs = useCallback(async () => {
+    console.log('Logs DEBUG: fetchLogs called. Current isLoading (local):', isLoading);
     setIsLoading(true);
     let query = supabase.from("logs").select("*").order("created_at", { ascending: false });
 
@@ -53,6 +54,7 @@ const Logs = () => {
     }
 
     const { data, error } = await query;
+    console.log('Logs DEBUG: Supabase query finished. Data:', data ? data.length + ' items' : 'null', 'Error:', error);
 
     if (error) {
       showError("Erro ao carregar logs: " + error.message);
@@ -62,6 +64,7 @@ const Logs = () => {
       setLogs(data || []);
     }
     setIsLoading(false);
+    console.log('Logs DEBUG: setIsLoading(false) called for local loading state.');
   }, [levelFilter, contextFilter]);
 
   const fetchAvailableContexts = useCallback(async () => {
@@ -83,8 +86,14 @@ const Logs = () => {
   }, [fetchAvailableContexts]);
 
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    console.log('Logs DEBUG: useEffect for fetchLogs running. isSessionLoading:', isSessionLoading, 'user:', user ? 'exists' : 'null');
+    if (!isSessionLoading && user) {
+      fetchLogs();
+    } else if (!isSessionLoading && !user) {
+      console.log('Logs DEBUG: Session loaded, but no user. Not fetching logs.');
+      setIsLoading(false); // Ensure local loading is false if no user
+    }
+  }, [user, isSessionLoading, fetchLogs]);
 
   const handleClearLogs = async () => {
     if (!isAdmin) {
@@ -108,6 +117,7 @@ const Logs = () => {
   };
 
   if (isSessionLoading) {
+    console.log('Logs DEBUG: Rendering loading state due to isSessionLoading (from SessionContextProvider).');
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -115,6 +125,7 @@ const Logs = () => {
     );
   }
 
+  console.log('Logs DEBUG: isSessionLoading is false, rendering Logs content. Local isLoading:', isLoading);
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
