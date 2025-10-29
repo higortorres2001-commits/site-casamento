@@ -77,7 +77,7 @@ const Checkout = () => {
       showError("Produto não encontrado ou erro ao carregar.");
       navigate("/");
       return;
-    }
+      }
     setMainProduct(productData);
 
     if (productData.orderbumps && productData.orderbumps.length > 0) {
