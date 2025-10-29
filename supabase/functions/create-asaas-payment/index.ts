@@ -285,6 +285,7 @@ serve(async (req) => {
     };
 
     let finalAsaasResponseData: any;
+    let clientResponseData: any; // This will hold the data sent back to the client
 
     if (paymentMethod === 'PIX') {
       asaasPayload.billingType = 'PIX';
@@ -338,18 +339,20 @@ serve(async (req) => {
       }
 
       const pixQrCodeData = await pixQrCodeResponse.json();
-      // Add pixQrCodeData to the final response under the 'pix' key
-      finalAsaasResponseData.pix = {
+      
+      // Construct the client response specifically for PIX as requested
+      clientResponseData = {
+        id: asaasPaymentId,
+        orderId: order.id,
         payload: pixQrCodeData.payload,
         encodedImage: pixQrCodeData.encodedImage,
-        expirationDate: pixQrCodeData.expirationDate,
       };
-      console.log('PIX QR Code fetched successfully:', finalAsaasResponseData.pix);
+      console.log('PIX QR Code fetched successfully, client response prepared:', clientResponseData);
       await supabase.from('logs').insert({
         level: 'info',
         context: 'create-asaas-payment',
-        message: 'PIX QR Code fetched successfully.',
-        metadata: { orderId, userId, asaasPaymentId, pixDetails: finalAsaasResponseData.pix }
+        message: 'PIX QR Code fetched successfully, client response prepared.',
+        metadata: { orderId, userId, asaasPaymentId, clientResponse: clientResponseData }
       });
 
     } else if (paymentMethod === 'CREDIT_CARD') {
@@ -442,6 +445,8 @@ serve(async (req) => {
         });
       }
       finalAsaasResponseData = await asaasPaymentResponse.json();
+      // For credit card, the client response can be the full Asaas response + our orderId
+      clientResponseData = { ...finalAsaasResponseData, orderId: order.id };
 
     } else {
       await supabase.from('logs').insert({
@@ -484,8 +489,8 @@ serve(async (req) => {
       metadata: { orderId, userId, asaasPaymentId, asaasPaymentData: finalAsaasResponseData }
     });
 
-    // Return Asaas response to the client, including PIX details if available
-    return new Response(JSON.stringify({ ...finalAsaasResponseData, orderId: order.id }), {
+    // Return the prepared clientResponseData
+    return new Response(JSON.stringify(clientResponseData), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -38,7 +38,7 @@ const Checkout = () => {
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX");
 
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
-  const [modalPixDetails, setModalPixDetails] = useState<any>(null);
+  const [modalPixDetails, setModalPixDetails] = useState<any>(null); // This will now receive the flat object
   const [modalTotalPrice, setModalTotalPrice] = useState<number>(0);
   const [modalOrderId, setModalOrderId] = useState<string>("");
   const [modalAsaasPaymentId, setModalAsaasPaymentId] = useState<string>(""); // New state for Asaas Payment ID
@@ -258,9 +258,9 @@ const Checkout = () => {
         showError("Erro ao criar pagamento: " + error.message);
         console.error("Edge Function error:", error);
       } else if (data) {
-        if (paymentMethod === "PIX" && data.pix && data.orderId && data.id) { // Ensure data.id (asaasPaymentId) is present
+        if (paymentMethod === "PIX" && data.payload && data.encodedImage && data.orderId && data.id) { // Check for flat PIX data
           showSuccess("Pagamento PIX criado com sucesso!");
-          setModalPixDetails(data.pix);
+          setModalPixDetails(data); // Pass the entire flat data object
           setModalTotalPrice(currentTotalPrice);
           setModalOrderId(data.orderId);
           setModalAsaasPaymentId(data.id); // Set Asaas Payment ID
@@ -410,7 +410,7 @@ const Checkout = () => {
         isOpen={isPixModalOpen}
         onClose={() => setIsPixModalOpen(false)}
         orderId={modalOrderId}
-        pixDetails={modalPixDetails}
+        pixDetails={modalPixDetails} // This now receives the flat object
         totalPrice={modalTotalPrice}
         asaasPaymentId={modalAsaasPaymentId} // Pass the Asaas Payment ID
       />
