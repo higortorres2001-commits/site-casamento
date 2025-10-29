@@ -21,6 +21,7 @@ import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RealtimeChannel } from '@supabase/supabase-js'; // Import RealtimeChannel
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data"; // Import the new hook
+import { trackInitiateCheckout } from "@/utils/metaPixel"; // Import trackInitiateCheckout
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -116,43 +117,30 @@ const Checkout = () => {
     }
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
 
-  // Realtime listener for PIX payment confirmation - REMOVED as per new requirements
-  // useEffect(() => {
-  //   let orderSubscription: RealtimeChannel | null = null;
+  // Effect to track InitiateCheckout event
+  useEffect(() => {
+    if (!isLoading && mainProduct && currentTotalPrice > 0 && userProfile && process.env.NODE_ENV === 'production') {
+      const productIds = [mainProduct.id, ...selectedOrderBumps];
+      const numItems = productIds.length;
+      const firstName = userProfile.name?.split(' ')[0] || null;
+      const lastName = userProfile.name?.split(' ').slice(1).join(' ') || null;
 
-  //   if (isPixModalOpen && modalOrderId) {
-  //     console.log(`Subscribing to order updates for order ID: ${modalOrderId}`);
-  //     orderSubscription = supabase
-  //       .channel(`order_status_update:${modalOrderId}`)
-  //       .on(
-  //         'postgres_changes',
-  //         {
-  //           event: 'UPDATE',
-  //           schema: 'public',
-  //           table: 'orders',
-  //           filter: `id=eq.${modalOrderId}`,
-  //         },
-  //         (payload) => {
-  //           console.log('Realtime update received for order:', payload);
-  //           if (payload.new.status === 'paid') {
-  //             showSuccess("Seu pagamento foi confirmado!");
-  //             if (orderSubscription) {
-  //               orderSubscription.unsubscribe();
-  //             }
-  //             navigate("/confirmacao");
-  //           }
-  //         }
-  //       )
-  //       .subscribe();
-  //   }
+      trackInitiateCheckout(
+        "$$META_PIXEL_ID$$", // Replace with your Meta Pixel ID
+        currentTotalPrice,
+        'BRL',
+        productIds,
+        numItems,
+        {
+          email: userProfile.email,
+          phone: userProfile.whatsapp,
+          firstName: firstName,
+          lastName: lastName,
+        }
+      );
+    }
+  }, [isLoading, mainProduct, currentTotalPrice, selectedOrderBumps, userProfile]);
 
-  //   return () => {
-  //     if (orderSubscription) {
-  //       console.log(`Unsubscribing from order updates for order ID: ${modalOrderId}`);
-  //       orderSubscription.unsubscribe();
-  //     }
-  //   };
-  // }, [isPixModalOpen, modalOrderId, navigate]); // Dependencies for the listener
 
   useEffect(() => {
     if (!mainProduct) return;
@@ -272,7 +260,7 @@ const Checkout = () => {
           // Asaas response for credit card payment status
           if (data.status === "CONFIRMED") {
             showSuccess("Pagamento com cartão de crédito aprovado!");
-            navigate("/confirmacao"); // Redirect to confirmation page
+            navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } }); // Pass data to confirmation
           } else if (data.status === "PENDING") {
             showSuccess("Pagamento com cartão de crédito pendente. Verifique seu e-mail.");
             navigate("/processando-pagamento"); // Or a specific pending page
