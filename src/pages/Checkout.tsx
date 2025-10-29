@@ -107,7 +107,7 @@ const Checkout = () => {
         setUserProfile(data);
         // If user is logged in and has not changed password, redirect to update password page
         if (data.has_changed_password === false) {
-          navigate("/primeira-senha");
+          navigate("/update-password"); // CORRIGIDO: Caminho para /update-password
         }
       }
     }
