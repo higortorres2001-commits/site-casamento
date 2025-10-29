@@ -15,10 +15,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 
 const ProductDetails = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
+  const { user } = useSession(); // Get user from session
   const [product, setProduct] = useState<(Product & { assets?: ProductAsset[] }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPdfViewerOpen, setIsPdfViewerOpen] = useState(false);
@@ -61,6 +63,12 @@ const ProductDetails = () => {
     if (error) {
       showError("Erro ao baixar arquivo: " + error.message);
       console.error("Error downloading file:", error);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'client-asset-download',
+        message: `Failed to download product asset: ${error.message}`,
+        metadata: { userId: user?.id, productId, fileName, storagePath, error: error.message }
+      });
       return;
     }
 
@@ -73,6 +81,12 @@ const ProductDetails = () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     showSuccess(`Download de "${fileName}" iniciado!`);
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'client-asset-download',
+      message: 'Client downloaded product asset successfully.',
+      metadata: { userId: user?.id, productId, fileName, storagePath }
+    });
   };
 
   const handleViewPdf = async (storagePath: string, fileName: string) => {
@@ -84,6 +98,12 @@ const ProductDetails = () => {
     if (error) {
       showError("Erro ao gerar link de visualização do PDF: " + error.message);
       console.error("Error creating signed URL for PDF view:", error);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'client-asset-view',
+        message: `Failed to generate signed URL for PDF view: ${error.message}`,
+        metadata: { userId: user?.id, productId, fileName, storagePath, error: error.message }
+      });
       return;
     }
 
@@ -91,8 +111,20 @@ const ProductDetails = () => {
       setCurrentPdfUrl(data.signedUrl);
       setCurrentPdfName(fileName);
       setIsPdfViewerOpen(true);
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'client-asset-view',
+        message: 'Client viewed product asset successfully.',
+        metadata: { userId: user?.id, productId, fileName, storagePath }
+      });
     } else {
       showError("Não foi possível obter o link de visualização do PDF.");
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'client-asset-view',
+        message: 'Signed URL for PDF view was null or undefined.',
+        metadata: { userId: user?.id, productId, fileName, storagePath }
+      });
     }
   };
 

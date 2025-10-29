@@ -17,9 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
-import { showError } from "@/utils/toast";
+import { Loader2, Trash2 } from "lucide-react"; // Import Trash2 icon for clear logs
+import { showError, showSuccess } from "@/utils/toast";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 
 interface Log {
   id: string;
@@ -30,12 +31,17 @@ interface Log {
   metadata: any;
 }
 
+const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
+
 const Logs = () => {
+  const { user, isLoading: isSessionLoading } = useSession();
   const [logs, setLogs] = useState<Log[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [contextFilter, setContextFilter] = useState<string>("all");
   const [availableContexts, setAvailableContexts] = useState<string[]>([]);
+
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
@@ -82,9 +88,50 @@ const Logs = () => {
     fetchLogs();
   }, [fetchLogs]);
 
+  const handleClearLogs = async () => {
+    if (!isAdmin) {
+      showError("Você não tem permissão para limpar os logs.");
+      return;
+    }
+    if (!window.confirm("Tem certeza que deseja apagar TODOS os logs? Esta ação é irreversível.")) {
+      return;
+    }
+
+    setIsLoading(true);
+    const { error } = await supabase.from("logs").delete().neq("id", "00000000-0000-0000-0000-000000000000"); // Delete all records
+    if (error) {
+      showError("Erro ao limpar logs: " + error.message);
+      console.error("Error clearing logs:", error);
+    } else {
+      showSuccess("Logs limpos com sucesso!");
+      fetchLogs(); // Re-fetch to show empty state
+    }
+    setIsLoading(false);
+  };
+
+  if (isSessionLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6">Logs do Sistema</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Logs do Sistema</h1>
+        {isAdmin && (
+          <Button
+            variant="destructive"
+            onClick={handleClearLogs}
+            disabled={isLoading}
+            className="flex items-center gap-2"
+          >
+            <Trash2 className="h-4 w-4" /> Limpar Logs
+          </Button>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="flex-1 min-w-[180px]">

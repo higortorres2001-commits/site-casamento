@@ -118,9 +118,21 @@ const Products = () => {
       if (uploadError) {
         errorMessages.push(`Erro ao fazer upload da imagem: ${uploadError.message}`);
         console.error("Error uploading image:", uploadError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'product-image-upload',
+          message: `Failed to upload product image: ${uploadError.message}`,
+          metadata: { userId: user.id, fileName: imageFile.name, error: uploadError.message }
+        });
         hasErrors = true;
       } else {
         newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'product-image-upload',
+          message: 'Product image uploaded successfully.',
+          metadata: { userId: user.id, productId: currentProductId, imageUrl: newImageUrl }
+        });
         // If there was an old image and a new one is uploaded, delete the old one
         if (oldImageUrl && oldImageUrl !== newImageUrl) {
           const oldPath = oldImageUrl.split('product-images/')[1];
@@ -130,6 +142,19 @@ const Products = () => {
               .remove([oldPath]);
             if (deleteOldImageError) {
               console.warn("Could not delete old product image from storage:", deleteOldImageError.message);
+              await supabase.from('logs').insert({
+                level: 'warning',
+                context: 'product-image-delete',
+                message: `Failed to delete old product image: ${deleteOldImageError.message}`,
+                metadata: { userId: user.id, productId: currentProductId, oldImageUrl, error: deleteOldImageError.message }
+              });
+            } else {
+              await supabase.from('logs').insert({
+                level: 'info',
+                context: 'product-image-delete',
+                message: 'Old product image deleted successfully.',
+                metadata: { userId: user.id, productId: currentProductId, oldImageUrl }
+              });
             }
           }
         }
@@ -143,6 +168,19 @@ const Products = () => {
           .remove([oldPath]);
         if (deleteOldImageError) {
           console.warn("Could not delete old product image from storage (cleared field):", deleteOldImageError.message);
+          await supabase.from('logs').insert({
+            level: 'warning',
+            context: 'product-image-delete',
+            message: `Failed to delete product image (field cleared): ${deleteOldImageError.message}`,
+            metadata: { userId: user.id, productId: currentProductId, oldImageUrl, error: deleteOldImageError.message }
+          });
+        } else {
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'product-image-delete',
+            message: 'Product image deleted (field cleared) successfully.',
+            metadata: { userId: user.id, productId: currentProductId, oldImageUrl }
+          });
         }
       }
       newImageUrl = null;
@@ -158,10 +196,22 @@ const Products = () => {
       if (error) {
         errorMessages.push("Erro ao atualizar produto: " + error.message);
         console.error("Error updating product:", error);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'product-management',
+          message: `Failed to update product: ${error.message}`,
+          metadata: { userId: user?.id, productId: editingProduct.id, error: error.message }
+        });
         hasErrors = true;
       } else {
         showSuccess("Detalhes do produto atualizados!"); // Specific success for product details
         currentProductId = editingProduct.id;
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'product-management',
+          message: 'Product details updated successfully.',
+          metadata: { userId: user?.id, productId: currentProductId }
+        });
       }
     } else {
       const { data, error } = await supabase
@@ -172,10 +222,22 @@ const Products = () => {
       if (error || !data) {
         errorMessages.push("Erro ao criar produto: " + error.message);
         console.error("Error creating product:", error);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'product-management',
+          message: `Failed to create product: ${error.message}`,
+          metadata: { userId: user?.id, productData, error: error?.message }
+        });
         hasErrors = true;
       } else {
         showSuccess("Produto criado com sucesso!"); // Specific success for product creation
         currentProductId = data.id;
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'product-management',
+          message: 'Product created successfully.',
+          metadata: { userId: user?.id, productId: currentProductId }
+        });
       }
     }
 
@@ -199,6 +261,12 @@ const Products = () => {
         if (uploadError) {
           errorMessages.push(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
           console.error("Error uploading file:", uploadError);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'product-asset-upload',
+            message: `Failed to upload product asset: ${uploadError.message}`,
+            metadata: { userId: user.id, productId: currentProductId, fileName: file.name, error: uploadError.message }
+          });
           hasErrors = true;
         } else {
           const { error: assetInsertError } = await supabase
@@ -211,7 +279,20 @@ const Products = () => {
           if (assetInsertError) {
             errorMessages.push(`Erro ao registrar asset ${file.name} no banco de dados: ${assetInsertError.message}`);
             console.error("Error inserting asset record:", assetInsertError);
+            await supabase.from('logs').insert({
+              level: 'error',
+              context: 'product-asset-upload',
+              message: `Failed to record product asset in DB: ${assetInsertError.message}`,
+              metadata: { userId: user.id, productId: currentProductId, fileName: file.name, storagePath: filePath, error: assetInsertError.message }
+            });
             hasErrors = true;
+          } else {
+            await supabase.from('logs').insert({
+              level: 'info',
+              context: 'product-asset-upload',
+              message: 'Product asset uploaded and recorded successfully.',
+              metadata: { userId: user.id, productId: currentProductId, fileName: file.name, storagePath: filePath }
+            });
           }
         }
       }
@@ -235,7 +316,20 @@ const Products = () => {
         if (deleteStorageError) {
           errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
           console.error("Error deleting files from storage:", deleteStorageError);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'product-asset-delete',
+            message: `Failed to delete product assets from storage: ${deleteStorageError.message}`,
+            metadata: { userId: user?.id, productId: currentProductId, paths: assetsToDeletePaths, error: deleteStorageError.message }
+          });
           hasErrors = true;
+        } else {
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'product-asset-delete',
+            message: 'Product assets deleted from storage successfully.',
+            metadata: { userId: user?.id, productId: currentProductId, paths: assetsToDeletePaths }
+          });
         }
       }
 
@@ -247,7 +341,20 @@ const Products = () => {
       if (deleteDbError) {
         errorMessages.push("Erro ao excluir registros de arquivos do banco de dados: " + deleteDbError.message);
         console.error("Error deleting asset records:", deleteDbError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'product-asset-delete',
+          message: `Failed to delete product asset records from DB: ${deleteDbError.message}`,
+          metadata: { userId: user?.id, productId: currentProductId, assetIds: deletedAssetIds, error: deleteDbError.message }
+        });
         hasErrors = true;
+      } else {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'product-asset-delete',
+          message: 'Product asset records deleted from DB successfully.',
+          metadata: { userId: user?.id, productId: currentProductId, assetIds: deletedAssetIds }
+        });
       }
     }
 
@@ -267,6 +374,8 @@ const Products = () => {
     if (!window.confirm("Tem certeza que deseja excluir este produto e todos os seus arquivos?")) return;
 
     setIsSubmitting(true);
+    let hasErrors = false;
+    const errorMessages: string[] = [];
 
     // First, fetch assets to delete from storage
     const { data: assetsToDelete, error: fetchAssetsError } = await supabase
@@ -275,10 +384,15 @@ const Products = () => {
       .eq('product_id', id);
 
     if (fetchAssetsError) {
-      showError("Erro ao buscar assets para exclusão: " + fetchAssetsError.message);
+      errorMessages.push("Erro ao buscar assets para exclusão: " + fetchAssetsError.message);
       console.error("Error fetching assets for deletion:", fetchAssetsError);
-      setIsSubmitting(false);
-      return;
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'product-delete',
+        message: `Failed to fetch assets for product deletion: ${fetchAssetsError.message}`,
+        metadata: { userId: user?.id, productId: id, error: fetchAssetsError.message }
+      });
+      hasErrors = true;
     }
 
     if (assetsToDelete && assetsToDelete.length > 0) {
@@ -288,11 +402,24 @@ const Products = () => {
         .remove(paths);
 
       if (deleteStorageError) {
-        showError("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
+        errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
         console.error("Error deleting files from storage:", deleteStorageError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'product-delete',
+          message: `Failed to delete product assets from storage: ${deleteStorageError.message}`,
+          metadata: { userId: user?.id, productId: id, paths, error: deleteStorageError.message }
+        });
+        hasErrors = true;
         // Continue with database deletion even if storage fails, to avoid orphaned records
       } else {
           showSuccess("Arquivos do produto excluídos do storage.");
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'product-delete',
+            message: 'Product assets deleted from storage successfully.',
+            metadata: { userId: user?.id, productId: id, paths }
+          });
       }
     }
 
@@ -306,8 +433,20 @@ const Products = () => {
           .remove([imagePath]);
         if (deleteImageError) {
           console.warn("Could not delete product image from storage during product deletion:", deleteImageError.message);
+          await supabase.from('logs').insert({
+            level: 'warning',
+            context: 'product-delete',
+            message: `Failed to delete product image during product deletion: ${deleteImageError.message}`,
+            metadata: { userId: user?.id, productId: id, imagePath, error: deleteImageError.message }
+          });
         } else {
           showSuccess("Imagem principal do produto excluída do storage.");
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'product-delete',
+            message: 'Product image deleted from storage successfully.',
+            metadata: { userId: user?.id, productId: id, imagePath }
+          });
         }
       }
     }
@@ -315,13 +454,30 @@ const Products = () => {
     // Then, delete the product (this will cascade delete assets from product_assets table due to RLS)
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) {
+      errorMessages.push("Erro ao excluir produto: " + error.message);
       showError("Erro ao excluir produto: " + error.message);
       console.error("Error deleting product:", error);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'product-delete',
+        message: `Failed to delete product record: ${error.message}`,
+        metadata: { userId: user?.id, productId: id, error: error.message }
+      });
+      hasErrors = true;
     } else {
       showSuccess("Produto excluído com sucesso!");
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'product-delete',
+        message: 'Product record deleted successfully.',
+        metadata: { userId: user?.id, productId: id }
+      });
       fetchProducts();
     }
     setIsSubmitting(false);
+    if (hasErrors) {
+      showError("Ocorreram erros durante a exclusão:\n" + errorMessages.join("\n"));
+    }
   };
 
   const handleDownloadAsset = async (storagePath: string, fileName: string) => {
