@@ -57,6 +57,7 @@ const Checkout = () => {
   const hasTrackedInitiateCheckout = useRef(false);
 
   const fetchProductDetails = useCallback(async () => {
+    console.log("Checkout DEBUG: fetchProductDetails called. Product ID from URL:", productId); // Log para depuração
     if (!productId) {
       showError("ID do produto não fornecido.");
       navigate("/");
@@ -71,11 +72,12 @@ const Checkout = () => {
       .single();
 
     if (error || !data) {
+      console.error("Checkout DEBUG: Error fetching product details:", error); // Log de erro
       showError("Produto não encontrado ou erro ao carregar.");
-      console.error("Error fetching product details:", error);
       navigate("/");
       return;
     }
+    console.log("Checkout DEBUG: Product data fetched successfully:", data); // Log de sucesso
 
     setMainProduct(data);
     const bumps = (data.orderbumps || []).filter((bump: any) => bump !== null); // Filter out nulls

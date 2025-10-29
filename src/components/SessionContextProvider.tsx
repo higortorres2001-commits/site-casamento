@@ -32,6 +32,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
 
   useEffect(() => {
     const publicPaths = [
+      '/', // Adicionado: A rota raiz deve ser pública
       '/login',
       '/checkout/', // Dynamic path, check with startsWith
       '/confirmacao',
