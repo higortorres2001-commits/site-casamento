@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Product, Coupon, Profile } from "@/types";
+import { Product, Coupon, Profile, MetaTrackingData } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,13 +20,21 @@ import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import { useSession } from "@/components/SessionContextProvider";
-import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data"; // Mantido para coletar dados
+import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
+import { trackInitiateCheckout } from "@/utils/metaPixel"; // Import trackInitiateCheckout
+
+// Declare global interface for window.fbq
+declare global {
+  interface Window {
+    fbq: (...args: any[]) => void;
+  }
+}
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
   const { user, isLoading: isSessionLoading } = useSession();
-  const metaTrackingData = useMetaTrackingData(); // Coleta os dados de atribuição
+  const metaTrackingData = useMetaTrackingData();
 
   const [mainProduct, setMainProduct] = useState<Product | null>(null);
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
@@ -44,6 +52,9 @@ const Checkout = () => {
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
+
+  // Ref para garantir que o evento InitiateCheckout seja rastreado apenas uma vez
+  const hasTrackedInitiateCheckout = useRef(false);
 
   const fetchProductDetails = useCallback(async () => {
     console.log("Checkout DEBUG: fetchProductDetails called. Product ID from URL:", productId); // Log para depuração
@@ -96,7 +107,7 @@ const Checkout = () => {
         setUserProfile(data);
         // If user is logged in and has not changed password, redirect to update password page
         if (data.has_changed_password === false) {
-          navigate("/update-password");
+          navigate("/update-password"); // CORRIGIDO: Caminho para /update-password
         }
       }
     }
@@ -132,6 +143,31 @@ const Checkout = () => {
       setCurrentTotalPrice(newTotalPrice);
     }
   }, [mainProduct, selectedOrderBumps, orderBumps, appliedCoupon]);
+
+  // Effect para rastrear o evento InitiateCheckout, garantindo que seja disparado apenas uma vez
+  useEffect(() => {
+    if (!hasTrackedInitiateCheckout.current && !isLoading && mainProduct && currentTotalPrice > 0 && userProfile && process.env.NODE_ENV === 'production') {
+      const productIds = [mainProduct.id, ...selectedOrderBumps];
+      const numItems = productIds.length;
+      const firstName = userProfile.name?.split(' ')[0] || null;
+      const lastName = userProfile.name?.split(' ').slice(1).join(' ') || null;
+
+      trackInitiateCheckout(
+        currentTotalPrice,
+        'BRL',
+        productIds,
+        numItems,
+        {
+          email: userProfile.email,
+          phone: userProfile.whatsapp,
+          firstName: firstName,
+          lastName: lastName,
+        }
+      );
+      hasTrackedInitiateCheckout.current = true; // Marca como rastreado para não disparar novamente
+    }
+  }, [isLoading, mainProduct, currentTotalPrice, selectedOrderBumps, userProfile]);
+
 
   const handleToggleOrderBump = (bumpId: string, isSelected: boolean) => {
     setSelectedOrderBumps((prev) =>
@@ -196,10 +232,7 @@ const Checkout = () => {
         coupon_code: appliedCoupon?.code || null,
         paymentMethod: paymentMethod,
         creditCard: paymentMethod === "CREDIT_CARD" ? creditCardFormData : undefined,
-        metaTrackingData: { // Pass Meta tracking data, including current URL
-          ...metaTrackingData,
-          event_source_url: window.location.href,
-        },
+        metaTrackingData: metaTrackingData, // Pass Meta tracking data
       };
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {

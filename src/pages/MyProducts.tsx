@@ -42,8 +42,8 @@ const MyProducts = () => {
 
         // CRITICAL: Check if user has changed password
         if (profile.has_changed_password === false) {
-          console.log("User has not changed password, redirecting to /primeira-senha");
-          navigate("/primeira-senha");
+          console.log("User has not changed password, redirecting to /update-password"); // CORRIGIDO
+          navigate("/update-password"); // CORRIGIDO: Redirecionar para /update-password
           setIsLoading(false); // Stop loading state as we are redirecting
           return;
         }
