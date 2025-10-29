@@ -44,6 +44,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   }, [session, user]);
 
   const fetchUserProfile = async (userId: string): Promise<Partial<Profile> | null> => {
+    console.log('SessionContextProvider DEBUG: fetchUserProfile called for userId:', userId); // Novo log
     const { data, error } = await supabase
       .from('profiles')
       .select('is_admin, name, cpf, email, whatsapp, access, primeiro_acesso, has_changed_password')
@@ -51,9 +52,10 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       .single();
 
     if (error) {
-      console.error("Error fetching user profile:", error);
+      console.error("SessionContextProvider DEBUG: Error fetching user profile:", error); // Log aprimorado
       return null;
     }
+    console.log('SessionContextProvider DEBUG: Raw profile data fetched:', data); // Novo log
     return data;
   };
 
@@ -81,7 +83,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         let updatedUser: CustomUser | null = null;
         if (currentSession?.user) {
           const profileData = await fetchUserProfile(currentSession.user.id);
-          updatedUser = { ...currentSession.user, ...profileData };
+          // Garante que profileData seja um objeto (mesmo que vazio) para a operação de spread
+          updatedUser = { ...currentSession.user, ...(profileData || {}) }; 
           console.log('SessionContextProvider DEBUG: Fetched profile data:', profileData);
           console.log('SessionContextProvider DEBUG: Merged user object:', updatedUser);
         }
@@ -130,7 +133,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       let initialUpdatedUser: CustomUser | null = null;
       if (initialSession?.user) {
         const profileData = await fetchUserProfile(initialSession.user.id);
-        initialUpdatedUser = { ...initialSession.user, ...profileData };
+        initialUpdatedUser = { ...initialSession.user, ...(profileData || {}) }; // Garante que profileData seja um objeto
         console.log('SessionContextProvider DEBUG: Initial fetched profile data:', profileData);
         console.log('SessionContextProvider DEBUG: Initial merged user object:', initialUpdatedUser);
       }
