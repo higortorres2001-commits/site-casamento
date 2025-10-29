@@ -98,9 +98,7 @@ const MyProducts = () => {
         <div className="text-center text-gray-600 text-lg mt-10">
           <p>Você ainda não possui nenhum produto em sua biblioteca.</p>
           <p>Explore nossos produtos para começar!</p>
-          <a href="/" className="text-blue-500 hover:text-blue-700 underline mt-2 block">
-            Visite nossa loja
-          </a>
+          {/* O link "Visite nossa loja" foi removido */}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
