@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { showError } from "@/utils/toast";
-import { trackPurchase } from "@/utils/metaPixel"; // Import trackPurchase
 import { Profile } from "@/types";
 
 const Confirmation = () => {
@@ -17,10 +16,9 @@ const Confirmation = () => {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [totalPrice, setTotalPrice] = useState<number | null>(null);
-  const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
 
   useEffect(() => {
-    const fetchOrderAndProfileData = async () => {
+    const fetchOrderData = async () => {
       setIsLoadingData(true);
       let currentOrderId: string | null = null;
       let currentTotalPrice: number | null = null;
@@ -54,45 +52,11 @@ const Confirmation = () => {
           }
         }
       }
-
-      // Fetch user profile for hashed data
-      if (user) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('name, cpf, email, whatsapp')
-          .eq('id', user.id)
-          .single();
-
-        if (error) {
-          console.error("Error fetching user profile for Meta Pixel:", error);
-          showError("Erro ao carregar dados do seu perfil.");
-        } else if (data) {
-          setUserProfile(data);
-        }
-      }
       setIsLoadingData(false);
-
-      // Track Purchase event if all data is available and in production
-      if (currentOrderId && currentTotalPrice !== null && user && data && process.env.NODE_ENV === 'production') {
-        const firstName = data.name?.split(' ')[0] || null;
-        const lastName = data.name?.split(' ').slice(1).join(' ') || null;
-
-        trackPurchase(
-          currentTotalPrice,
-          'BRL',
-          currentOrderId,
-          {
-            email: data.email,
-            phone: data.whatsapp,
-            firstName: firstName,
-            lastName: lastName,
-          }
-        );
-      }
     };
 
     if (!isSessionLoading) {
-      fetchOrderAndProfileData();
+      fetchOrderData();
     }
   }, [location.state, location.search, user, isSessionLoading]);
 
