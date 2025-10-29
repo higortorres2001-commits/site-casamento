@@ -49,6 +49,9 @@ const Checkout = () => {
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null); // Ref for credit card form
 
+  // Ref para garantir que o evento InitiateCheckout seja rastreado apenas uma vez
+  const hasTrackedInitiateCheckout = useRef(false);
+
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
       showError("ID do produto não fornecido.");
@@ -123,9 +126,9 @@ const Checkout = () => {
     }
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
 
-  // Effect to track InitiateCheckout event
+  // Effect para rastrear o evento InitiateCheckout, garantindo que seja disparado apenas uma vez
   useEffect(() => {
-    if (!isLoading && mainProduct && currentTotalPrice > 0 && userProfile && process.env.NODE_ENV === 'production') {
+    if (!hasTrackedInitiateCheckout.current && !isLoading && mainProduct && currentTotalPrice > 0 && userProfile && process.env.NODE_ENV === 'production') {
       const productIds = [mainProduct.id, ...selectedOrderBumps];
       const numItems = productIds.length;
       const firstName = userProfile.name?.split(' ')[0] || null;
@@ -143,6 +146,7 @@ const Checkout = () => {
           lastName: lastName,
         }
       );
+      hasTrackedInitiateCheckout.current = true; // Marca como rastreado para não disparar novamente
     }
   }, [isLoading, mainProduct, currentTotalPrice, selectedOrderBumps, userProfile]);
 
