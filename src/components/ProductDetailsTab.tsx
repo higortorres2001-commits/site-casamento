@@ -13,6 +13,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { X } from "lucide-react";
 import { showError } from "@/utils/toast";
 
@@ -23,6 +30,7 @@ const formSchema = z.object({
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
+  status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
 });
 
 interface ProductDetailsTabProps {
@@ -125,6 +133,28 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
 
   return (
     <div className="space-y-4">
+      <FormField
+        control={form.control}
+        name="status"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Status do Produto</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o status" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="draft">Rascunho</SelectItem>
+                <SelectItem value="ativo">Ativo (Disponível para compra)</SelectItem>
+                <SelectItem value="inativo">Inativo</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
       <FormField
         control={form.control}
         name="name"

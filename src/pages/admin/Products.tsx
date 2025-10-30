@@ -18,12 +18,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, FileText, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
 import { useSession } from "@/components/SessionContextProvider";
 import * as z from "zod";
+import ConfirmDialog from "@/components/ui/confirm-dialog";
+import ProductAssetManager from "@/components/admin/ProductAssetManager";
+import { Badge } from "@/components/ui/badge";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -35,25 +38,28 @@ const formSchema = z.object({
 });
 
 const Products = () => {
-  console.log("Products component rendered"); // Log de renderização
   const { user, isLoading: isSessionLoading } = useSession();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(true); // Renomeado para clareza
+  const [products, setProducts] = useState<(Product & { assets?: ProductAsset[], assetCount: number })[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<(Product & { assets?: ProductAsset[] }) | undefined>(undefined);
+  const [assetManagementProduct, setAssetManagementProduct] = useState<Product | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
-    console.log("fetchProducts called"); // Log de chamada da função
     if (!user?.id) {
       setIsLoadingProducts(false);
       return;
     }
     setIsLoadingProducts(true);
+    // Fetch products without assets initially for faster table load
     const { data, error } = await supabase
       .from("products")
-      .select("*, product_assets(*)")
-      .eq("user_id", user.id) // Usar user.id diretamente após a verificação
+      .select("*, product_assets(id)") // Only fetch asset count/existence
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -61,60 +67,55 @@ const Products = () => {
       console.error("Error fetching products:", error);
       setProducts([]);
     } else {
-      // Generate signed URLs for each asset
-      const productsWithSignedUrls = await Promise.all(
-        (data || []).map(async (product) => {
-          if (product.product_assets && product.product_assets.length > 0) {
-            const assetsWithSignedUrls = await Promise.all(
-              product.product_assets.map(async (asset) => {
-                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                  .from('product-assets')
-                  .createSignedUrl(asset.storage_path, 3600); // URL válida por 1 hora
-
-                if (signedUrlError) {
-                  console.error(`Error generating signed URL for asset ${asset.id}:`, signedUrlError.message);
-                  await supabase.from('logs').insert({
-                    level: 'error',
-                    context: 'admin-product-list',
-                    message: `Failed to generate signed URL for asset ${asset.id}: ${signedUrlError.message}`,
-                    metadata: { userId: user.id, productId: product.id, assetId: asset.id, storagePath: asset.storage_path, error: signedUrlError.message }
-                  });
-                  return { ...asset, signed_url: null }; // Return asset with null signed_url on error
-                }
-                return { ...asset, signed_url: signedUrlData?.signedUrl || null };
-              })
-            );
-            return { ...product, product_assets: assetsWithSignedUrls };
-          }
-          return product;
-        })
-      );
-      setProducts(productsWithSignedUrls as (Product & { assets?: ProductAsset[] })[]);
+      // Map the data to include the asset count
+      const productsWithAssetCount = (data || []).map(p => ({
+        ...p,
+        assets: p.product_assets as ProductAsset[], // Type assertion for consistency
+        assetCount: (p.product_assets as ProductAsset[]).length,
+      }));
+      setProducts(productsWithAssetCount as (Product & { assets?: ProductAsset[], assetCount: number })[]);
     }
     setIsLoadingProducts(false);
-  }, [user]); // Depende de user
+  }, [user]);
 
   useEffect(() => {
-    console.log("useEffect in Products running. isSessionLoading:", isSessionLoading, "user:", user); // Log de execução do useEffect
-    if (!isSessionLoading && user) { // Only run if session is loaded AND user is present
+    if (!isSessionLoading && user) {
       fetchProducts();
-    } else if (!isSessionLoading && !user) { // If session loaded but no user
-      setIsLoadingProducts(false); // Ensure loading state is false
+    } else if (!isSessionLoading && !user) {
+      setIsLoadingProducts(false);
     }
-  }, [user, isSessionLoading, fetchProducts]); // Depende de user, isSessionLoading e fetchProducts
+  }, [user, isSessionLoading, fetchProducts]);
 
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
     setIsModalOpen(true);
   };
 
-  const handleEditProduct = (product: Product & { assets?: ProductAsset[] }) => {
-    setEditingProduct(product);
+  const handleEditProduct = async (productId: string) => {
+    // Fetch full product details including assets for editing
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, product_assets(*)")
+      .eq("id", productId)
+      .single();
+
+    if (error || !data) {
+      showError("Erro ao carregar detalhes do produto para edição.");
+      console.error("Error fetching product for edit:", error);
+      return;
+    }
+
+    setEditingProduct(data as Product & { assets?: ProductAsset[] });
     setIsModalOpen(true);
   };
 
+  const handleOpenAssetManager = (product: Product & { assetCount: number }) => {
+    setAssetManagementProduct(product);
+    setIsAssetModalOpen(true);
+  };
+
   const handleSaveProduct = async (
-    formData: z.infer<typeof formSchema>,
+    formData: z.infer<typeof formSchema> & { status: Product['status'] }, // Include status in formData type
     files: File[],
     deletedAssetIds: string[],
     imageFile: File | null,
@@ -145,45 +146,14 @@ const Products = () => {
 
       if (uploadError) {
         errorMessages.push(`Erro ao fazer upload da imagem: ${uploadError.message}`);
-        console.error("Error uploading image:", uploadError);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'product-image-upload',
-          message: `Failed to upload product image: ${uploadError.message}`,
-          metadata: { userId: user.id, fileName: imageFile.name, error: uploadError.message }
-        });
         hasErrors = true;
       } else {
         newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'product-image-upload',
-          message: 'Product image uploaded successfully.',
-          metadata: { userId: user.id, productId: currentProductId, imageUrl: newImageUrl }
-        });
         // If there was an old image and a new one is uploaded, delete the old one
         if (oldImageUrl && oldImageUrl !== newImageUrl) {
           const oldPath = oldImageUrl.split('product-images/')[1];
           if (oldPath) {
-            const { error: deleteOldImageError } = await supabase.storage
-              .from('product-images')
-              .remove([oldPath]);
-            if (deleteOldImageError) {
-              console.warn("Could not delete old product image from storage:", deleteOldImageError.message);
-              await supabase.from('logs').insert({
-                level: 'warning',
-                context: 'product-image-delete',
-                message: `Failed to delete old product image: ${deleteOldImageError.message}`,
-                metadata: { userId: user.id, productId: currentProductId, oldImageUrl, error: deleteOldImageError.message }
-              });
-            } else {
-              await supabase.from('logs').insert({
-                level: 'info',
-                context: 'product-image-delete',
-                message: 'Old product image deleted successfully.',
-                metadata: { userId: user.id, productId: currentProductId, oldImageUrl }
-              });
-            }
+            await supabase.storage.from('product-images').remove([oldPath]);
           }
         }
       }
@@ -191,25 +161,7 @@ const Products = () => {
       // If no new file, and image_url field is cleared, and there was an old image, delete it
       const oldPath = oldImageUrl.split('product-images/')[1];
       if (oldPath) {
-        const { error: deleteOldImageError } = await supabase.storage
-          .from('product-images')
-          .remove([oldPath]);
-        if (deleteOldImageError) {
-          console.warn("Could not delete old product image from storage (cleared field):", deleteOldImageError.message);
-          await supabase.from('logs').insert({
-            level: 'warning',
-            context: 'product-image-delete',
-            message: `Failed to delete product image (field cleared): ${deleteOldImageError.message}`,
-            metadata: { userId: user.id, productId: currentProductId, oldImageUrl, error: deleteOldImageError.message }
-          });
-        } else {
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'product-image-delete',
-            message: 'Product image deleted (field cleared) successfully.',
-            metadata: { userId: user.id, productId: currentProductId, oldImageUrl }
-          });
-        }
+        await supabase.storage.from('product-images').remove([oldPath]);
       }
       newImageUrl = null;
     }
@@ -223,23 +175,10 @@ const Products = () => {
         .eq("id", editingProduct.id);
       if (error) {
         errorMessages.push("Erro ao atualizar produto: " + error.message);
-        console.error("Error updating product:", error);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'product-management',
-          message: `Failed to update product: ${error.message}`,
-          metadata: { userId: user?.id, productId: editingProduct.id, error: error.message }
-        });
         hasErrors = true;
       } else {
-        showSuccess("Detalhes do produto atualizados!"); // Specific success for product details
+        showSuccess("Detalhes do produto atualizados!");
         currentProductId = editingProduct.id;
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'product-management',
-          message: 'Product details updated successfully.',
-          metadata: { userId: user?.id, productId: currentProductId }
-        });
       }
     } else {
       const { data, error } = await supabase
@@ -249,141 +188,63 @@ const Products = () => {
         .single();
       if (error || !data) {
         errorMessages.push("Erro ao criar produto: " + error.message);
-        console.error("Error creating product:", error);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'product-management',
-          message: `Failed to create product: ${error.message}`,
-          metadata: { userId: user?.id, productData, error: error?.message }
-        });
         hasErrors = true;
       } else {
-        showSuccess("Produto criado com sucesso!"); // Specific success for product creation
+        showSuccess("Produto criado com sucesso!");
         currentProductId = data.id;
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'product-management',
-          message: 'Product created successfully.',
-          metadata: { userId: user?.id, productId: currentProductId }
-        });
       }
     }
 
     // If product creation/update failed, stop here.
-    if (hasErrors && !currentProductId) { // If there were errors and no product ID to associate assets with
+    if (hasErrors && !currentProductId) {
       setIsSubmitting(false);
       showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
       return;
     }
 
-    // --- Handle File Uploads (PDFs) ---
+    // --- Handle File Uploads (PDFs) - Only for initial creation/edit ---
     if (files.length > 0 && currentProductId && user?.id) {
       for (const file of files) {
-        // Sanitize file name to avoid issues with storage paths
         const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-        const filePath = `${user.id}/${currentProductId}/${sanitizedFileName}`;
+        const filePath = `${user.id}/${currentProductId}/${sanitizedFileName}-${Date.now()}`;
         const { error: uploadError } = await supabase.storage
           .from("product-assets")
           .upload(filePath, file);
 
         if (uploadError) {
           errorMessages.push(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
-          console.error("Error uploading file:", uploadError);
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'product-asset-upload',
-            message: `Failed to upload product asset: ${uploadError.message}`,
-            metadata: { userId: user.id, productId: currentProductId, fileName: file.name, error: uploadError.message }
-          });
           hasErrors = true;
         } else {
           const { error: assetInsertError } = await supabase
             .from("product_assets")
             .insert({
               product_id: currentProductId,
-              file_name: file.name, // Keep original file name for display
+              file_name: file.name,
               storage_path: filePath,
             });
           if (assetInsertError) {
             errorMessages.push(`Erro ao registrar asset ${file.name} no banco de dados: ${assetInsertError.message}`);
-            console.error("Error inserting asset record:", assetInsertError);
-            await supabase.from('logs').insert({
-              level: 'error',
-              context: 'product-asset-upload',
-              message: `Failed to record product asset in DB: ${assetInsertError.message}`,
-              metadata: { userId: user.id, productId: currentProductId, fileName: file.name, storagePath: filePath, error: assetInsertError.message }
-            });
             hasErrors = true;
-          } else {
-            await supabase.from('logs').insert({
-              level: 'info',
-              context: 'product-asset-upload',
-              message: 'Product asset uploaded and recorded successfully.',
-              metadata: { userId: user.id, productId: currentProductId, fileName: file.name, storagePath: filePath }
-            });
           }
         }
       }
     }
 
-    // --- Handle Asset Deletions (PDFs) ---
-    if (deletedAssetIds.length > 0) {
+    // --- Handle Asset Deletions (PDFs) - Only for initial edit ---
+    if (deletedAssetIds.length > 0 && editingProduct) {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
-        const asset = editingProduct?.assets?.find(a => a.id === assetId);
+        const asset = editingProduct.assets?.find(a => a.id === assetId);
         if (asset) {
           assetsToDeletePaths.push(asset.storage_path);
         }
       }
 
       if (assetsToDeletePaths.length > 0) {
-        const { error: deleteStorageError } = await supabase.storage
-          .from('product-assets')
-          .remove(assetsToDeletePaths);
-
-        if (deleteStorageError) {
-          errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
-          console.error("Error deleting files from storage:", deleteStorageError);
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'product-asset-delete',
-            message: `Failed to delete product assets from storage: ${deleteStorageError.message}`,
-            metadata: { userId: user?.id, productId: currentProductId, paths: assetsToDeletePaths, error: deleteStorageError.message }
-          });
-          hasErrors = true;
-        } else {
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'product-asset-delete',
-            message: 'Product assets deleted from storage successfully.',
-            metadata: { userId: user?.id, productId: currentProductId, paths: assetsToDeletePaths }
-          });
-        }
+        await supabase.storage.from('product-assets').remove(assetsToDeletePaths);
       }
 
-      const { error: deleteDbError } = await supabase
-        .from('product_assets')
-        .delete()
-        .in('id', deletedAssetIds);
-
-      if (deleteDbError) {
-        errorMessages.push("Erro ao excluir registros de arquivos do banco de dados: " + deleteDbError.message);
-        console.error("Error deleting asset records:", deleteDbError);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'product-asset-delete',
-          message: `Failed to delete product asset records from DB: ${deleteDbError.message}`,
-          metadata: { userId: user?.id, productId: currentProductId, assetIds: deletedAssetIds, error: deleteDbError.message }
-        });
-        hasErrors = true;
-      } else {
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'product-asset-delete',
-          message: 'Product asset records deleted from DB successfully.',
-          metadata: { userId: user?.id, productId: currentProductId, assetIds: deletedAssetIds }
-        });
-      }
+      await supabase.from('product_assets').delete().in('id', deletedAssetIds);
     }
 
     // --- Final Feedback ---
@@ -398,30 +259,31 @@ const Products = () => {
     setIsSubmitting(false);
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!window.confirm("Tem certeza que deseja excluir este produto e todos os seus arquivos?")) return;
+  const handleConfirmDelete = (id: string) => {
+    setProductToDelete(id);
+    setIsConfirmDeleteOpen(true);
+  };
 
+  const handleDeleteProduct = async (confirmed: boolean) => {
+    setIsConfirmDeleteOpen(false);
+    if (!confirmed || !productToDelete) {
+      setProductToDelete(null);
+      return;
+    }
+
+    const id = productToDelete;
     setIsSubmitting(true);
     let hasErrors = false;
     const errorMessages: string[] = [];
 
-    // First, fetch assets to delete from storage
-    const { data: assetsToDelete, error: fetchAssetsError } = await supabase
+    // 1. Fetch assets and image URL for deletion
+    const productToDeleteData = products.find(p => p.id === id);
+
+    // 2. Delete assets from storage
+    const { data: assetsToDelete } = await supabase
       .from('product_assets')
       .select('storage_path')
       .eq('product_id', id);
-
-    if (fetchAssetsError) {
-      errorMessages.push("Erro ao buscar assets para exclusão: " + fetchAssetsError.message);
-      console.error("Error fetching assets for deletion:", fetchAssetsError);
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'product-delete',
-        message: `Failed to fetch assets for product deletion: ${fetchAssetsError.message}`,
-        metadata: { userId: user?.id, productId: id, error: fetchAssetsError.message }
-      });
-      hasErrors = true;
-    }
 
     if (assetsToDelete && assetsToDelete.length > 0) {
       const paths = assetsToDelete.map(asset => asset.storage_path);
@@ -431,92 +293,38 @@ const Products = () => {
 
       if (deleteStorageError) {
         errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
-        console.error("Error deleting files from storage:", deleteStorageError);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'product-delete',
-          message: `Failed to delete product assets from storage: ${deleteStorageError.message}`,
-          metadata: { userId: user?.id, productId: id, paths, error: deleteStorageError.message }
-        });
         hasErrors = true;
-        // Continue with database deletion even if storage fails, to avoid orphaned records
-      } else {
-          showSuccess("Arquivos do produto excluídos do storage.");
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'product-delete',
-            message: 'Product assets deleted from storage successfully.',
-            metadata: { userId: user?.id, productId: id, paths }
-          });
       }
     }
 
-    // Also delete the main product image if it exists
-    const productToDelete = products.find(p => p.id === id);
-    if (productToDelete?.image_url) {
-      const imagePath = productToDelete.image_url.split('product-images/')[1];
+    // 3. Delete main product image if it exists
+    if (productToDeleteData?.image_url) {
+      const imagePath = productToDeleteData.image_url.split('product-images/')[1];
       if (imagePath) {
         const { error: deleteImageError } = await supabase.storage
           .from('product-images')
           .remove([imagePath]);
         if (deleteImageError) {
           console.warn("Could not delete product image from storage during product deletion:", deleteImageError.message);
-          await supabase.from('logs').insert({
-            level: 'warning',
-            context: 'product-delete',
-            message: `Failed to delete product image during product deletion: ${deleteImageError.message}`,
-            metadata: { userId: user?.id, productId: id, imagePath, error: deleteImageError.message }
-          });
-        } else {
-          showSuccess("Imagem principal do produto excluída do storage.");
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'product-delete',
-            message: 'Product image deleted from storage successfully.',
-            metadata: { userId: user?.id, productId: id, imagePath }
-          });
         }
       }
     }
 
-    // Then, delete the product (this will cascade delete assets from product_assets table due to RLS)
+    // 4. Delete the product record (cascades asset records)
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) {
       errorMessages.push("Erro ao excluir produto: " + error.message);
-      showError("Erro ao excluir produto: " + error.message);
-      console.error("Error deleting product:", error);
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'product-delete',
-        message: `Failed to delete product record: ${error.message}`,
-        metadata: { userId: user?.id, productId: id, error: error.message }
-      });
       hasErrors = true;
     } else {
       showSuccess("Produto excluído com sucesso!");
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'product-delete',
-        message: 'Product record deleted successfully.',
-        metadata: { userId: user?.id, productId: id }
-      });
       fetchProducts();
     }
+
     setIsSubmitting(false);
+    setProductToDelete(null);
     if (hasErrors) {
       showError("Ocorreram erros durante a exclusão:\n" + errorMessages.join("\n"));
     }
-  };
-
-  const handleDownloadAsset = async (signedUrl: string, fileName: string) => {
-    // For download, we can directly use the signed URL
-    const link = document.createElement('a');
-    link.href = signedUrl;
-    link.download = fileName; // Suggest a filename
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showSuccess(`Download de "${fileName}" iniciado!`);
   };
 
   const handleGenerateCheckoutLink = (productId: string) => {
@@ -524,6 +332,18 @@ const Products = () => {
     navigator.clipboard.writeText(checkoutUrl)
       .then(() => showSuccess("Link do checkout copiado!"))
       .catch(() => showError("Falha ao copiar o link."));
+  };
+
+  const getStatusBadge = (status: Product['status']) => {
+    switch (status) {
+      case 'ativo':
+        return <Badge className="bg-green-500 hover:bg-green-600">Ativo</Badge>;
+      case 'inativo':
+        return <Badge variant="secondary">Inativo</Badge>;
+      case 'draft':
+      default:
+        return <Badge variant="outline">Rascunho</Badge>;
+    }
   };
 
   if (isSessionLoading || isLoadingProducts) {
@@ -547,7 +367,7 @@ const Products = () => {
               <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto"> {/* Adicionado max-h e overflow-y-auto */}
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingProduct ? "Editar Produto" : "Criar Novo Produto"}</DialogTitle>
             </DialogHeader>
@@ -564,62 +384,51 @@ const Products = () => {
       {products.length === 0 ? (
         <p className="text-center text-gray-600 text-lg mt-10">Nenhum produto encontrado. Crie um novo produto para começar!</p>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border bg-white shadow-lg">
           <Table>
-            <TableHeader>
+            <TableHeader className="bg-gray-50">
               <TableRow>
-                <TableHead className="w-28">ID</TableHead>
-                <TableHead>Nome</TableHead>
+                <TableHead className="w-[150px]">Produto</TableHead>
                 <TableHead>Preço</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Imagem</TableHead> {/* New column for image */}
-                <TableHead>Arquivos</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Bumps</TableHead>
+                <TableHead>Materiais</TableHead>
+                <TableHead className="text-right w-[200px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="w-28 truncate text-xs">{product.id}</TableCell>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>R$ {product.price.toFixed(2)}</TableCell>
-                  <TableCell className="max-w-xs truncate">{product.description || "N/A"}</TableCell>
-                  <TableCell>
-                    {product.image_url ? (
-                      <img src={product.image_url} alt={product.name} className="w-12 h-12 object-cover rounded-md" />
-                    ) : (
-                      "N/A"
+                <TableRow key={product.id} className="hover:bg-gray-50 transition-colors">
+                  <TableCell className="font-medium flex items-center gap-3">
+                    {product.image_url && (
+                      <img src={product.image_url} alt={product.name} className="w-10 h-10 object-cover rounded-md shrink-0" />
                     )}
+                    <div className="truncate max-w-[150px]">
+                      {product.name}
+                      <p className="text-xs text-gray-500 truncate">{product.id}</p>
+                    </div>
                   </TableCell>
+                  <TableCell>R$ {product.price.toFixed(2)}</TableCell>
+                  <TableCell>{getStatusBadge(product.status)}</TableCell>
+                  <TableCell>{product.orderbumps?.length || 0}</TableCell>
                   <TableCell>
-                    {product.product_assets && product.product_assets.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {product.product_assets.map((asset) => (
-                          asset.signed_url ? (
-                            <Button
-                              key={asset.id}
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDownloadAsset(asset.signed_url!, asset.file_name)}
-                              className="flex items-center gap-1"
-                            >
-                              <FileText className="h-3 w-3" /> {asset.file_name}
-                            </Button>
-                          ) : (
-                            <span key={asset.id} className="text-red-500 text-xs">Erro no arquivo</span>
-                          )
-                        ))}
-                      </div>
-                    ) : (
-                      "Nenhum arquivo"
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenAssetManager(product)}
+                      className="flex items-center gap-1 text-blue-600 hover:bg-blue-50"
+                    >
+                      <FileText className="h-4 w-4" />
+                      {product.assetCount || 0} Arquivo(s)
+                    </Button>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleEditProduct(product)}
-                      className="mr-2"
+                      onClick={() => handleEditProduct(product.id)}
+                      className="mr-1 text-gray-600 hover:text-orange-500"
+                      title="Editar Produto"
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -627,15 +436,17 @@ const Products = () => {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleGenerateCheckoutLink(product.id)}
-                      className="mr-2 text-orange-500 hover:text-orange-600"
+                      className="mr-1 text-green-600 hover:text-green-700"
+                      title="Copiar Link de Checkout"
                     >
                       <LinkIcon className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDeleteProduct(product.id)}
+                      onClick={() => handleConfirmDelete(product.id)}
                       className="text-red-500 hover:text-red-700"
+                      title="Excluir Produto"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -646,6 +457,33 @@ const Products = () => {
           </Table>
         </div>
       )}
+
+      {/* Asset Management Modal */}
+      <Dialog open={isAssetModalOpen} onOpenChange={setIsAssetModalOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Gerenciar Materiais</DialogTitle>
+          </DialogHeader>
+          {assetManagementProduct && (
+            <ProductAssetManager
+              productId={assetManagementProduct.id}
+              productName={assetManagementProduct.name}
+              onAssetsUpdated={fetchProducts} // Refresh product list to update asset count
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog for Deletion */}
+      <ConfirmDialog
+        isOpen={isConfirmDeleteOpen}
+        onClose={handleDeleteProduct}
+        title="Confirmar Exclusão do Produto"
+        description="Tem certeza que deseja excluir este produto? Todos os dados, incluindo arquivos e imagem principal, serão removidos permanentemente."
+        confirmText="Sim, Excluir Produto"
+        isDestructive
+        isLoading={isSubmitting}
+      />
     </div>
   );
 };

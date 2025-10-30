@@ -16,7 +16,8 @@ export type Product = {
   description: string | null;
   memberareaurl: string | null;
   orderbumps: string[] | null;
-  image_url: string | null; // Adicionado o campo image_url
+  image_url: string | null;
+  status: 'draft' | 'ativo' | 'inativo'; // Adicionado o campo status
 };
 
 export type ProductAsset = {

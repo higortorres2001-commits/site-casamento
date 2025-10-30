@@ -23,6 +23,7 @@ const formSchema = z.object({
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
+  status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
 });
 
 interface ProductEditTabsProps {
@@ -52,6 +53,7 @@ const ProductEditTabs = ({
           ...initialData,
           orderbumps: initialData.orderbumps || [],
           image_url: initialData.image_url || "", // Definir default para image_url
+          status: initialData.status || "draft", // Definir default para status
         }
       : {
           name: "",
@@ -60,6 +62,7 @@ const ProductEditTabs = ({
           memberareaurl: "",
           orderbumps: [],
           image_url: "", // Definir default para image_url
+          status: "draft", // Definir default para status
         },
   });
 
@@ -74,6 +77,7 @@ const ProductEditTabs = ({
         ...initialData,
         orderbumps: initialData.orderbumps || [],
         image_url: initialData.image_url || "",
+        status: initialData.status || "draft",
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
@@ -86,6 +90,7 @@ const ProductEditTabs = ({
         memberareaurl: "",
         orderbumps: [],
         image_url: "",
+        status: "draft",
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);
@@ -120,7 +125,9 @@ const ProductEditTabs = ({
       <TabsList className="grid w-full grid-cols-3">
         <TabsTrigger value="details">Detalhes do Produto</TabsTrigger>
         <TabsTrigger value="order-bumps">Order Bumps</TabsTrigger>
-        <TabsTrigger value="files">Arquivos (PDFs)</TabsTrigger>
+        <TabsTrigger value="files" disabled={!!initialData}>
+          Arquivos (PDFs)
+        </TabsTrigger>
       </TabsList>
       <Form {...form}> {/* Envolve o formulário HTML com o componente Form do shadcn/ui */}
         <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 mt-4">
@@ -136,6 +143,9 @@ const ProductEditTabs = ({
             <ProductOrderBumpsTab form={form} isLoading={isLoading} currentProductId={initialData?.id} />
           </TabsContent>
           <TabsContent value="files">
+            <p className="text-sm text-red-500 mb-4">
+              A gestão de arquivos para produtos existentes deve ser feita através do botão "Materiais" na tabela principal. Esta aba é apenas para upload inicial.
+            </p>
             <ProductAssetsTab
               initialAssets={currentAssets}
               onFileChange={handleFileChange}

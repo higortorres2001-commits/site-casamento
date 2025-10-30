@@ -39,6 +39,9 @@ const ProductAssetsTab = ({
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Use esta seção para adicionar arquivos PDF durante a criação ou edição inicial do produto. Para gerenciar arquivos de produtos já publicados, use o botão "Materiais" na tabela principal.
+      </p>
       <div>
         <FormLabel>Upload de Novos Arquivos (PDFs)</FormLabel>
         <Input type="file" multiple accept=".pdf" onChange={handleFileInputChange} disabled={isLoading} />
@@ -65,7 +68,7 @@ const ProductAssetsTab = ({
 
       {initialAssets && initialAssets.length > 0 && (
         <div className="space-y-2">
-          <FormLabel>Arquivos Existentes:</FormLabel>
+          <FormLabel>Arquivos Existentes (Marcados para Exclusão ao Salvar):</FormLabel>
           {initialAssets.map((asset) => (
             <div key={asset.id} className="flex items-center justify-between p-2 border rounded-md bg-gray-50">
               <div className="flex items-center gap-2">
