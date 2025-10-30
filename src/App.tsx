@@ -38,7 +38,7 @@ const App = () => (
             <Route element={<AdminLayout />}>
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
-              <Route path="/admin/customers" element={<Customers />} /> {/* NEW: Customers admin route */}
+              <Route path="/admin/customers" element={<Customers />} /> {/* NEW: Customers admin route */} 
               <Route path="/admin/logs" element={<Logs />} />
             </Route>
 
