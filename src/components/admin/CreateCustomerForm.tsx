@@ -1,25 +1,49 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
+import { formatCPF } from "@/utils/cpfValidation";
+import { formatWhatsapp } from "@/utils/whatsappValidation";
+import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
   email: z.string().email("Email inválido").min(1, "Email obrigatório"),
-  cpf: z.string().min(11, "CPF obrigatório").max(14, "CPF inválido"),
-  whatsapp: z.string().min(8, "WhatsApp obrigatório"),
+  cpf: z
+    .string()
+    .min(14, "CPF obrigatório")
+    .max(14, "CPF inválido") // 000.000.000-00
+    .regex(/^\d{3}\.\d{3}\.\d{3}-\d{2}$/, "CPF inválido"),
+  whatsapp: z
+    .string()
+    .min(15, "WhatsApp obrigatório")
+    .max(15, "WhatsApp inválido") // (00) 00000-0000
+    .regex(/^\(\d{2}\) \d{4,5}-\d{4}$/, "WhatsApp inválido"),
 });
 
 type FormData = z.infer<typeof formSchema>;
 
-const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
+interface CreateCustomerFormProps {
+  onCreated?: () => void;
+}
+
+const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -31,10 +55,10 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
   });
 
   const onSubmit = async (data: FormData) => {
-    // Normalize fields
     const cpfClean = data.cpf.replace(/[^\d]+/g, "");
     const whatsappClean = data.whatsapp.replace(/\D/g, "");
 
+    setIsSubmitting(true);
     try {
       const payload = {
         email: data.email,
@@ -43,8 +67,7 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
         whatsapp: whatsappClean,
       };
 
-      // Chamada da edge function admin (service role) para criar usuário + perfil
-      const { data: resp, error } = await supabase.functions.invoke("create-customer", {
+      const { error } = await supabase.functions.invoke("create-customer", {
         body: payload,
       });
 
@@ -59,13 +82,15 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
     } catch (err: any) {
       showError("Erro ao criar cliente.");
       console.error("Create customer exception:", err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField
             control={form.control}
             name="name"
@@ -73,7 +98,12 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
               <FormItem>
                 <FormLabel>Nome</FormLabel>
                 <FormControl>
-                  <Input placeholder="Nome completo" {...field} />
+                  <Input
+                    placeholder="Nome completo"
+                    {...field}
+                    disabled={isSubmitting}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -86,15 +116,18 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
               <FormItem>
                 <FormLabel>Email</FormLabel>
                 <FormControl>
-                  <Input placeholder="email@exemplo.com" {...field} />
+                  <Input
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    {...field}
+                    disabled={isSubmitting}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <FormField
             control={form.control}
             name="cpf"
@@ -102,7 +135,14 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
               <FormItem>
                 <FormLabel>CPF</FormLabel>
                 <FormControl>
-                  <Input placeholder="00000000000" {...field} />
+                  <Input
+                    placeholder="000.000.000-00"
+                    maxLength={14}
+                    {...field}
+                    disabled={isSubmitting}
+                    onChange={(event) => field.onChange(formatCPF(event.target.value))}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -115,7 +155,14 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
               <FormItem>
                 <FormLabel>WhatsApp</FormLabel>
                 <FormControl>
-                  <Input placeholder="(XX) XXXXX-XXXX" {...field} />
+                  <Input
+                    placeholder="(00) 00000-0000"
+                    maxLength={15}
+                    {...field}
+                    disabled={isSubmitting}
+                    onChange={(event) => field.onChange(formatWhatsapp(event.target.value))}
+                    className="focus:ring-orange-500 focus:border-orange-500"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -123,9 +170,24 @@ const CreateCustomerForm = ({ onCreated }: { onCreated?: () => void }) => {
           />
         </div>
 
-        <div className="flex justify-end pt-2">
-          <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white">
-            Criar Cliente
+        <p className="text-xs text-slate-500">
+          Após criado, o cliente recebe acesso com a senha padrão (CPF) e pode ser atualizado a qualquer momento.
+        </p>
+
+        <div className="flex justify-end">
+          <Button
+            type="submit"
+            className="bg-green-600 hover:bg-green-700 text-white"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Salvando...
+              </span>
+            ) : (
+              "Criar Cliente"
+            )}
           </Button>
         </div>
       </form>
