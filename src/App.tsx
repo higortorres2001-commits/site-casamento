@@ -8,6 +8,7 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import Products from "./pages/admin/Products";
 import Coupons from "./pages/admin/Coupons";
+import Customers from "./pages/admin/Customers"; // NEW: admin customers page
 import Checkout from "./pages/Checkout";
 import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
@@ -18,7 +19,7 @@ import UpdatePassword from "./pages/UpdatePassword";
 import AdminLayout from "./components/layout/AdminLayout";
 import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
-import WhatsAppButton from "./components/WhatsAppButton"; // Importe o novo componente
+import WhatsAppButton from "./components/WhatsAppButton";
 
 const queryClient = new QueryClient();
 
@@ -30,19 +31,17 @@ const App = () => (
       <BrowserRouter>
         <SessionContextProvider>
           <Routes>
-            {/* Rotas autônomas que gerenciam seu próprio layout de página inteira */}
             <Route path="/login" element={<Login />} />
             <Route path="/checkout/:productId" element={<Checkout />} />
             <Route path="/primeira-senha" element={<UpdatePassword />} />
 
-            {/* Rotas de administração usando AdminLayout (com sidebar e verificação de admin) */}
             <Route element={<AdminLayout />}>
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
+              <Route path="/admin/customers" element={<Customers />} /> <!-- NEW: Customers admin route -->
               <Route path="/admin/logs" element={<Logs />} />
             </Route>
 
-            {/* Rotas de cliente usando PublicLayout (wrapper vazio) */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<Index />} />
               <Route path="/meus-produtos" element={<MyProducts />} />
@@ -51,10 +50,9 @@ const App = () => (
               <Route path="/processando-pagamento" element={<ProcessingPayment />} />
             </Route>
             
-            {/* Rota catch-all */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-          <WhatsAppButton /> {/* Adicione o botão do WhatsApp aqui */}
+          <WhatsAppButton />
         </SessionContextProvider>
       </BrowserRouter>
     </TooltipProvider>
