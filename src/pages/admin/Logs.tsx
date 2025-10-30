@@ -3,35 +3,26 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
-import { Loader2, Trash2 } from "lucide-react"; // Import Trash2 icon for clear logs
+import { Loader2, Trash2, FileText } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import { Button } from "@/components/ui/button";
-import { useSession } from "@/components/SessionContextProvider"; // Import useSession
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useSession } from "@/components/SessionContextProvider";
+import { Card } from "@/components/ui/card";
 
-interface Log {
+type Log = {
   id: string;
   created_at: string;
   level: "info" | "error" | "warning";
   context: string;
   message: string;
   metadata: any;
-}
-
-const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
+};
 
 const Logs = () => {
   const { user, isLoading: isSessionLoading } = useSession();
@@ -40,8 +31,29 @@ const Logs = () => {
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [contextFilter, setContextFilter] = useState<string>("all");
   const [availableContexts, setAvailableContexts] = useState<string[]>([]);
+  const [viewingPdf, setViewingPdf] = useState<{ url: string; fileName?: string } | null>(null);
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = user?.email === "higor.torres8@gmail.com";
+
+  // Cleanup old logs (older than 30 days)
+  const cleanupOldLogs = useCallback(async () => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    try {
+      const { data, error } = await supabase
+        .from("logs")
+        .delete()
+        .lt("created_at", cutoff.toISOString());
+      if (error) {
+        console.error("Error cleaning old logs:", error);
+      } else {
+        // Optionally refresh after cleanup
+        // fetchLogs();
+      }
+    } catch (e) {
+      console.error("Unexpected error during log cleanup:", e);
+    }
+  }, []);
 
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
@@ -63,15 +75,26 @@ const Logs = () => {
     } else {
       setLogs(data || []);
     }
+
+    // Always stop by showing the latest 200-ish entries (prevent log bloat on UI)
     setIsLoading(false);
   }, [levelFilter, contextFilter]);
 
-  const fetchAvailableContexts = useCallback(async () => {
-    // This query might need RLS adjustments if not all users can see all contexts
-    const { data, error } = await supabase
-      .from("logs")
-      .select("context", { distinct: true }); // Corrigido: usar { distinct: true } no select
+  useEffect(() => {
+    if (isAdmin) {
+      cleanupOldLogs();
+    }
+  }, [cleanupOldLogs, isAdmin]);
 
+  useEffect(() => {
+    if (isAdmin) {
+      fetchAvailableContexts();
+      fetchLogs();
+    }
+  }, [fetchAvailableContexts, fetchLogs, isAdmin]);
+
+  const fetchAvailableContexts = useCallback(async () => {
+    const { data, error } = await supabase.from("logs").select("context", { distinct: true });
     if (error) {
       console.error("Error fetching distinct contexts:", error);
     } else {
@@ -79,14 +102,6 @@ const Logs = () => {
       setAvailableContexts(contexts);
     }
   }, []);
-
-  useEffect(() => {
-    fetchAvailableContexts();
-  }, [fetchAvailableContexts]);
-
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
 
   const handleClearLogs = async () => {
     if (!isAdmin) {
@@ -98,36 +113,41 @@ const Logs = () => {
     }
 
     setIsLoading(true);
-    const { error } = await supabase.from("logs").delete().neq("id", "00000000-0000-0000-0000-000000000000"); // Delete all records
+    const { error } = await supabase.from("logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     if (error) {
       showError("Erro ao limpar logs: " + error.message);
       console.error("Error clearing logs:", error);
     } else {
       showSuccess("Logs limpos com sucesso!");
-      fetchLogs(); // Re-fetch to show empty state
+      fetchLogs();
     }
     setIsLoading(false);
   };
 
-  if (isSessionLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // PDF viewer UI helpers
+  const openPdf = (signedUrl: string, fileName?: string) => {
+    setViewingPdf({ url: signedUrl, fileName });
+  };
+
+  const closePdf = () => setViewingPdf(null);
+
+  // Helper to render a compact metadata string
+  const renderMetadata = (md: any) => {
+    if (!md) return "N/A";
+    try {
+      const str = typeof md === "string" ? md : JSON.stringify(md);
+      return str.length > 200 ? str.slice(0, 200) + "…" : str;
+    } catch {
+      return "Metadados não legíveis";
+    }
+  };
 
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Logs do Sistema</h1>
         {isAdmin && (
-          <Button
-            variant="destructive"
-            onClick={handleClearLogs}
-            disabled={isLoading}
-            className="flex items-center gap-2"
-          >
+          <Button variant="destructive" onClick={handleClearLogs} disabled={isLoading} className="flex items-center gap-2">
             <Trash2 className="h-4 w-4" /> Limpar Logs
           </Button>
         )}
@@ -135,11 +155,9 @@ const Logs = () => {
 
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="flex-1 min-w-[180px]">
-          <label htmlFor="level-filter" className="block text-sm font-medium text-gray-700 mb-1">
-            Filtrar por Nível
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Nível</label>
           <Select value={levelFilter} onValueChange={setLevelFilter}>
-            <SelectTrigger id="level-filter" className="w-full">
+            <SelectTrigger className="w-full" id="level-filter">
               <SelectValue placeholder="Todos os Níveis" />
             </SelectTrigger>
             <SelectContent>
@@ -152,26 +170,19 @@ const Logs = () => {
         </div>
 
         <div className="flex-1 min-w-[180px]">
-          <label htmlFor="context-filter" className="block text-sm font-medium text-gray-700 mb-1">
-            Filtrar por Contexto
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Contexto</label>
           <Select value={contextFilter} onValueChange={setContextFilter}>
-            <SelectTrigger id="context-filter" className="w-full">
+            <SelectTrigger className="w-full" id="context-filter">
               <SelectValue placeholder="Todos os Contextos" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os Contextos</SelectItem>
-              {availableContexts.map((context) => (
-                <SelectItem key={context} value={context}>
-                  {context}
-                </SelectItem>
+              {availableContexts.map((ctx) => (
+                <SelectItem key={ctx} value={ctx}>{ctx}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => { setLevelFilter("all"); setContextFilter("all"); }} variant="outline" className="self-end">
-          Limpar Filtros
-        </Button>
       </div>
 
       {isLoading ? (
@@ -183,17 +194,18 @@ const Logs = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[180px]">Data/Hora</TableHead>
-                <TableHead className="w-[80px]">Nível</TableHead>
-                <TableHead className="w-[150px]">Contexto</TableHead>
+                <TableHead>Data/Hora</TableHead>
+                <TableHead>Nível</TableHead>
+                <TableHead>Contexto</TableHead>
                 <TableHead>Mensagem</TableHead>
-                <TableHead className="w-[250px]">Metadados</TableHead>
+                <TableHead>Metadados</TableHead>
+                <TableHead>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {logs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-gray-500">
+                  <TableCell colSpan={6} className="h-24 text-center text-gray-500">
                     Nenhum log encontrado com os filtros aplicados.
                   </TableCell>
                 </TableRow>
@@ -204,11 +216,9 @@ const Logs = () => {
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          log.level === "error"
-                            ? "bg-red-100 text-red-800"
-                            : log.level === "warning"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-blue-100 text-blue-800"
+                          log.level === "error" ? "bg-red-100 text-red-800" :
+                          log.level === "warning" ? "bg-yellow-100 text-yellow-800" :
+                          "bg-blue-100 text-blue-800"
                         }`}
                       >
                         {log.level}
@@ -216,8 +226,17 @@ const Logs = () => {
                     </TableCell>
                     <TableCell className="font-medium text-sm">{log.context}</TableCell>
                     <TableCell className="text-sm max-w-xs break-words">{log.message}</TableCell>
-                    <TableCell className="text-xs max-w-[250px] break-words font-mono bg-gray-50 p-2 rounded-md">
-                      {log.metadata ? JSON.stringify(log.metadata, null, 2) : "N/A"}
+                    <TableCell className="text-xs max-w-[250px] break-words font-mono bg-gray-50 p-2 rounded-md" title={JSON.stringify(log.metadata)}>
+                      {renderMetadata(log.metadata)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {log.metadata?.signedUrl ? (
+                        <Button variant="ghost" size="sm" onClick={() => openPdf(log.metadata.signedUrl, log.metadata.fileName)}>
+                          Visualizar PDF
+                        </Button>
+                      ) : (
+                        <span className="text-sm text-gray-500">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -226,6 +245,20 @@ const Logs = () => {
           </Table>
         </div>
       )}
+
+      <Dialog open={!!viewingPdf} onOpenChange={(open) => { if (!open) closePdf(); }}>
+        <DialogContent className="sm:max-w-4xl w-full h-[70vh]">
+          <DialogHeader>
+            <DialogTitle>Visualização de PDF</DialogTitle>
+            <DialogDescription>Arquivo solicitado pelos logs.</DialogDescription>
+          </DialogHeader>
+          {viewingPdf?.url ? (
+            <iframe src={viewingPdf.url} title={viewingPdf.fileName ?? "PDF"} className="w-full h-full border-0" />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-500">Nenhum PDF carregado.</div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

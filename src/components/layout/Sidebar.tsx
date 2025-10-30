@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText } from 'lucide-react'; // Import ScrollText icon for logs
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users } from 'lucide-react'; // Added Users icon
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
@@ -50,7 +50,7 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
           <BookOpen className="h-4 w-4" />
           Meus Produtos
         </Link>
-        {isAdmin && ( // Renderizar links de admin apenas se for administrador
+        {isAdmin && ( // Admin links
           <>
             <Link to="/admin/products" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Package className="h-4 w-4" />
@@ -59,6 +59,10 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
             <Link to="/admin/cupons" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Tag className="h-4 w-4" />
               Cupons
+            </Link>
+            <Link to="/admin/customers" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
+              <Users className="h-4 w-4" />
+              Clientes
             </Link>
             <Link to="/admin/logs" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <ScrollText className="h-4 w-4" />
