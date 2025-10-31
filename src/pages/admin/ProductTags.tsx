@@ -24,23 +24,14 @@ const ProductTags = () => {
   const [openEditor, setOpenEditor] = useState(false);
   const [editingTag, setEditingTag] = useState<Tag | undefined>(undefined);
   const [newTag, setNewTag] = useState("");
-  const [newDesc, setNewDesc] = useState("");
 
-  // Open modal for creating a new tag
-  const handleOpenCreateTag = () => {
-    setEditingTag(undefined);
-    setOpenEditor(true);
-  };
+  const handleOpenCreateTag = () => { setEditingTag(undefined); setOpenEditor(true); };
 
   const isAdmin = !!user;
 
   const fetchTags = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("product_tags")
-      .select("*")
-      .order("created_at", { ascending: false });
-
+    const { data, error } = await supabase.from("product_tags").select("*").order("created_at", { ascending: false });
     if (error) {
       console.error("Error fetching product tags:", error);
       setTags([]);
@@ -58,58 +49,30 @@ const ProductTags = () => {
 
   const createTag = async () => {
     if (!newTag.trim()) return;
-
-    const { error } = await supabase
-      .from("product_tags")
-      .insert({
-        tag: newTag.trim(),
-        description: newDesc.trim() || null,
-      });
-
+    const { error } = await supabase.from("product_tags").insert({ tag: newTag.trim(), description: null });
     if (error) {
       console.error("Error creating tag:", error);
       return;
     }
-
     setNewTag("");
-    setNewDesc("");
     fetchTags();
   };
 
   const deleteTag = async (id: string) => {
     if (!window.confirm("Tem certeza que deseja excluir esta tag?")) return;
-
-    const { error } = await supabase.from("product_tags").delete().eq("id", id);
-
-    if (error) {
-      console.error("Error deleting tag:", error);
-      return;
-    }
-
+    await supabase.from("product_tags").delete().eq("id", id);
     fetchTags();
   };
 
-  const openEditModal = (tag: Tag) => {
-    setEditingTag(tag);
-    setOpenEditor(true);
-  };
+  const openEditModal = (tag: Tag) => { setEditingTag(tag); setOpenEditor(true); };
 
-  const saveEditedTag = async (payload: { id?: string; tag: string; description?: string }) => {
+  const saveEditedTag = async (payload: { id?: string; tag: string }) => {
     if (!payload.tag.trim() || !payload.id) return;
-
-    const { error } = await supabase
-      .from("product_tags")
-      .update({
-        tag: payload.tag.trim(),
-        description: payload.description?.trim() || null,
-      })
-      .eq("id", payload.id);
-
+    const { error } = await supabase.from("product_tags").update({ tag: payload.tag.trim() }).eq("id", payload.id);
     if (error) {
       console.error("Error updating tag:", error);
       return;
     }
-
     setOpenEditor(false);
     setEditingTag(undefined);
     fetchTags();
@@ -134,29 +97,22 @@ const ProductTags = () => {
         <CardHeader className="pb-2">
           <CardTitle>Adicionar Nova Tag</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end p-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nova Tag</label>
-            <input
-              className="border rounded-md p-2 w-full"
-              placeholder="Nova tag (ex: premium, vip, etc.)"
-              value={newTag}
-              onChange={(event) => setNewTag(event.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrição (opcional)</label>
-            <input
-              className="border rounded-md p-2 w-full"
-              placeholder="Descrição opcional"
-              value={newDesc}
-              onChange={(event) => setNewDesc(event.target.value)}
-            />
-          </div>
-          <div className="md:col-span-2 flex justify-end">
-            <Button onClick={createTag} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Adicionar Tag
-            </Button>
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nova Tag</label>
+              <input
+                className="border rounded-md p-2 w-full"
+                placeholder="Nova tag (ex: premium, vip, etc.)"
+                value={newTag}
+                onChange={(event) => setNewTag(event.target.value)}
+              />
+            </div>
+            <div className="md:col-span-2 flex justify-end">
+              <Button onClick={createTag} className="bg-blue-600 hover:bg-blue-700 text-white">
+                Adicionar Tag
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -175,7 +131,6 @@ const ProductTags = () => {
               <TableHeader className="bg-gray-50">
                 <TableRow>
                   <TableHead>Tag</TableHead>
-                  <TableHead>Descrição</TableHead>
                   <TableHead>Criado</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -184,26 +139,14 @@ const ProductTags = () => {
                 {tags.map((tagItem) => (
                   <TableRow key={tagItem.id}>
                     <TableCell className="font-medium">{tagItem.tag}</TableCell>
-                    <TableCell>{tagItem.description ?? "—"}</TableCell>
                     <TableCell>
-                      {tagItem.created_at
-                        ? new Date(tagItem.created_at).toLocaleString()
-                        : "—"}
+                      {tagItem.created_at ? new Date(tagItem.created_at).toLocaleString() : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="mr-2"
-                        onClick={() => openEditModal(tagItem)}
-                      >
+                      <Button variant="ghost" size="icon" className="mr-2" onClick={() => openEditModal(tagItem)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteTag(tagItem.id)}
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => deleteTag(tagItem.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>

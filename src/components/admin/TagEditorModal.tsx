@@ -4,16 +4,15 @@ import React, { useEffect, useState } from "react";
 import { DialogContent, DialogHeader, DialogTitle, Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 
-type Tag = { id?: string; tag: string; description?: string };
+type Tag = { id?: string; tag: string };
 
 interface TagEditorModalProps {
   open: boolean;
   onClose: () => void;
   initialTag?: Tag;
-  onSave: (payload: { id?: string; tag: string; description?: string }) => void;
+  onSave: (payload: { id?: string; tag: string }) => void | Promise<void>;
   isLoading?: boolean;
 }
 
@@ -25,21 +24,22 @@ const TagEditorModal = ({
   isLoading,
 }: TagEditorModalProps) => {
   const [tag, setTag] = useState<string>(initialTag?.tag ?? "");
-  const [description, setDescription] = useState<string>(initialTag?.description ?? "");
 
   useEffect(() => {
     if (initialTag) {
       setTag(initialTag.tag);
-      setDescription(initialTag.description ?? "");
     } else {
       setTag("");
-      setDescription("");
     }
   }, [initialTag, open]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!tag.trim()) return;
-    onSave({ id: initialTag?.id, tag: tag.trim(), description: description.trim() });
+    const payload = { id: initialTag?.id, tag: tag.trim() };
+    const result = onSave(payload);
+    if (result && typeof (result as any).then === "function") {
+      await (result as Promise<void>);
+    }
   };
 
   return (
@@ -49,14 +49,14 @@ const TagEditorModal = ({
           <DialogTitle>{initialTag ? "Editar Tag" : "Nova Tag"}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+        <div className="grid grid-cols-1 gap-4 mt-2">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tag</label>
-            <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Nome da tag" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrição (opcional)</label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Observação interna" rows={3} />
+            <Input
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              placeholder="Nome da tag"
+            />
           </div>
         </div>
 
