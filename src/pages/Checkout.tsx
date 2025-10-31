@@ -1,4 +1,4 @@
-number; para evitar erro de toFixed() e tela branca no checkout.">
+number; 
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
