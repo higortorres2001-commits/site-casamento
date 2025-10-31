@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { UseFormReturn } from "react-hook-form";
 import * as z from "zod";
+import { X } from "lucide-react";
 import {
   FormControl,
   FormField,
@@ -14,8 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ProductTagSelector from "@/components/admin/ProductTagSelector";
-import { showError } from "@/utils/toast";
-import { supabase } from "@/integrations/supabase/client";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
