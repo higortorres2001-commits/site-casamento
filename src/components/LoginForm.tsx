@@ -44,11 +44,11 @@ const LoginForm = () => {
     });
 
     if (error) {
-      showError("Erro ao fazer login: E-mail ou senha inválidos."); // Mensagem de erro específica
+      showError("Erro ao fazer login: E-mail ou senha inválidos.");
       console.error("Login error:", error);
     } else {
       showSuccess("Login realizado com sucesso!");
-      navigate("/meus-produtos"); // Redirecionar para /meus-produtos após o login
+      navigate("/meus-produtos");
     }
     setIsLoading(false);
   };
@@ -62,7 +62,7 @@ const LoginForm = () => {
 
     setIsLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`, // Você pode precisar de uma página para lidar com a redefinição de senha
+      redirectTo: `${window.location.origin}/update-password`,
     });
 
     if (error) {
@@ -78,8 +78,6 @@ const LoginForm = () => {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="text-center">
-          {/* Placeholder para o seu logo */}
-          <h1 className="text-4xl font-bold text-gray-800 mb-4">Seu Logo</h1>
           <p className="text-lg text-gray-700 mb-2">Bem-vindo! Use o e-mail da sua compra para entrar.</p>
           <p className="text-sm text-gray-600 mb-6">Primeiro acesso? Sua senha são os números do seu CPF (sem pontos ou traços).</p>
         </div>
