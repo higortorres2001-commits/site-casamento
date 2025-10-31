@@ -121,7 +121,7 @@ const Products = () => {
   };
 
   const handleSaveProduct = async (
-    formData: z.infer<typeof formSchema> & { status: Product["status"] },
+    formData: any,
     files: File[],
     deletedAssetIds: string[],
     imageFile: File | null,
@@ -379,9 +379,9 @@ const Products = () => {
         </div>
       )}
 
-      {/* Modal de edição de produto */}
+      {/* Modal de edição de produto - agora com altura e rolagem internas */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-6">
+        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 h-[90vh] overflow-hidden">
           <ProductEditTabs
             initialData={editingProduct}
             onSubmit={handleSaveProduct}

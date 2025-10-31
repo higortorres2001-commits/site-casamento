@@ -11,9 +11,7 @@ import { Product, ProductAsset } from "@/types";
 import ProductDetailsTab from "./ProductDetailsTab";
 import ProductOrderBumpsTab from "./ProductOrderBumpsTab";
 import ProductAssetsTab from "./ProductAssetsTab";
-import { showError, showSuccess } from "@/utils/toast";
-import { supabase } from "@/integrations/supabase/client";
-import { useSession } from "@/components/SessionContextProvider";
+import { showSuccess } from "@/utils/toast";
 import { Form } from "@/components/ui/form";
 
 const formSchema = z.object({
@@ -25,7 +23,7 @@ const formSchema = z.object({
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
   status: z.enum(["draft", "ativo", "inativo"]),
   internal_tag: z.string().optional(),
-  checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")), // NOVO
+  checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
 });
 
 interface ProductEditTabsProps {
@@ -47,7 +45,6 @@ const ProductEditTabs = ({
   onCancel,
   isLoading,
 }: ProductEditTabsProps) => {
-  const { user } = useSession();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: initialData
@@ -115,7 +112,6 @@ const ProductEditTabs = ({
 
   const handleDeleteAsset = async (assetId: string) => {
     if (!window.confirm("Tem certeza que deseja excluir este arquivo?")) return;
-
     setCurrentAssets((prev) => prev.filter((a) => a.id !== assetId));
     setDeletedAssetIds((prev) => [...prev, assetId]);
     showSuccess("Arquivo marcado para exclusão.");
@@ -130,49 +126,62 @@ const ProductEditTabs = ({
   };
 
   return (
-    <Tabs defaultValue="details" className="w-full">
-      <TabsList className="grid w-full grid-cols-3">
-        <TabsTrigger value="details">Detalhes do Produto</TabsTrigger>
-        <TabsTrigger value="order-bumps">Order Bumps</TabsTrigger>
-        <TabsTrigger value="files" disabled={!!initialData}>
-          Arquivos (PDFs)
-        </TabsTrigger>
-      </TabsList>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 mt-4">
-          <TabsContent value="details">
-            <ProductDetailsTab
-              form={form}
-              isLoading={isLoading}
-              onImageFileChange={handleImageFileChange}
-              initialImageUrl={initialData?.image_url}
-            />
-          </TabsContent>
-          <TabsContent value="order-bumps">
-            <ProductOrderBumpsTab form={form} isLoading={isLoading} currentProductId={initialData?.id} />
-          </TabsContent>
-          <TabsContent value="files">
-            <p className="text-sm text-red-500 mb-4">
-              A gestão de arquivos para produtos existentes deve ser feita através do botão "Materiais" na tabela principal. Esta aba é apenas para upload inicial.
-            </p>
-            <ProductAssetsTab
-              initialAssets={currentAssets}
-              onFileChange={handleFileChange}
-              onDeleteAsset={handleDeleteAsset}
-              isLoading={isLoading}
-            />
-          </TabsContent>
-          <DialogFooter className="mt-6">
-            <Button variant="outline" onClick={onCancel} disabled={isLoading}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white" disabled={isLoading}>
-              {isLoading ? "Salvando..." : "Salvar Produto"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </Form>
-    </Tabs>
+    <div className="flex h-full flex-col">
+      <Tabs defaultValue="details" className="flex h-full flex-col">
+        <TabsList className="grid w-full grid-cols-3 sticky top-0 z-20 bg-white border-b p-2">
+          <TabsTrigger value="details">Detalhes do Produto</TabsTrigger>
+          <TabsTrigger value="order-bumps">Order Bumps</TabsTrigger>
+          <TabsTrigger value="files" disabled={!!initialData}>
+            Arquivos (PDFs)
+          </TabsTrigger>
+        </TabsList>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="flex h-full flex-col">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+              <TabsContent value="details">
+                <ProductDetailsTab
+                  form={form}
+                  isLoading={isLoading}
+                  onImageFileChange={handleImageFileChange}
+                  initialImageUrl={initialData?.image_url}
+                />
+              </TabsContent>
+
+              <TabsContent value="order-bumps">
+                <ProductOrderBumpsTab
+                  form={form}
+                  isLoading={isLoading}
+                  currentProductId={initialData?.id}
+                />
+              </TabsContent>
+
+              <TabsContent value="files">
+                <p className="text-sm text-red-500 mb-4">
+                  A gestão de arquivos para produtos existentes deve ser feita através do botão
+                  "Materiais" na tabela principal. Esta aba é apenas para upload inicial.
+                </p>
+                <ProductAssetsTab
+                  initialAssets={currentAssets}
+                  onFileChange={handleFileChange}
+                  onDeleteAsset={handleDeleteAsset}
+                  isLoading={isLoading}
+                />
+              </TabsContent>
+            </div>
+
+            <DialogFooter className="sticky bottom-0 z-20 bg-white border-t p-4 md:p-6">
+              <Button variant="outline" onClick={onCancel} disabled={isLoading}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white" disabled={isLoading}>
+                {isLoading ? "Salvando..." : "Salvar Produto"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </Tabs>
+    </div>
   );
 };
 
