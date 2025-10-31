@@ -20,9 +20,11 @@ import {
   Mail,
   Phone,
   Search,
+  PencilLine,
 } from "lucide-react";
 import CreateCustomerForm from "@/components/admin/CreateCustomerForm";
 import MassAccessModal from "@/components/admin/MassAccessModal";
+import CustomerEditorModal from "@/components/admin/CustomerEditorModal";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
+import { showError, showSuccess } from "@/utils/toast";
 
 type CustomerSummary = {
   id: string;
@@ -87,6 +90,10 @@ const Customers = () => {
   const [isMassModalOpen, setIsMassModalOpen] = useState(false);
   const [massProducts, setMassProducts] = useState<{ id: string; name: string }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Editor individual
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -193,6 +200,7 @@ const Customers = () => {
       );
 
       await fetchCustomers();
+      showSuccess("Acesso aplicado com sucesso!");
     },
     [fetchCustomers]
   );
@@ -201,6 +209,55 @@ const Customers = () => {
     setIsCreateModalOpen(false);
     fetchCustomers();
   }, [fetchCustomers]);
+
+  // Abrir editor individual
+  const openEditor = (customer: CustomerRow) => {
+    setEditingCustomer(customer);
+    setIsEditorOpen(true);
+  };
+
+  const closeEditor = () => {
+    setIsEditorOpen(false);
+    setEditingCustomer(null);
+  };
+
+  const saveCustomerEdits = async (payload: { id: string; name?: string; email?: string; access?: string[] | null }) => {
+    if (!payload?.id) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        name: payload.name ?? null,
+        email: payload.email ?? null,
+        access: payload.access ?? [],
+      })
+      .eq("id", payload.id);
+
+    if (error) {
+      showError("Erro ao salvar cliente: " + error.message);
+      return;
+    }
+
+    showSuccess("Cliente salvo com sucesso!");
+    await fetchCustomers();
+    closeEditor();
+  };
+
+  const removeAllAccess = async () => {
+    if (!editingCustomer) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ access: [] })
+      .eq("id", editingCustomer.id);
+
+    if (error) {
+      showError("Erro ao remover acessos: " + error.message);
+      return;
+    }
+
+    showSuccess("Todos os acessos foram removidos!");
+    await fetchCustomers();
+    closeEditor();
+  };
 
   const filteredCustomers = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -320,6 +377,9 @@ const Customers = () => {
   };
 
   const hasCustomers = filteredCustomers.length > 0;
+
+  // Mapa de produtos para validar acessos existentes
+  const productIdSet = useMemo(() => new Set(massProducts.map(p => p.id)), [massProducts]);
 
   return (
     <div className="container mx-auto flex flex-col gap-6 p-4">
@@ -469,53 +529,71 @@ const Customers = () => {
                 <TableHead>Acessos</TableHead>
                 <TableHead>Status de pagamento</TableHead>
                 <TableHead>Último pedido</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredCustomers.map((customer) => (
-                <TableRow key={customer.id} className="hover:bg-slate-50">
-                  <TableCell className="font-semibold text-slate-900">
-                    <div className="flex flex-col">
-                      <span>{customer.name ?? "Cliente sem nome"}</span>
-                      <span className="text-xs text-slate-400">ID: {customer.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{renderContactInfo(customer)}</TableCell>
-                  <TableCell>
-                    {customer.cpf ? (
-                      <span className="text-sm text-slate-700">
-                        {formatCPF(customer.cpf)}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-slate-400">Não informado</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {customer.access.length > 0 ? (
-                      <Badge variant="secondary">
-                        {customer.access.length} produto(s)
-                      </Badge>
-                    ) : (
-                      <span className="text-sm text-slate-500">Nenhum acesso</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{getPaymentBadge(customer.lastOrder?.status)}</TableCell>
-                  <TableCell className="text-sm text-slate-600">
-                    {customer.lastOrder ? (
-                      <div className="space-y-1">
-                        <p>
-                          {new Date(customer.lastOrder.created_at).toLocaleDateString("pt-BR")}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {formatCurrencyBRL(customer.lastOrder.total_price)}
-                        </p>
+              {filteredCustomers.map((customer) => {
+                // Contar apenas acessos que existem na lista de produtos atual
+                const validAccessCount = (customer.access ?? []).filter(id => productIdSet.has(id)).length;
+
+                return (
+                  <TableRow key={customer.id} className="hover:bg-slate-50">
+                    <TableCell className="font-semibold text-slate-900">
+                      <div className="flex flex-col">
+                        <span>{customer.name ?? "Cliente sem nome"}</span>
+                        <span className="text-xs text-slate-400">ID: {customer.id}</span>
                       </div>
-                    ) : (
-                      <span className="text-slate-400">Sem pedidos</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell>{renderContactInfo(customer)}</TableCell>
+                    <TableCell>
+                      {customer.cpf ? (
+                        <span className="text-sm text-slate-700">
+                          {formatCPF(customer.cpf)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-slate-400">Não informado</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {validAccessCount > 0 ? (
+                        <Badge variant="secondary">
+                          {validAccessCount} produto(s)
+                        </Badge>
+                      ) : (
+                        <span className="text-sm text-slate-500">Nenhum acesso</span>
+                      )}
+                    </TableCell>
+                    <TableCell>{getPaymentBadge(customer.lastOrder?.status)}</TableCell>
+                    <TableCell className="text-sm text-slate-600">
+                      {customer.lastOrder ? (
+                        <div className="space-y-1">
+                          <p>
+                            {new Date(customer.lastOrder.created_at).toLocaleDateString("pt-BR")}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {formatCurrencyBRL(customer.lastOrder.total_price)}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">Sem pedidos</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-slate-700 hover:text-orange-600"
+                        onClick={() => openEditor(customer)}
+                        title="Editar cliente e acessos"
+                      >
+                        <PencilLine className="h-4 w-4 mr-1" />
+                        Editar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         ) : (
@@ -548,6 +626,22 @@ const Customers = () => {
         products={massProducts}
         onApply={handleMassApply}
       />
+
+      {editingCustomer && (
+        <CustomerEditorModal
+          open={isEditorOpen}
+          onClose={closeEditor}
+          customer={{
+            id: editingCustomer.id,
+            name: editingCustomer.name,
+            email: editingCustomer.email,
+            access: editingCustomer.access,
+          }}
+          products={massProducts}
+          onSave={saveCustomerEdits}
+          onRemoveAccess={removeAllAccess}
+        />
+      )}
     </div>
   );
 };
