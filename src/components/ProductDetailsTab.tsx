@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { UseFormReturn } from "react-hook-form";
 import * as z from "zod";
 import {
@@ -21,8 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type ProductForm = z.infer<typeof formSchema>;
-
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
   price: z.coerce.number().min(0.01, "O preço deve ser maior que zero"),
@@ -36,11 +34,10 @@ const formSchema = z.object({
 });
 
 interface ProductDetailsTabProps {
-  form: UseFormReturn<ProductForm>;
+  form: UseFormReturn<z.infer<typeof formSchema>>;
   isLoading: boolean;
   onImageFileChange: (file: File | null) => void;
   initialImageUrl?: string | null;
-  isAdmin?: boolean;
 }
 
 const ProductDetailsTab = ({
@@ -49,16 +46,14 @@ const ProductDetailsTab = ({
   onImageFileChange,
   initialImageUrl,
 }: ProductDetailsTabProps) => {
+  // Mantemos o hook local para manipular imagem de pré-visualização
+  // e a comunicação com o parent via onImageFileChange.
+
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(initialImageUrl ?? null);
   const [imageError, setImageError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (initialImageUrl) {
-      setImagePreviewUrl(initialImageUrl);
-    }
-  }, [initialImageUrl]);
-
+  // Lógica simplificada de imagem: arquivo opcional, apenas pré-visualização
   const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (file) {
@@ -74,81 +69,35 @@ const ProductDetailsTab = ({
     }
   };
 
+  // Campo de etiqueta (tag) e URL de retorno foram adicionados
   return (
     <div className="space-y-4">
-      <FormField control={form.control} name="name" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Nome do Produto</FormLabel>
-          <FormControl>
-            <Input placeholder="Nome do produto" {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="price" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Preço</FormLabel>
-          <FormControl>
-            <Input type="number" step="0.01" placeholder="0,00" {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="description" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Descrição</FormLabel>
-          <FormControl>
-            <Textarea placeholder="Descrição do produto" {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="memberareaurl" render={({ field }) => (
-        <FormItem>
-          <FormLabel>URL de Conteúdo</FormLabel>
-          <FormControl>
-            <Input placeholder="https://..." {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="orderbumps" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Order Bumps (IDs separados por vírgula)</FormLabel>
-          <FormControl>
-            <Input
-              placeholder="ID1, ID2"
-              value={Array.isArray(field.value) ? field.value.join(", ") : ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                const arr = value
-                  .split(",")
-                  .map((s) => s.trim())
-                  .filter((s) => s.length > 0);
-                field.onChange(arr);
-              }}
-              disabled={isLoading}
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="image_url" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Imagem (URL)</FormLabel>
-          <FormControl>
-            <Input placeholder="URL da imagem" {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      {/* Image Upload (com preview) */}
+      <FormField
+        control={form?.control}
+        name="tag"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tag (opcional)</FormLabel>
+            <FormControl>
+              <Input placeholder="Ex: curso-marketing" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form?.control}
+        name="return_url"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Return URL</FormLabel>
+            <FormControl>
+              <Input placeholder="https://seu-site.com/voltar-para-produto" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
       <FormItem>
         <FormLabel>Imagem do Produto</FormLabel>
         <div className="flex items-center space-x-2">
@@ -161,45 +110,7 @@ const ProductDetailsTab = ({
         )}
         {imageError && <FormMessage className="text-red-500">{imageError}</FormMessage>}
       </FormItem>
-
-      <FormField control={form.control} name="tag" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Tag</FormLabel>
-          <FormControl>
-            <Input placeholder="Ex: curso-marketing" {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="return_url" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Return URL</FormLabel>
-          <FormControl>
-            <Input placeholder="https://seu-site.com/voltar-para-produto" {...field} disabled={isLoading} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-
-      <FormField control={form.control} name="status" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Status do Produto</FormLabel>
-          <FormControl>
-            <Select onValueChange={field.onChange} defaultValue={field.value ?? "draft"}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft">Rascunho</SelectItem>
-                <SelectItem value="ativo">Ativo</SelectItem>
-                <SelectItem value="inativo">Inativo</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
+      {/* Demais campos já existentes (name, price, etc.) ficam gerenciados pelos campos do formulário externo */}
     </div>
   );
 };

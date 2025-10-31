@@ -16,52 +16,49 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, Eye } from "lucide-react";
+import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
 import { useSession } from "@/components/SessionContextProvider";
 import * as z from "zod";
+import ConfirmDialog from "@/components/ui/confirm-dialog";
+import ProductAssetManager from "@/components/admin/ProductAssetManager";
+import { Badge } from "@/components/ui/badge";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
   price: z.coerce.number().min(0.01, "O preço deve ser maior que zero"),
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
-  orderbumps: z.array(z.string()).optional(),
-  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
-  status: z.enum(["draft", "ativo", "inativo"]),
-  tag: z.string().optional(),
-  return_url: z.string().url("URL inválida").optional().or(z.literal("")),
+  orderbumps: z.array(z.string()).optional(), // Array of product IDs
+  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
 });
 
 const Products = () => {
   const { user, isLoading: isSessionLoading } = useSession();
-
   const [products, setProducts] = useState<(Product & { assets?: ProductAsset[], assetCount: number })[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
-
-  // Edit/Create modal state
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<(Product & { assets?: ProductAsset[] }) | undefined>(undefined);
+  const [assetManagementProduct, setAssetManagementProduct] = useState<Product | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Delete confirmation state
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
-  // Fetch products for admin view
   const fetchProducts = useCallback(async () => {
     if (!user?.id) {
       setIsLoadingProducts(false);
       return;
     }
     setIsLoadingProducts(true);
+    // Fetch products without assets initially for faster table load
     const { data, error } = await supabase
       .from("products")
-      .select("*, product_assets(id)")
+      .select("*, product_assets(id)") // Only fetch asset count/existence
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -70,12 +67,13 @@ const Products = () => {
       console.error("Error fetching products:", error);
       setProducts([]);
     } else {
-      const enriched = (data || []).map((p) => ({
+      // Map the data to include the asset count
+      const productsWithAssetCount = (data || []).map(p => ({
         ...p,
-        assets: (p as any).product_assets as ProductAsset[],
-        assetCount: ((p as any).product_assets?.length) ?? 0,
+        assets: p.product_assets as ProductAsset[], // Type assertion for consistency
+        assetCount: (p.product_assets as ProductAsset[]).length,
       }));
-      setProducts(enriched as (Product & { assets?: ProductAsset[]; assetCount: number })[]);
+      setProducts(productsWithAssetCount as (Product & { assets?: ProductAsset[], assetCount: number })[]);
     }
     setIsLoadingProducts(false);
   }, [user]);
@@ -88,14 +86,13 @@ const Products = () => {
     }
   }, [user, isSessionLoading, fetchProducts]);
 
-  // Open new product editor (creating)
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
-    setIsEditModalOpen(true);
+    setIsModalOpen(true);
   };
 
-  // Open existing product for editing
   const handleEditProduct = async (productId: string) => {
+    // Fetch full product details including assets for editing
     const { data, error } = await supabase
       .from("products")
       .select("*, product_assets(*)")
@@ -109,94 +106,227 @@ const Products = () => {
     }
 
     setEditingProduct(data as Product & { assets?: ProductAsset[] });
-    setIsEditModalOpen(true);
+    setIsModalOpen(true);
   };
 
-  // Create or update product handler wired to ProductEditTabs
-  const handleEditSubmit = async (formData: z.infer<typeof formSchema>, imageFile: File | null) => {
+  const handleOpenAssetManager = (product: Product & { assetCount: number }) => {
+    setAssetManagementProduct(product);
+    setIsAssetModalOpen(true);
+  };
+
+  const handleSaveProduct = async (
+    formData: z.infer<typeof formSchema> & { status: Product['status'] }, // Include status in formData type
+    files: File[],
+    deletedAssetIds: string[],
+    imageFile: File | null,
+    oldImageUrl: string | null
+  ) => {
     setIsSubmitting(true);
-    try {
-      if (!editingProduct) {
-        // Create new product
-        const payload: any = {
-          user_id: user?.id,
-          name: formData.name,
-          price: formData.price,
-          description: formData.description ?? null,
-          memberareaurl: formData.memberareaurl ?? null,
-          orderbumps: formData.orderbumps ?? null,
-          image_url: formData.image_url ?? null,
-          status: formData.status,
-          tag: formData.tag ?? null,
-          return_url: formData.return_url ?? null,
-        };
-        Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
+    let hasErrors = false;
+    const errorMessages: string[] = [];
 
-        const { data: newProduct, error } = await supabase.from("products").insert(payload).select("*").single();
-        if (error) {
-          showError("Erro ao criar produto: " + error.message);
-          console.error("Create product error:", error);
-        } else {
-          showSuccess("Produto criado com sucesso!");
-          setIsEditModalOpen(false);
-          fetchProducts();
-        }
+    const productData = {
+      ...formData,
+      user_id: user?.id,
+    };
+
+    let currentProductId = editingProduct?.id;
+    let newImageUrl = formData.image_url;
+
+    // --- Image Upload Logic ---
+    if (imageFile && user?.id) {
+      const fileExtension = imageFile.name.split('.').pop();
+      const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(filePath, imageFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        errorMessages.push(`Erro ao fazer upload da imagem: ${uploadError.message}`);
+        hasErrors = true;
       } else {
-        // Update existing product
-        const payload: any = {
-          name: formData.name,
-          price: formData.price,
-          description: formData.description ?? null,
-          memberareaurl: formData.memberareaurl ?? null,
-          orderbumps: formData.orderbumps ?? null,
-          image_url: formData.image_url ?? null,
-          status: formData.status,
-          tag: formData.tag ?? null,
-          return_url: formData.return_url ?? null,
-        };
-        Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
-
-        const { data: updated, error } = await supabase.from("products").update(payload).eq("id", editingProduct!.id).select("*").single();
-        if (error) {
-          showError("Erro ao atualizar produto: " + error.message);
-        } else {
-          showSuccess("Produto atualizado com sucesso!");
-          setIsEditModalOpen(false);
-          fetchProducts();
+        newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
+        // If there was an old image and a new one is uploaded, delete the old one
+        if (oldImageUrl && oldImageUrl !== newImageUrl) {
+          const oldPath = oldImageUrl.split('product-images/')[1];
+          if (oldPath) {
+            await supabase.storage.from('product-images').remove([oldPath]);
+          }
         }
       }
-    } catch (err: any) {
-      console.error("Erro no submit de edição/criação:", err);
-      showError("Erro ao salvar produto.");
-    } finally {
-      setIsSubmitting(false);
+    } else if (!imageFile && !formData.image_url && oldImageUrl) {
+      // If no new file, and image_url field is cleared, and there was an old image, delete it
+      const oldPath = oldImageUrl.split('product-images/')[1];
+      if (oldPath) {
+        await supabase.storage.from('product-images').remove([oldPath]);
+      }
+      newImageUrl = null;
     }
-  };
+    productData.image_url = newImageUrl;
 
-  // Delete product
-  const handleDeleteProduct = async () => {
-    if (!productToDelete) return;
-    try {
-      const { error } = await supabase.from("products").delete().eq("id", productToDelete);
+    // --- Product Create/Update Logic ---
+    if (editingProduct) {
+      const { error } = await supabase
+        .from("products")
+        .update(productData)
+        .eq("id", editingProduct.id);
       if (error) {
-        showError("Erro ao excluir produto: " + error.message);
+        errorMessages.push("Erro ao atualizar produto: " + error.message);
+        hasErrors = true;
       } else {
-        showSuccess("Produto excluído com sucesso!");
-        fetchProducts();
+        showSuccess("Detalhes do produto atualizados!");
+        currentProductId = editingProduct.id;
       }
-    } catch (err: any) {
-      showError("Erro ao excluir produto.");
-    } finally {
+    } else {
+      const { data, error } = await supabase
+        .from("products")
+        .insert(productData)
+        .select("id")
+        .single();
+      if (error || !data) {
+        errorMessages.push("Erro ao criar produto: " + error.message);
+        hasErrors = true;
+      } else {
+        showSuccess("Produto criado com sucesso!");
+        currentProductId = data.id;
+      }
+    }
+
+    // If product creation/update failed, stop here.
+    if (hasErrors && !currentProductId) {
+      setIsSubmitting(false);
+      showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
+      return;
+    }
+
+    // --- Handle File Uploads (PDFs) - Only for initial creation/edit ---
+    if (files.length > 0 && currentProductId && user?.id) {
+      for (const file of files) {
+        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const filePath = `${user.id}/${currentProductId}/${sanitizedFileName}-${Date.now()}`;
+        const { error: uploadError } = await supabase.storage
+          .from("product-assets")
+          .upload(filePath, file);
+
+        if (uploadError) {
+          errorMessages.push(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
+          hasErrors = true;
+        } else {
+          const { error: assetInsertError } = await supabase
+            .from("product_assets")
+            .insert({
+              product_id: currentProductId,
+              file_name: file.name,
+              storage_path: filePath,
+            });
+          if (assetInsertError) {
+            errorMessages.push(`Erro ao registrar asset ${file.name} no banco de dados: ${assetInsertError.message}`);
+            hasErrors = true;
+          }
+        }
+      }
+    }
+
+    // --- Handle Asset Deletions (PDFs) - Only for initial edit ---
+    if (deletedAssetIds.length > 0 && editingProduct) {
+      const assetsToDeletePaths: string[] = [];
+      for (const assetId of deletedAssetIds) {
+        const asset = editingProduct.assets?.find(a => a.id === assetId);
+        if (asset) {
+          assetsToDeletePaths.push(asset.storage_path);
+        }
+      }
+
+      if (assetsToDeletePaths.length > 0) {
+        await supabase.storage.from('product-assets').remove(assetsToDeletePaths);
+      }
+
+      await supabase.from('product_assets').delete().in('id', deletedAssetIds);
+    }
+
+    // --- Final Feedback ---
+    if (hasErrors) {
+      showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
+    } else {
+      showSuccess("Produto e arquivos salvos com sucesso!");
+    }
+
+    fetchProducts();
+    setIsModalOpen(false);
+    setIsSubmitting(false);
+  };
+
+  const handleConfirmDelete = (id: string) => {
+    setProductToDelete(id);
+    setIsConfirmDeleteOpen(true);
+  };
+
+  const handleDeleteProduct = async (confirmed: boolean) => {
+    setIsConfirmDeleteOpen(false);
+    if (!confirmed || !productToDelete) {
       setProductToDelete(null);
+      return;
+    }
+
+    const id = productToDelete;
+    setIsSubmitting(true);
+    let hasErrors = false;
+    const errorMessages: string[] = [];
+
+    // 1. Fetch assets and image URL for deletion
+    const productToDeleteData = products.find(p => p.id === id);
+
+    // 2. Delete assets from storage
+    const { data: assetsToDelete } = await supabase
+      .from('product_assets')
+      .select('storage_path')
+      .eq('product_id', id);
+
+    if (assetsToDelete && assetsToDelete.length > 0) {
+      const paths = assetsToDelete.map(asset => asset.storage_path);
+      const { error: deleteStorageError } = await supabase.storage
+        .from('product-assets')
+        .remove(paths);
+
+      if (deleteStorageError) {
+        errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
+        hasErrors = true;
+      }
+    }
+
+    // 3. Delete main product image if it exists
+    if (productToDeleteData?.image_url) {
+      const imagePath = productToDeleteData.image_url.split('product-images/')[1];
+      if (imagePath) {
+        const { error: deleteImageError } = await supabase.storage
+          .from('product-images')
+          .remove([imagePath]);
+        if (deleteImageError) {
+          console.warn("Could not delete product image from storage during product deletion:", deleteImageError.message);
+        }
+      }
+    }
+
+    // 4. Delete the product record (cascades asset records)
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) {
+      errorMessages.push("Erro ao excluir produto: " + error.message);
+      hasErrors = true;
+    } else {
+      showSuccess("Produto excluído com sucesso!");
+      fetchProducts();
+    }
+
+    setIsSubmitting(false);
+    setProductToDelete(null);
+    if (hasErrors) {
+      showError("Ocorreram erros durante a exclusão:\n" + errorMessages.join("\n"));
     }
   };
 
-  // Delete confirmation flow
-  const confirmDelete = (id: string) => {
-    setProductToDelete(id);
-  };
-
-  // Reutilizar link de checkout como bonus (opcional)
   const handleGenerateCheckoutLink = (productId: string) => {
     const checkoutUrl = `${window.location.origin}/checkout/${productId}`;
     navigator.clipboard.writeText(checkoutUrl)
@@ -204,8 +334,17 @@ const Products = () => {
       .catch(() => showError("Falha ao copiar o link."));
   };
 
-  // UI de status (simplificada)
-  const getTagForDisplay = (p: Product) => p.tag ?? "—";
+  const getStatusBadge = (status: Product['status']) => {
+    switch (status) {
+      case 'ativo':
+        return <Badge className="bg-green-500 hover:bg-green-600">Ativo</Badge>;
+      case 'inativo':
+        return <Badge variant="secondary">Inativo</Badge>;
+      case 'draft':
+      default:
+        return <Badge variant="outline">Rascunho</Badge>;
+    }
+  };
 
   if (isSessionLoading || isLoadingProducts) {
     return (
@@ -219,9 +358,27 @@ const Products = () => {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Gerenciar Produtos</h1>
-        <Button onClick={handleCreateProduct} className="bg-orange-500 hover:bg-orange-600 text-white">
-          <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
-        </Button>
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogTrigger asChild>
+            <Button
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={handleCreateProduct}
+            >
+              <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingProduct ? "Editar Produto" : "Criar Novo Produto"}</DialogTitle>
+            </DialogHeader>
+            <ProductEditTabs
+              initialData={editingProduct}
+              onSubmit={handleSaveProduct}
+              onCancel={() => setIsModalOpen(false)}
+              isLoading={isSubmitting}
+            />
+          </DialogContent>
+        </Dialog>
       </div>
 
       {products.length === 0 ? (
@@ -231,35 +388,66 @@ const Products = () => {
           <Table>
             <TableHeader className="bg-gray-50">
               <TableRow>
-                <TableHead>Produto</TableHead>
-                <TableHead>Tag</TableHead>
+                <TableHead className="w-[150px]">Produto</TableHead>
                 <TableHead>Preço</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
-                <TableHead className="text-right w-[240px]">Ações</TableHead>
+                <TableHead className="text-right w-[200px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {products.map((product) => (
-                <TableRow key={product.id} className="hover:bg-gray-50">
+                <TableRow key={product.id} className="hover:bg-gray-50 transition-colors">
                   <TableCell className="font-medium flex items-center gap-3">
                     {product.image_url && (
-                      <img src={product.image_url} alt={product.name} className="w-10 h-10 object-cover rounded-md" />
+                      <img src={product.image_url} alt={product.name} className="w-10 h-10 object-cover rounded-md shrink-0" />
                     )}
-                    <div className="truncate max-w-[150px]">{product.name}</div>
+                    <div className="truncate max-w-[150px]">
+                      {product.name}
+                      <p className="text-xs text-gray-500 truncate">{product.id}</p>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">{getTagForDisplay(product)}</TableCell>
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>
+                  <TableCell>{getStatusBadge(product.status)}</TableCell>
+                  <TableCell>{product.orderbumps?.length || 0}</TableCell>
                   <TableCell>
-                    <span className="text-sm text-gray-600">{product.assetCount ?? 0} arquivo(s)</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenAssetManager(product)}
+                      className="flex items-center gap-1 text-blue-600 hover:bg-blue-50"
+                    >
+                      <FileText className="h-4 w-4" />
+                      {product.assetCount || 0} Arquivo(s)
+                    </Button>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => handleEditProduct(product.id)} className="mr-1 text-gray-600 hover:text-orange-500" title="Editar Produto">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleEditProduct(product.id)}
+                      className="mr-1 text-gray-600 hover:text-orange-500"
+                      title="Editar Produto"
+                    >
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleGenerateCheckoutLink(product.id)} className="mr-1" title="Copiar Link de Checkout">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleGenerateCheckoutLink(product.id)}
+                      className="mr-1 text-green-600 hover:text-green-700"
+                      title="Copiar Link de Checkout"
+                    >
                       <LinkIcon className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => confirmDelete(product.id)} className="text-red-500 hover:text-red-700" title="Excluir Produto">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleConfirmDelete(product.id)}
+                      className="text-red-500 hover:text-red-700"
+                      title="Excluir Produto"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -270,39 +458,32 @@ const Products = () => {
         </div>
       )}
 
-      {/* Dialog de edição / criação */}
-      <Dialog open={isEditModalOpen} onOpenChange={(open) => setIsEditModalOpen(!!open)}>
-        <DialogContent className="sm:max-w-4xl p-0">
-          <ProductEditTabs
-            initialData={editingProduct}
-            onSubmit={handleEditSubmit}
-            onCancel={() => setIsEditModalOpen(false)}
-            isLoading={isSubmitting}
-          />
+      {/* Asset Management Modal */}
+      <Dialog open={isAssetModalOpen} onOpenChange={setIsAssetModalOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Gerenciar Materiais</DialogTitle>
+          </DialogHeader>
+          {assetManagementProduct && (
+            <ProductAssetManager
+              productId={assetManagementProduct.id}
+              productName={assetManagementProduct.name}
+              onAssetsUpdated={fetchProducts} // Refresh product list to update asset count
+            />
+          )}
         </DialogContent>
       </Dialog>
 
-      {/* Confirmação de exclusão */}
-      <Dialog open={!!productToDelete} onOpenChange={(open) => {
-        if (!open) setProductToDelete(null);
-      }}>
-        <DialogContent className="sm:max-w-md p-6">
-          <DialogHeader>
-            <DialogTitle>Excluir Produto</DialogTitle>
-          </DialogHeader>
-          <div className="mt-2 mb-4 text-sm text-gray-700">
-            Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.
-          </div>
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setProductToDelete(null)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleDeleteProduct} className="bg-red-600 hover:bg-red-700 text-white">
-              Excluir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Confirmation Dialog for Deletion */}
+      <ConfirmDialog
+        isOpen={isConfirmDeleteOpen}
+        onClose={handleDeleteProduct}
+        title="Confirmar Exclusão do Produto"
+        description="Tem certeza que deseja excluir este produto? Todos os dados, incluindo arquivos e imagem principal, serão removidos permanentemente."
+        confirmText="Sim, Excluir Produto"
+        isDestructive
+        isLoading={isSubmitting}
+      />
     </div>
   );
 };
