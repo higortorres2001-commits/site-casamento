@@ -17,18 +17,9 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  let payload: any;
-
   try {
-    payload = await req.json();
+    const payload = await req.json();
     const { email, name, cpf, whatsapp } = payload;
-
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'create-customer',
-      message: 'Attempting to create customer.',
-      metadata: { payload }
-    });
 
     if (!email || !name || !cpf || !whatsapp) {
       await supabase.from('logs').insert({
@@ -42,11 +33,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    
-    const cleanCpf = cpf.replace(/\D/g, '');
-    const cleanWhatsapp = whatsapp.replace(/\D/g, '');
 
-    // 1. Check if user already exists in auth.users
+    // Check if user already exists
     const { data: existing, error: listError } = await supabase.auth.admin.listUsers({ email });
     if (listError) {
       await supabase.from('logs').insert({
@@ -60,106 +48,20 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
     if (existing && existing.users && existing.users.length > 0) {
-      const userId = existing.users[0].id;
-      
-      // User exists in auth.users, now check if profile exists
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', userId)
-        .single();
-
-      const profileData = { 
-        id: userId, 
-        email, 
-        name, 
-        cpf: cleanCpf, 
-        whatsapp: cleanWhatsapp 
-      };
-
-      if (profileError && profileError.code === 'PGRST116') { // PGRST116: No rows found
-        // Profile does not exist, create it manually
-        const { error: insertProfileError } = await supabase
-          .from('profiles')
-          .insert(profileData);
-
-        if (insertProfileError) {
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'create-customer',
-            message: 'User exists, but failed to create missing profile.',
-            metadata: { userId, email, error: insertProfileError.message }
-          });
-          return new Response(JSON.stringify({ error: 'User exists, but failed to create missing profile.' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'create-customer',
-          message: 'User existed, missing profile created successfully.',
-          metadata: { userId, email }
-        });
-        return new Response(JSON.stringify({ id: userId, email, name, message: 'Profile created for existing user.' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      } else if (profileError) {
-        // Other profile error
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'create-customer',
-          message: 'Error checking existing profile.',
-          metadata: { userId, email, error: profileError.message }
-        });
-        return new Response(JSON.stringify({ error: 'Error checking existing profile.' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      
-      // User and Profile exist, update profile data
-      const { error: updateProfileError } = await supabase
-        .from('profiles')
-        .update({ name, cpf: cleanCpf, whatsapp: cleanWhatsapp })
-        .eq('id', userId);
-
-      if (updateProfileError) {
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'create-customer',
-          message: 'User and profile exist, but failed to update profile data.',
-          metadata: { userId, email, error: updateProfileError.message }
-        });
-        return new Response(JSON.stringify({ error: 'User exists, but failed to update profile data.' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'create-customer',
-        message: 'User and profile already exist. Profile data updated.',
-        metadata: { email, userId }
-      });
-      return new Response(JSON.stringify({ id: userId, email, name, message: 'User already exists. Profile data updated.' }), {
-        status: 200,
+      return new Response(JSON.stringify({ error: 'User already exists.' }), {
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 2. User does not exist, proceed with creation
-    const finalPassword = cleanCpf; // Use clean CPF as password
-
+    // Create user (password derived from CPF if not provided)
+    const password = cpf?.toString() || 'TempPass123';
     const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
       email,
-      password: finalPassword,
+      password,
       email_confirm: true,
-      user_metadata: { name, cpf: cleanCpf, whatsapp: cleanWhatsapp }, // Pass clean data to metadata
+      user_metadata: { name, cpf, whatsapp },
     });
 
     if (createError || !newUser?.user) {
@@ -169,7 +71,7 @@ serve(async (req) => {
         message: 'Failed to create new user.',
         metadata: { email, error: createError?.message }
       });
-      return new Response(JSON.stringify({ error: 'Failed to create user.', details: createError?.message }), {
+      return new Response(JSON.stringify({ error: 'Failed to create user.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -177,12 +79,23 @@ serve(async (req) => {
 
     const userId = newUser.user.id;
 
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'create-customer',
-      message: 'New user created successfully. Profile creation handled by trigger.',
-      metadata: { userId, email }
-    });
+    // Seed profile
+    const { error: insertProfileError } = await supabase
+      .from('profiles')
+      .insert({ id: userId, name, cpf, email, whatsapp });
+
+    if (insertProfileError) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-customer',
+        message: 'Failed to insert profile for new user.',
+        metadata: { userId, error: insertProfileError.message }
+      });
+      return new Response(JSON.stringify({ error: 'Failed to seed user profile.' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     return new Response(JSON.stringify({ id: userId, email, name }), {
       status: 200,
@@ -195,7 +108,7 @@ serve(async (req) => {
       level: 'error',
       context: 'create-customer',
       message: 'Unhandled error in edge function.',
-      metadata: { error: error?.message ?? 'Unknown error', stack: error?.stack }
+      metadata: { error: error?.message, stack: error?.stack }
     });
     return new Response(JSON.stringify({ error: error?.message ?? 'Unknown error' }), {
       status: 500,
