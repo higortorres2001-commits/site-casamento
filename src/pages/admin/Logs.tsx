@@ -50,6 +50,18 @@ const Logs = () => {
 
   const isAdmin = user?.email === "higor.torres8@gmail.com";
 
+  const cleanupOldLogs = useCallback(async () => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const { error } = await supabase
+      .from("logs")
+      .delete()
+      .lt("created_at", cutoff.toISOString());
+    if (error) {
+      console.error("Error cleaning old logs:", error);
+    }
+  }, []);
+
   const fetchAvailableContexts = useCallback(async () => {
     const { data, error } = await supabase.from("logs").select("context", { distinct: true });
     if (error) {
@@ -86,6 +98,12 @@ const Logs = () => {
 
   useEffect(() => {
     if (isAdmin) {
+      cleanupOldLogs();
+    }
+  }, [cleanupOldLogs, isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
       fetchAvailableContexts();
     }
   }, [isAdmin, fetchAvailableContexts]);
@@ -98,7 +116,7 @@ const Logs = () => {
 
   const handleClearLogs = async () => {
     if (!isAdmin) {
-      showError("Você não tem permissão para limpar logs.");
+      showError("Você não tem permissão para limpar os logs.");
       return;
     }
     if (!window.confirm("Tem certeza que deseja apagar TODOS os logs? Esta ação é irreversível.")) {
