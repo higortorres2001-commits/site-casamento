@@ -4,12 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Edit, Trash2, Loader2, FileText, Copy } from "lucide-react";
@@ -55,7 +50,6 @@ const Products = () => {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
-  // Modal de tag do produto
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [tagModalProduct, setTagModalProduct] = useState<Product | null>(null);
 
@@ -239,7 +233,6 @@ const Products = () => {
     setIsTagModalOpen(true);
   };
 
-  // Atualiza somente o item alterado (sem refetch)
   const handleTagSaved = (newTag: string | null) => {
     if (!tagModalProduct) return;
     setProducts((prev) =>
@@ -295,7 +288,7 @@ const Products = () => {
         </Button>
       </div>
 
-      {products.length === 0 ? (
+      {products.length == 0 ? (
         <p className="text-center text-gray-600 text-lg mt-10">
           Nenhum produto encontrado. Crie um novo produto para começar!
         </p>
@@ -310,102 +303,109 @@ const Products = () => {
                 <TableHead>Tag Interna</TableHead>
                 <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
-                <TableHead className="text-right w-[220px]">Ações</TableHead>
+                <TableHead className="text-right w-[260px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id} className="hover:bg-gray-50">
-                  <TableCell className="font-medium flex items-center gap-3">
-                    {product.image_url && (
-                      <img
-                        src={product.image_url}
-                        alt={product.name}
-                        className="w-10 h-10 object-cover rounded-md shrink-0"
-                      />
-                    )}
-                    <div className="truncate max-w-[180px]">
-                      {product.name}
-                      <p className="text-xs text-gray-500">{product.id}</p>
-                    </div>
-                  </TableCell>
+              {products.map((product) => {
+                const canCopyCheckout = product.status === "ativo";
+                return (
+                  <TableRow key={product.id} className="hover:bg-gray-50">
+                    <TableCell className="font-medium flex items-center gap-3">
+                      {product.image_url && (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="w-10 h-10 object-cover rounded-md shrink-0"
+                        />
+                      )}
+                      <div className="truncate max-w-[180px]">
+                        {product.name}
+                        <p className="text-xs text-gray-500">{product.id}</p>
+                      </div>
+                    </TableCell>
 
-                  <TableCell>R$ {product.price.toFixed(2)}</TableCell>
+                    <TableCell>R$ {product.price.toFixed(2)}</TableCell>
 
-                  <TableCell>{getStatusBadge(product.status)}</TableCell>
+                    <TableCell>{getStatusBadge(product.status)}</TableCell>
 
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
-                        onClick={() => openTagModalForProduct(product)}
-                        title={product.internal_tag ? "Editar tag deste produto" : "Criar tag para este produto"}
-                      >
-                        {product.internal_tag ?? "CRIAR TAG"}
-                      </button>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>{product.orderbumps?.length ?? 0}</TableCell>
-
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setAssetManagementProduct(product);
-                        setIsAssetModalOpen(true);
-                      }}
-                      className="flex items-center gap-1"
-                    >
-                      <FileText className="h-4 w-4" />
-                      {product.assetCount ?? 0} Arquivo(s)
-                    </Button>
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleCopyCheckoutLink(product.id)}
-                          className="mr-1 text-gray-600 hover:text-blue-600"
-                          title="Copiar link de checkout"
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
+                          onClick={() => openTagModalForProduct(product)}
+                          title={product.internal_tag ? "Editar tag deste produto" : "Criar tag para este produto"}
                         >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Copiar link do checkout</TooltipContent>
-                    </Tooltip>
+                          {product.internal_tag ?? "CRIAR TAG"}
+                        </button>
+                      </div>
+                    </TableCell>
 
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEditProduct(product.id)}
-                      className="mr-1 text-gray-600 hover:text-orange-500"
-                      title="Editar Produto"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleConfirmDelete(product.id)}
-                      className="text-red-500 hover:text-red-700"
-                      title="Excluir Produto"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    <TableCell>{product.orderbumps?.length ?? 0}</TableCell>
+
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setAssetManagementProduct(product);
+                          setIsAssetModalOpen(true);
+                        }}
+                        className="flex items-center gap-1"
+                      >
+                        <FileText className="h-4 w-4" />
+                        {product.assetCount ?? 0} Arquivo(s)
+                      </Button>
+                    </TableCell>
+
+                    <TableCell className="text-right">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => canCopyCheckout && handleCopyCheckoutLink(product.id)}
+                              className={`mr-1 ${canCopyCheckout ? "text-gray-600 hover:text-blue-600" : "text-gray-300 cursor-not-allowed"}`}
+                              title="Copiar link de checkout"
+                              disabled={!canCopyCheckout}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {canCopyCheckout ? "Copiar link do checkout" : "Disponível apenas para produtos ativos"}
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditProduct(product.id)}
+                        className="mr-1 text-gray-600 hover:text-orange-500"
+                        title="Editar Produto"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsConfirmDeleteOpen(true)}
+                        className="text-red-500 hover:text-red-700"
+                        title="Excluir Produto"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
       )}
 
-      {/* Modal de edição de produto - rolagem no próprio conteúdo */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
           <ProductEditTabs
@@ -417,7 +417,6 @@ const Products = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de materiais do produto */}
       <Dialog open={isAssetModalOpen} onOpenChange={setIsAssetModalOpen}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <ProductAssetManager
@@ -428,7 +427,6 @@ const Products = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de tag por produto (atualiza localmente e fecha) */}
       {tagModalProduct && (
         <ProductTagModal
           open={isTagModalOpen}
@@ -438,7 +436,6 @@ const Products = () => {
         />
       )}
 
-      {/* Confirmação de exclusão de produto */}
       <ConfirmDialog
         isOpen={isConfirmDeleteOpen}
         onClose={() => setIsConfirmDeleteOpen(false)}
