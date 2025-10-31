@@ -13,11 +13,12 @@ interface ProductTagModalProps {
   open: boolean;
   onClose: () => void;
   product: Product;
-  onUpdated: () => void;
+  onSaved: (newTag: string | null) => void; // retorna tag salva para atualizar localmente
 }
 
-const ProductTagModal = ({ open, onClose, product, onUpdated }: ProductTagModalProps) => {
+const ProductTagModal = ({ open, onClose, product, onSaved }: ProductTagModalProps) => {
   const [tag, setTag] = useState<string>(product?.internal_tag ?? "");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (product) setTag(product.internal_tag ?? "");
@@ -26,8 +27,9 @@ const ProductTagModal = ({ open, onClose, product, onUpdated }: ProductTagModalP
   const save = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!product) return;
+    setSaving(true);
     try {
-      const newTag = tag?.trim() || null; // permite limpar tag
+      const newTag = tag?.trim() || null;
       const { error } = await supabase
         .from("products")
         .update({ internal_tag: newTag })
@@ -37,24 +39,32 @@ const ProductTagModal = ({ open, onClose, product, onUpdated }: ProductTagModalP
         showError("Erro ao atualizar tag do produto: " + error.message);
       } else {
         showSuccess("Tag atualizada com sucesso!");
-        onUpdated();
-        // O modal permanece aberto para edição adicional
+        onSaved(newTag); // atualiza lista localmente
+        onClose(); // fecha modal imediatamente
       }
-    } catch (err) {
+    } catch (err: any) {
       showError("Erro ao atualizar tag.");
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { 
-      // Fecha o modal quando o overlay é clicado ou usuário pressiona ESC
-      if (!nextOpen) onClose();
-    }}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-md p-6">
         <DialogHeader>
           <div className="flex items-center justify-between w-full">
             <DialogTitle>Editar Tag do Produto</DialogTitle>
-            <button onClick={onClose} aria-label="Fechar" className="text-gray-500 hover:text-gray-700 p-1 rounded">
+            <button
+              onClick={onClose}
+              aria-label="Fechar"
+              className="text-gray-500 hover:text-gray-700 p-1 rounded"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -62,16 +72,24 @@ const ProductTagModal = ({ open, onClose, product, onUpdated }: ProductTagModalP
 
         <form onSubmit={save} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tag</label>
-            <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Nome da tag" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tag (opcional)</label>
+            <Input
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              placeholder="Ex.: premium, vip, interno..."
+              disabled={saving}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Deixe em branco para remover a tag deste produto.
+            </p>
           </div>
 
           <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={onClose} disabled={saving}>
               Fechar
             </Button>
-            <Button type="submit" className="bg-blue-600 text-white">
-              Salvar
+            <Button type="submit" className="bg-blue-600 text-white" disabled={saving}>
+              {saving ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </form>

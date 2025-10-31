@@ -14,11 +14,8 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle
 } from "@/components/ui/dialog";
-// DialogTrigger removed to avoid "DialogTrigger must be used within Dialog" error
-import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen } from "lucide-react";
+import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -26,10 +23,10 @@ import { useSession } from "@/components/SessionContextProvider";
 import * as z from "zod";
 import ConfirmDialog from "@/components/ui/confirm-dialog";
 import ProductAssetManager from "@/components/admin/ProductAssetManager";
-import ProductTagModal from "@/components/admin/ProductTagModal"; // Modal para editar tag por produto
+import ProductTagModal from "@/components/admin/ProductTagModal";
 import { Badge } from "@/components/ui/badge";
 
-type ProductWithAssets = Product & { assets?: ProductAsset[]; assetCount?: number; };
+type ProductWithAssets = Product & { assets?: ProductAsset[]; assetCount?: number };
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -48,17 +45,21 @@ const Products = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [products, setProducts] = useState<ProductWithAssets[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithAssets | undefined>(undefined);
+
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [assetManagementProduct, setAssetManagementProduct] = useState<Product | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
-  // Novo: modal de tag por produto
-  const [tagModalProduct, setTagModalProduct] = useState<Product | null>(null);
+  // Modal de tag do produto
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [tagModalProduct, setTagModalProduct] = useState<Product | null>(null);
 
   const fetchProducts = useCallback(async () => {
     if (!user?.id) {
@@ -68,7 +69,7 @@ const Products = () => {
     setIsLoadingProducts(true);
     const { data, error } = await supabase
       .from("products")
-      .select("*, product_assets(id)") // asset hint
+      .select("*, product_assets(id)")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -87,24 +88,13 @@ const Products = () => {
     setIsLoadingProducts(false);
   }, [user]);
 
-  const fetchProductsMemo = fetchProducts; // manter referência
-
   useEffect(() => {
     if (!isSessionLoading && user) {
-      fetchProductsMemo();
+      fetchProducts();
     } else if (!isSessionLoading && !user) {
       setIsLoadingProducts(false);
     }
-  }, [user, isSessionLoading, fetchProductsMemo]);
-
-  // Novo: handler para atualizar lista após tag editar
-  const handleTagUpdated = () => {
-    fetchProductsMemo();
-  };
-
-  const handleOpenEditProduct = (productId: string) => {
-    handleEditProduct(productId);
-  };
+  }, [user, isSessionLoading, fetchProducts]);
 
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
@@ -134,7 +124,7 @@ const Products = () => {
   };
 
   const handleSaveProduct = async (
-    formData: z.infer<typeof formSchema> & { status: Product['status'] },
+    formData: z.infer<typeof formSchema> & { status: Product["status"] },
     files: File[],
     deletedAssetIds: string[],
     imageFile: File | null,
@@ -152,14 +142,14 @@ const Products = () => {
     let currentProductId = editingProduct?.id;
     let newImageUrl = formData.image_url;
 
-    // Imagem (mesmo fluxo anterior)
+    // Upload/remoção de imagem
     if (imageFile && user?.id) {
-      const fileExtension = imageFile.name.split('.').pop();
+      const fileExtension = imageFile.name.split(".").pop();
       const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from("product-images")
         .upload(filePath, imageFile, {
-          cacheControl: '3600',
+          cacheControl: "3600",
           upsert: false,
         });
 
@@ -169,27 +159,24 @@ const Products = () => {
       } else {
         newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
         if (oldImageUrl && oldImageUrl !== newImageUrl) {
-          const oldPath = oldImageUrl.split('product-images/')[1];
+          const oldPath = oldImageUrl.split("product-images/")[1];
           if (oldPath) {
-            await supabase.storage.from('product-images').remove([oldPath]);
+            await supabase.storage.from("product-images").remove([oldPath]);
           }
         }
       }
     } else if (!imageFile && !formData.image_url && oldImageUrl) {
-      const oldPath = oldImageUrl.split('product-images/')[1];
+      const oldPath = oldImageUrl.split("product-images/")[1];
       if (oldPath) {
-        await supabase.storage.from('product-images').remove([oldPath]);
+        await supabase.storage.from("product-images").remove([oldPath]);
       }
-      newImageUrl = null;
+      newImageUrl = null as any;
     }
-    productData.image_url = newImageUrl;
+    (productData as any).image_url = newImageUrl;
 
     // Criar/Atualizar produto
     if (editingProduct) {
-      const { error } = await supabase
-        .from("products")
-        .update(productData)
-        .eq("id", editingProduct.id);
+      const { error } = await supabase.from("products").update(productData).eq("id", editingProduct.id);
       if (error) {
         errorMessages.push("Erro ao atualizar produto: " + error.message);
         hasErrors = true;
@@ -198,11 +185,7 @@ const Products = () => {
         currentProductId = editingProduct.id;
       }
     } else {
-      const { data, error } = await supabase
-        .from("products")
-        .insert(productData)
-        .select("id")
-        .single();
+      const { data, error } = await supabase.from("products").insert(productData).select("id").single();
       if (error || !data) {
         errorMessages.push("Erro ao criar produto: " + error?.message);
         hasErrors = true;
@@ -218,14 +201,12 @@ const Products = () => {
       return;
     }
 
-    // Upload de assets (PDF) para o produto
+    // Upload de assets (PDF)
     if (files.length > 0 && currentProductId && user?.id) {
       for (const file of files) {
-        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
         const filePath = `${user.id}/${currentProductId}/${sanitizedFileName}-${Date.now()}`;
-        const { error: uploadError } = await supabase.storage
-          .from("product-assets")
-          .upload(filePath, file);
+        const { error: uploadError } = await supabase.storage.from("product-assets").upload(filePath, file);
 
         if (uploadError) {
           errorMessages.push(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
@@ -233,11 +214,7 @@ const Products = () => {
         } else {
           const { error: assetInsertError } = await supabase
             .from("product_assets")
-            .insert({
-              product_id: currentProductId,
-              file_name: file.name,
-              storage_path: filePath,
-            });
+            .insert({ product_id: currentProductId, file_name: file.name, storage_path: filePath });
           if (assetInsertError) {
             errorMessages.push(`Erro ao registrar asset ${file.name} no banco de dados: ${assetInsertError.message}`);
             hasErrors = true;
@@ -246,7 +223,7 @@ const Products = () => {
       }
     }
 
-    // Exclusões de assets
+    // Exclusão de assets se necessário
     if (deletedAssetIds.length > 0 && editingProduct) {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
@@ -254,9 +231,9 @@ const Products = () => {
         if (asset) assetsToDeletePaths.push(asset.storage_path);
       }
       if (assetsToDeletePaths.length > 0) {
-        await supabase.storage.from('product-assets').remove(assetsToDeletePaths);
+        await supabase.storage.from("product-assets").remove(assetsToDeletePaths);
       }
-      await supabase.from('product_assets').delete().in('id', deletedAssetIds);
+      await supabase.from("product_assets").delete().in("id", deletedAssetIds);
     }
 
     if (hasErrors) {
@@ -265,44 +242,40 @@ const Products = () => {
       showSuccess("Produto e arquivos salvos com sucesso!");
     }
 
-    fetchProductsMemo();
+    await fetchProducts();
     setIsModalOpen(false);
     setIsSubmitting(false);
   };
 
-  // Abre modal de tag diretamente na linha da tabela
-  const handleOpenTagModalForProduct = (product: Product) => {
+  // Tag: abrir modal
+  const openTagModalForProduct = (product: Product) => {
     setTagModalProduct(product);
     setIsTagModalOpen(true);
   };
 
-  // Confirmação delete (produto)
+  // Tag: salvar (atualiza localmente sem refetch)
+  const handleTagSaved = (newTag: string | null) => {
+    if (!tagModalProduct) return;
+    setProducts((prev) =>
+      prev.map((p) => (p.id === tagModalProduct.id ? { ...p, internal_tag: newTag ?? undefined } as ProductWithAssets : p))
+    );
+  };
+
+  // Excluir produto (mantém comportamento anterior)
   const handleConfirmDelete = (id: string) => {
     setProductToDelete(id);
     setIsConfirmDeleteOpen(true);
   };
 
-  const handleDeleteProduct = async (confirmed: boolean) => {
-    setIsConfirmDeleteOpen(false);
-    if (!confirmed || !productToDelete) {
-      setProductToDelete(null);
-      return;
-    }
-
-    const id = productToDelete;
-    // deletions já existentes...
-  };
-
-  // Renderização
   const tagPlaceholder = "Sem tag";
 
-  const getStatusBadge = (status: Product['status']) => {
+  const getStatusBadge = (status: Product["status"]) => {
     switch (status) {
-      case 'ativo':
+      case "ativo":
         return <Badge className="bg-green-500 text-white">Ativo</Badge>;
-      case 'inativo':
+      case "inativo":
         return <Badge variant="secondary">Inativo</Badge>;
-      case 'draft':
+      case "draft":
       default:
         return <Badge variant="outline">Rascunho</Badge>;
     }
@@ -328,7 +301,9 @@ const Products = () => {
       </div>
 
       {products.length === 0 ? (
-        <p className="text-center text-gray-600 text-lg mt-10">Nenhum produto encontrado. Crie um novo produto para começar!</p>
+        <p className="text-center text-gray-600 text-lg mt-10">
+          Nenhum produto encontrado. Crie um novo produto para começar!
+        </p>
       ) : (
         <div className="rounded-md border bg-white shadow-lg">
           <Table>
@@ -348,7 +323,11 @@ const Products = () => {
                 <TableRow key={product.id} className="hover:bg-gray-50">
                   <TableCell className="font-medium flex items-center gap-3">
                     {product.image_url && (
-                      <img src={product.image_url} alt={product.name} className="w-10 h-10 object-cover rounded-md shrink-0" />
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        className="w-10 h-10 object-cover rounded-md shrink-0"
+                      />
                     )}
                     <div className="truncate max-w-[180px]">
                       {product.name}
@@ -364,10 +343,7 @@ const Products = () => {
                     <div className="flex items-center gap-2">
                       <button
                         className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
-                        onClick={() => {
-                          setTagModalProduct(product);
-                          setIsTagModalOpen(true);
-                        }}
+                        onClick={() => openTagModalForProduct(product)}
                         title="Editar tag deste produto"
                       >
                         {product.internal_tag ?? tagPlaceholder}
@@ -375,7 +351,7 @@ const Products = () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setTagModalProduct(product); setIsTagModalOpen(true); }}
+                        onClick={() => openTagModalForProduct(product)}
                         className="text-blue-600 hover:text-blue-700"
                         title="Adicionar/editar tag"
                       >
@@ -390,7 +366,10 @@ const Products = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleOpenAssetManager(product)}
+                      onClick={() => {
+                        setAssetManagementProduct(product);
+                        setIsAssetModalOpen(true);
+                      }}
                       className="flex items-center gap-1"
                     >
                       <FileText className="h-4 w-4" />
@@ -404,18 +383,9 @@ const Products = () => {
                       size="icon"
                       onClick={() => handleEditProduct(product.id)}
                       className="mr-1 text-gray-600 hover:text-orange-500"
-                      title="Editar Produto direto"
+                      title="Editar Produto"
                     >
                       <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleOpenEditProduct(product.id)}
-                      className="mr-1 text-green-600 hover:text-green-700"
-                      title="Gerar link de checkout"
-                    >
-                      <LinkIcon className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -434,27 +404,40 @@ const Products = () => {
         </div>
       )}
 
-      {/* Asset Management Modal (existente) */}
+      {/* Modal de edição de produto */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-6">
+          <ProductEditTabs
+            initialData={editingProduct}
+            onSubmit={handleSaveProduct}
+            onCancel={() => setIsModalOpen(false)}
+            isLoading={isSubmitting}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de materiais do produto */}
       <Dialog open={isAssetModalOpen} onOpenChange={setIsAssetModalOpen}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <ProductAssetManager
             productId={assetManagementProduct?.id ?? ""}
             productName={assetManagementProduct?.name ?? ""}
-            onAssetsUpdated={fetchProductsMemo}
+            onAssetsUpdated={fetchProducts}
           />
         </DialogContent>
       </Dialog>
 
-      {/* Tag Editor Modal por produto */}
+      {/* Modal de tag por produto - sem refetch ao salvar */}
       {tagModalProduct && (
         <ProductTagModal
           open={isTagModalOpen}
           onClose={() => setIsTagModalOpen(false)}
           product={tagModalProduct}
-          onUpdated={() => { handleTagUpdated(); }}
+          onSaved={handleTagSaved}
         />
       )}
 
+      {/* Confirmação de exclusão (mantém comportamento existente) */}
       <ConfirmDialog
         isOpen={isConfirmDeleteOpen}
         onClose={() => setIsConfirmDeleteOpen(false)}
