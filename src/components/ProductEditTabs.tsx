@@ -126,8 +126,8 @@ const ProductEditTabs = ({
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <Tabs defaultValue="details" className="flex h-full flex-col">
+    <div className="flex flex-col">
+      <Tabs defaultValue="details" className="flex flex-col">
         <TabsList className="grid w-full grid-cols-3 sticky top-0 z-20 bg-white border-b p-2">
           <TabsTrigger value="details">Detalhes do Produto</TabsTrigger>
           <TabsTrigger value="order-bumps">Order Bumps</TabsTrigger>
@@ -137,8 +137,8 @@ const ProductEditTabs = ({
         </TabsList>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="flex h-full flex-col">
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="flex flex-col">
+            <div className="p-4 md:p-6 space-y-4">
               <TabsContent value="details">
                 <ProductDetailsTab
                   form={form}

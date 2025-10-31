@@ -379,9 +379,9 @@ const Products = () => {
         </div>
       )}
 
-      {/* Modal de edição de produto - agora com altura e rolagem internas */}
+      {/* Modal de edição de produto - agora com rolagem no próprio conteúdo */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 h-[90vh] overflow-hidden">
+        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
           <ProductEditTabs
             initialData={editingProduct}
             onSubmit={handleSaveProduct}
