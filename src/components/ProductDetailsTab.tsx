@@ -14,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import ProductTagSelector from "./admin/ProductTagSelector";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -24,7 +23,7 @@ const formSchema = z.object({
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
   status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
-  internal_tag: z.string().optional(), // Novo: tag interna opcional
+  internal_tag: z.string().optional(), // Mantido no schema para compatibilidade, porém sem UI
 });
 
 interface ProductDetailsTabProps {
@@ -196,30 +195,23 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
         )}
       />
 
-      <FormField
-        control={form.control}
-        name="internal_tag"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Etiqueta interna (opcional)</FormLabel>
-            <ProductTagSelector
-              value={field.value}
-              onSelectTag={(tag) => field.onChange(tag ?? "")}
-              disabled={isLoading}
-            />
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {/* Campo de tag removido do modal conforme solicitado */}
 
       <FormItem>
         <FormLabel>Imagem do Produto</FormLabel>
         <div className="flex items-center space-x-2">
           <Input type="file" accept="image/*" onChange={handleImageFileChange} disabled={isLoading} className="flex-1" />
           {(currentImageToDisplay || selectedImageFile) && (
-            <Button variant="outline" size="icon" onClick={handleRemoveImage} disabled={isLoading}>
+            <button
+              type="button"
+              onClick={handleRemoveImage}
+              className="inline-flex items-center justify-center rounded-md border px-2 py-2 hover:bg-gray-50"
+              disabled={isLoading}
+              aria-label="Remover imagem"
+              title="Remover imagem"
+            >
               <X className="h-4 w-4" />
-            </Button>
+            </button>
           )}
         </div>
         <p className="text-sm text-muted-foreground mt-1">
