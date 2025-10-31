@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon, Profile } from "@/types";
@@ -126,7 +126,7 @@ const Checkout = () => {
         .eq("id", user.id)
         .single();
 
-      if (error) {
+    if (error) {
         console.error("Error fetching user profile:", error);
       } else if (data) {
         setUserProfile(data);
@@ -144,6 +144,7 @@ const Checkout = () => {
     }
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
 
+  // Recalcula total final (produto + bumps - cupom)
   useEffect(() => {
     if (mainProduct) {
       let newTotalPrice = Number(mainProduct.price);
@@ -200,7 +201,10 @@ const Checkout = () => {
         } else {
           const parsed: InstallmentOption[] = parseInstallmentsResponse(data);
           setInstallmentOptions(parsed);
-          setSelectedInstallment(parsed[0]?.quantity ? String(parsed[0].quantity) : "1");
+          setSelectedInstallment((prev) => {
+            const exists = parsed.some((opt) => String(opt.quantity) === String(prev));
+            return exists ? prev : (parsed[0]?.quantity ? String(parsed[0].quantity) : "1");
+          });
         }
       } catch (e) {
         console.error("Installments simulation unexpected error:", e);
@@ -231,27 +235,30 @@ const Checkout = () => {
 
     return raw
       .map((it: any) => {
-        const quantity =
-          it.quantity ??
+        const quantity = Number(
           it.installmentCount ??
-          it.installments ??
-          it.parcelas ??
+          it.quantity ??
           it.number ??
-          1;
+          it.installments ??
+          1
+        );
 
-        const installmentValue =
-          Number(it.installmentValue ?? it.value ?? it.valor ?? it.amount ?? it.installment_amount ?? 0);
+        const installmentValue = Number(
+          it.installmentValue ??
+          it.value ??
+          it.amount ??
+          it.valor ??
+          0
+        );
 
-        const total =
-          Number(
-            it.total ??
-            it.totalValue ??
-            it.total_amount ??
-            it.totalValueWithInterest ??
-            (installmentValue * quantity)
-          );
+        const total = Number(
+          it.totalValueWithInterest ??
+          it.totalValue ??
+          it.total ??
+          installmentValue * quantity
+        );
 
-        return { quantity: Number(quantity), installmentValue, total };
+        return { quantity, installmentValue, total };
       })
       .filter((x) => x.quantity > 0 && x.installmentValue > 0)
       .sort((a, b) => a.quantity - b.quantity);
@@ -423,6 +430,12 @@ const Checkout = () => {
 
   const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
 
+  // Opção selecionada (para exibir texto mais rico no SelectValue)
+  const activeInstallment = useMemo(
+    () => installmentOptions.find((o) => String(o.quantity) === String(selectedInstallment)),
+    [installmentOptions, selectedInstallment]
+  );
+
   // Seções como blocos reutilizáveis
   const customerDataSection = (
     <Card className="bg-white rounded-xl shadow-lg p-6">
@@ -500,18 +513,32 @@ const Checkout = () => {
                 disabled={installmentsLoading || installmentOptions.length === 0}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={installmentsLoading ? "Calculando..." : "Selecione as parcelas"} />
+                  <SelectValue
+                    placeholder={installmentsLoading ? "Calculando..." : "Selecione as parcelas"}
+                  >
+                    {activeInstallment
+                      ? `${activeInstallment.quantity}x de R$ ${activeInstallment.installmentValue.toFixed(2)} (total R$ ${(activeInstallment.total ?? activeInstallment.installmentValue * activeInstallment.quantity).toFixed(2)})`
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {installmentOptions.map((opt) => (
-                    <SelectItem key={opt.quantity} value={String(opt.quantity)}>
-                      {opt.quantity}x de R$ {opt.installmentValue.toFixed(2)}
-                    </SelectItem>
-                  ))}
+                  {installmentOptions.map((opt) => {
+                    const total = opt.total ?? opt.installmentValue * opt.quantity;
+                    return (
+                      <SelectItem key={opt.quantity} value={String(opt.quantity)}>
+                        {opt.quantity}x de R$ {opt.installmentValue.toFixed(2)} (total R$ {total.toFixed(2)})
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {installmentsLoading && (
                 <p className="mt-1 text-xs text-gray-500">Calculando parcelas...</p>
+              )}
+              {!installmentsLoading && installmentOptions.length > 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Baseado no total do pedido: R$ {currentTotalPrice.toFixed(2)}
+                </p>
               )}
             </div>
 
@@ -555,7 +582,7 @@ const Checkout = () => {
             </div>
           </div>
         ) : (
-          // DESKTOP: ordem solicitada anteriormente
+          // DESKTOP: ordem solicitada
           <div className="max-w-3xl mx-auto space-y-6">
             {customerDataSection}          {/* 1. dados do cliente */}
             {productInfoSection}           {/* 2. informações do produto */}
