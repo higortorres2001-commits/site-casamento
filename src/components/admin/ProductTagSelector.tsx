@@ -6,7 +6,6 @@ import { supabase } from "@/integrations/supabase/client";
 import TagEditorModal from "@/components/admin/TagEditorModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { showError, showSuccess } from "@/utils/toast";
 
 type TagOption = {
   id: string;
@@ -28,40 +27,42 @@ const ProductTagSelector: React.FC<ProductTagSelectorProps> = ({
   const [loading, setLoading] = useState(true);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
 
-  const fetchTags = async () => {
-    setLoading(true);
-    const { data, error } = await supabase.from("product_tags").select("id, tag").order("tag", { ascending: true });
-    if (error) {
-      console.error("Error loading product tags:", error);
-      setTags([]);
-    } else {
-      setTags((data ?? []) as TagOption[]);
-    }
-    setLoading(false);
-  };
-
   useEffect(() => {
-    fetchTags();
+    (async () => {
+      const { data, error } = await supabase.from("product_tags").select("id, tag").order("tag", { ascending: true });
+      if (error) {
+        console.error("Error loading product tags:", error);
+        setTags([]);
+      } else {
+        setTags((data ?? []) as TagOption[]);
+      }
+      setLoading(false);
+    })();
   }, []);
+
+  const deleteInlineTag = async (id: string) => {
+    if (!window.confirm("Tem certeza que deseja excluir esta tag?")) return;
+    await supabase.from("product_tags").delete().eq("id", id);
+    // refresh list
+    const { data, error } = await supabase.from("product_tags").select("id, tag").order("tag", { ascending: true });
+    if (!error) setTags((data ?? []) as TagOption[]);
+  };
 
   const handleSaveTag = async (payload: { id?: string; tag: string; }) => {
     if (!payload.tag?.trim()) return;
     try {
       if (payload.id) {
-        const { error } = await supabase.from("product_tags").update({ tag: payload.tag.trim() }).eq("id", payload.id);
-        if (error) throw error;
-        showSuccess("Tag atualizada com sucesso!");
+        await supabase.from("product_tags").update({ tag: payload.tag.trim() }).eq("id", payload.id);
       } else {
-        const { error } = await supabase.from("product_tags").insert({ tag: payload.tag.trim() });
-        if (error) throw error;
-        showSuccess("Nova tag criada com sucesso!");
+        await supabase.from("product_tags").insert({ tag: payload.tag.trim() });
       }
-      await fetchTags();
-      setIsTagModalOpen(false); // Fecha o modal após salvar
-    } catch (err: any) {
-      showError("Erro ao salvar tag: " + err.message);
+      // refresh tags
+      const { data, error } = await supabase.from("product_tags").select("id, tag").order("tag", { ascending: true });
+      if (!error) setTags((data ?? []) as TagOption[]);
+    } catch (err) {
       console.error("Error saving tag inline:", err);
     }
+    // Do not close the modal here to keep UX consistent with file editing flow
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -83,8 +84,20 @@ const ProductTagSelector: React.FC<ProductTagSelectorProps> = ({
         onClose={() => setIsTagModalOpen(false)}
         initialTag={undefined}
         onSave={handleSaveTag}
-        isLoading={loading}
       />
+
+      {/* Chips com delete direto no seletor */}
+      <div className="flex flex-wrap items-center gap-2 ml-2">
+        {tags.map(t => (
+          <span key={t.id} className="inline-flex items-center bg-gray-200 text-gray-800 text-sm rounded-full px-2 py-1">
+            {t.tag}
+            <button aria-label="Remover tag" className="ml-1 text-red-600" onClick={() => deleteInlineTag(t.id)}>
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+
     </div>
   );
 };

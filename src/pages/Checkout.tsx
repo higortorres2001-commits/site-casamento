@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon, Profile } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
@@ -24,7 +24,6 @@ import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 declare global {
   interface Window {
@@ -32,14 +31,9 @@ declare global {
   }
 }
 
-type InstallmentOption = {
-  quantity: number;
-  installmentValue: number;
-  total?: number;
-};
-
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
+  const navigate = useNavigate();
   const { user, isLoading: isSessionLoading } = useSession();
   const metaTrackingData = useMetaTrackingData();
   const isMobile = useIsMobile();
@@ -48,9 +42,8 @@ const Checkout = () => {
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
   const [selectedOrderBumps, setSelectedOrderBumps] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [finalPrice, setFinalPrice] = useState<number>(0);
-  const [currentTotalPrice, setCurrentTotalPrice] = useState<number>(0);
-  const [baseTotalPrice, setBaseTotalPrice] = useState<number>(0);
+  const [currentTotalPrice, setCurrentTotalPrice] = useState(0);
+  const [originalTotalPrice, setOriginalTotalPrice] = useState(0);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [pixDetails, setPixDetails] = useState<any>(null);
@@ -59,26 +52,15 @@ const Checkout = () => {
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX");
   const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
 
-  const [installmentOptions, setInstallmentOptions] = useState<InstallmentOption[]>([]);
-  const [installmentsLoading, setInstallmentsLoading] = useState(false);
-  const [selectedInstallment, setSelectedInstallment] = useState<string>("1");
-  const installmentsDebounceRef = useRef<number | null>(null);
-
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
 
   const hasTrackedInitiateCheckout = useRef(false);
 
-  const normalizeProduct = (p: any): Product => ({
-    ...p,
-    price: Number(p.price),
-  });
-
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
       showError("ID do produto não fornecido.");
-      setIsLoading(false);
-      setMainProduct(null);
+      navigate("/");
       return;
     }
 
@@ -90,23 +72,19 @@ const Checkout = () => {
       .single();
 
     if (error || !product) {
-      console.error("Checkout DEBUG: Error fetching product details:", error);
-      showError("Produto indisponível para compra no momento.");
-      setMainProduct(null);
-      setOrderBumps([]);
-      setFinalPrice(0);
-      setCurrentTotalPrice(0);
-      setBaseTotalPrice(0);
       setIsLoading(false);
+      console.error("Checkout DEBUG: Error fetching product details:", error);
+      showError(
+        `Produto não encontrado ou erro ao carregar: ${error?.message ?? "Desconhecido"}`
+      );
+      navigate("/");
       return;
     }
 
-    const normalizedMain = normalizeProduct(product);
-    setMainProduct(normalizedMain);
+    setMainProduct(product as Product);
     setSelectedOrderBumps([]);
-    setBaseTotalPrice(Number(normalizedMain.price));
-    setFinalPrice(Number(normalizedMain.price));
-    setCurrentTotalPrice(Number(normalizedMain.price));
+    setOriginalTotalPrice(Number(product.price));
+    setCurrentTotalPrice(Number(product.price));
 
     if (product.orderbumps && product.orderbumps.length > 0) {
       const { data: bumpsData, error: bumpsError } = await supabase
@@ -118,14 +96,14 @@ const Checkout = () => {
         console.error("Checkout DEBUG: Error fetching order bumps:", bumpsError);
         setOrderBumps([]);
       } else {
-        setOrderBumps((bumpsData || []).map(normalizeProduct) as Product[]);
+        setOrderBumps((bumpsData || []) as Product[]);
       }
     } else {
       setOrderBumps([]);
     }
 
     setIsLoading(false);
-  }, [productId]);
+  }, [productId, navigate]);
 
   const fetchUserProfile = useCallback(async () => {
     if (user) {
@@ -135,11 +113,16 @@ const Checkout = () => {
         .eq("id", user.id)
         .single();
 
-      if (!error && data) {
+      if (error) {
+        console.error("Error fetching user profile:", error);
+      } else if (data) {
         setUserProfile(data);
+        if (data.has_changed_password === false) {
+          navigate("/update-password");
+        }
       }
     }
-  }, [user]);
+  }, [user, navigate]);
 
   useEffect(() => {
     if (!isSessionLoading) {
@@ -149,121 +132,35 @@ const Checkout = () => {
   }, [isSessionLoading, fetchProductDetails, fetchUserProfile]);
 
   useEffect(() => {
-    if (!mainProduct) return;
-
-    let calculated = Number(mainProduct.price);
-    selectedOrderBumps.forEach((id) => {
-      const bump = orderBumps.find((b) => b.id === id);
-      if (bump) calculated += Number(bump.price);
-    });
-
-    if (appliedCoupon) {
-      if (appliedCoupon.discount_type === "percentage") {
-        calculated = calculated * (1 - Number(appliedCoupon.value) / 100);
-      } else if (appliedCoupon.discount_type === "fixed") {
-        calculated = Math.max(0, calculated - Number(appliedCoupon.value));
-      }
-    }
-
-    setBaseTotalPrice(
-      Number(mainProduct.price) +
-        orderBumps
-          .filter((b) => selectedOrderBumps.includes(b.id))
-          .reduce((acc, b) => acc + Number(b.price), 0)
-    );
-    setFinalPrice(calculated);
-    setCurrentTotalPrice(calculated);
-  }, [mainProduct, orderBumps, selectedOrderBumps, appliedCoupon, isSessionLoading]);
-
-  useEffect(() => {
-    if (paymentMethod !== "CREDIT_CARD") {
-      setInstallmentOptions([]);
-      setSelectedInstallment("1");
-      return;
-    }
-
-    if (!finalPrice || finalPrice <= 0) {
-      setInstallmentOptions([]);
-      setSelectedInstallment("1");
-      return;
-    }
-
-    if (installmentsDebounceRef.current) {
-      clearTimeout(installmentsDebounceRef.current);
-    }
-    setInstallmentsLoading(true);
-
-    installmentsDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("calculate-installments", {
-          body: { value: finalPrice },
-        });
-
-        if (error) {
-          console.error("Installments simulation error:", error);
-          setInstallmentOptions([]);
-          setSelectedInstallment("1");
-        } else {
-          const parsed = parseInstallmentsResponse(data);
-          setInstallmentOptions(parsed);
-          const exists = parsed.find((o) => String(o.quantity) === String(selectedInstallment));
-          if (!exists && parsed.length > 0) {
-            setSelectedInstallment(String(parsed[0].quantity));
-          }
+    if (mainProduct) {
+      let newTotalPrice = Number(mainProduct.price);
+      selectedOrderBumps.forEach((bumpId) => {
+        const bump = orderBumps.find((b) => b.id === bumpId);
+        if (bump) {
+          newTotalPrice += Number(bump.price);
         }
-      } catch (e) {
-        console.error("Installments simulation unexpected error:", e);
-        setInstallmentOptions([]);
-        setSelectedInstallment("1");
-      } finally {
-        setInstallmentsLoading(false);
+      });
+
+      setOriginalTotalPrice(newTotalPrice);
+
+      if (appliedCoupon) {
+        if (appliedCoupon.discount_type === "percentage") {
+          newTotalPrice = newTotalPrice * (1 - appliedCoupon.value / 100);
+        } else if (appliedCoupon.discount_type === "fixed") {
+          newTotalPrice = Math.max(0, newTotalPrice - appliedCoupon.value);
+        }
       }
-    }, 350) as unknown as number;
 
-    return () => {
-      if (installmentsDebounceRef.current) {
-        clearTimeout(installmentsDebounceRef.current);
-        installmentsDebounceRef.current = null;
-      }
-    };
-  }, [finalPrice, paymentMethod, selectedInstallment]);
-
-  function parseInstallmentsResponse(resp: any): InstallmentOption[] {
-    const raw =
-      resp?.installments ||
-      resp?.data ||
-      resp?.installmentOptions ||
-      resp?.items ||
-      (Array.isArray(resp) ? resp : []);
-
-    if (!Array.isArray(raw)) return [];
-
-    return raw
-      .map((it: any) => {
-        const quantity = Number(
-          it.installmentCount ?? it.quantity ?? it.number ?? it.installments ?? 1
-        );
-        const installmentValue = Number(
-          it.installmentValue ?? it.value ?? it.amount ?? it.valor ?? 0
-        );
-        const total = Number(
-          it.totalValueWithInterest ??
-            it.totalValue ??
-            it.total ??
-            installmentValue * quantity
-        );
-        return { quantity, installmentValue, total };
-      })
-      .filter((x) => x.quantity > 0 && x.installmentValue > 0)
-      .sort((a, b) => a.quantity - b.quantity);
-  }
+      setCurrentTotalPrice(newTotalPrice);
+    }
+  }, [mainProduct, selectedOrderBumps, orderBumps, appliedCoupon]);
 
   useEffect(() => {
     if (
       !hasTrackedInitiateCheckout.current &&
       !isLoading &&
       mainProduct &&
-      finalPrice > 0 &&
+      currentTotalPrice > 0 &&
       userProfile &&
       process.env.NODE_ENV === "production"
     ) {
@@ -272,7 +169,7 @@ const Checkout = () => {
       const firstName = userProfile.name?.split(" ")[0] || null;
       const lastName = userProfile.name?.split(" ").slice(1).join(" ") || null;
 
-      trackInitiateCheckout(finalPrice, "BRL", productIds, numItems, {
+      trackInitiateCheckout(currentTotalPrice, "BRL", productIds, numItems, {
         email: userProfile.email,
         phone: userProfile.whatsapp,
         firstName,
@@ -281,7 +178,7 @@ const Checkout = () => {
 
       hasTrackedInitiateCheckout.current = true;
     }
-  }, [isLoading, finalPrice, mainProduct, selectedOrderBumps, userProfile]);
+  }, [isLoading, mainProduct, currentTotalPrice, selectedOrderBumps, userProfile]);
 
   const handleToggleOrderBump = (bumpId: string, isSelected: boolean) => {
     setSelectedOrderBumps((prev) =>
@@ -350,11 +247,6 @@ const Checkout = () => {
           ...metaTrackingData,
           event_source_url: window.location.href,
         },
-        totalPaymentValue: finalPrice,
-        installmentCount:
-          paymentMethod === "CREDIT_CARD" ? Number(selectedInstallment || "1") : undefined,
-        selectedBumpIds: selectedOrderBumps,
-        appliedCouponCode: appliedCoupon?.code || null,
       };
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
@@ -364,6 +256,12 @@ const Checkout = () => {
       if (error) {
         showError("Erro ao finalizar compra: " + error.message);
         console.error("Checkout error:", error);
+        await supabase.from("logs").insert({
+          level: "error",
+          context: "client-checkout",
+          message: `Failed to finalize checkout: ${error.message}`,
+          metadata: { userId: user?.id, payload, error: error.message },
+        });
       } else if (data) {
         showSuccess("Pedido criado com sucesso!");
         setAsaasPaymentId(data.id);
@@ -371,12 +269,26 @@ const Checkout = () => {
           setPixDetails(data);
           setIsPixModalOpen(true);
         } else if (paymentMethod === "CREDIT_CARD") {
-          window.location.href = "/confirmacao";
+          navigate("/confirmacao", {
+            state: { orderId: data.orderId, totalPrice: currentTotalPrice },
+          });
         }
+        await supabase.from("logs").insert({
+          level: "info",
+          context: "client-checkout",
+          message: "Checkout successful, payment initiated.",
+          metadata: { userId: user?.id, orderId: data.orderId, asaasPaymentId: data.id, paymentMethod },
+        });
       }
     } catch (err: any) {
       showError("Erro inesperado ao finalizar compra: " + err.message);
       console.error("Unexpected checkout error:", err);
+      await supabase.from("logs").insert({
+        level: "error",
+        context: "client-checkout",
+        message: `Unhandled error during checkout: ${err.message}`,
+        metadata: { userId: user?.id, errorStack: err.stack },
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -392,23 +304,8 @@ const Checkout = () => {
 
   if (!mainProduct) {
     return (
-      <div className="flex flex-col min-h-screen bg-gray-100">
-        <CheckoutHeader />
-        <main className="flex-1 container mx-auto p-4 md:p-8">
-          <Card className="bg-white rounded-xl shadow-lg max-w-2xl mx-auto p-6 text-center">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-2xl font-bold text-gray-800">
-                Produto indisponível
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-gray-700">
-              <p>
-                Este link de checkout não está disponível no momento. Verifique se o produto está
-                ativo ou tente novamente mais tarde.
-              </p>
-            </CardContent>
-          </Card>
-        </main>
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <p className="text-xl text-gray-600">Produto não encontrado.</p>
       </div>
     );
   }
@@ -419,11 +316,7 @@ const Checkout = () => {
 
   const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
 
-  const activeInstallment = useMemo(
-    () => installmentOptions.find((o) => String(o.quantity) === String(selectedInstallment)),
-    [installmentOptions, selectedInstallment]
-  );
-
+  // Seções como blocos reutilizáveis
   const customerDataSection = (
     <Card className="bg-white rounded-xl shadow-lg p-6">
       <CardHeader className="pb-4">
@@ -489,51 +382,7 @@ const Checkout = () => {
         </RadioGroup>
 
         {paymentMethod === "CREDIT_CARD" && (
-          <div className="mt-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Parcelamento
-              </label>
-              <Select
-                value={selectedInstallment}
-                onValueChange={setSelectedInstallment}
-                disabled={installmentsLoading || installmentOptions.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={installmentsLoading ? "Calculando..." : "Selecione as parcelas"}
-                  >
-                    {activeInstallment
-                      ? `${activeInstallment.quantity}x de R$ ${activeInstallment.installmentValue.toFixed(
-                          2
-                        )} (total R$ ${(
-                          activeInstallment.total ??
-                          activeInstallment.installmentValue * activeInstallment.quantity
-                        ).toFixed(2)})`
-                      : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {installmentOptions.map((opt) => {
-                    const total = opt.total ?? opt.installmentValue * opt.quantity;
-                    return (
-                      <SelectItem key={opt.quantity} value={String(opt.quantity)}>
-                        {opt.quantity}x de R$ {opt.installmentValue.toFixed(2)} (total R$ {total.toFixed(2)})
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {installmentsLoading && (
-                <p className="mt-1 text-xs text-gray-500">Calculando parcelas...</p>
-              )}
-              {!installmentsLoading && installmentOptions.length > 0 && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Baseado no total do pedido: R$ {finalPrice.toFixed(2)}
-                </p>
-              )}
-            </div>
-
+          <div className="mt-6">
             <CreditCardForm ref={creditCardFormRef} isLoading={isSubmitting} />
           </div>
         )}
@@ -545,7 +394,7 @@ const Checkout = () => {
     <OrderSummaryAccordion
       mainProduct={mainProduct}
       selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-      originalTotalPrice={baseTotalPrice}
+      originalTotalPrice={originalTotalPrice}
       currentTotalPrice={currentTotalPrice}
       appliedCoupon={appliedCoupon}
     />
@@ -558,13 +407,15 @@ const Checkout = () => {
       <CheckoutHeader backUrl={backUrl} />
       <main className={`flex-1 container mx-auto p-4 md:p-8 ${contentPaddingBottomClass}`}>
         {isMobile ? (
+          // MOBILE: ordem solicitada
           <div className="max-w-3xl mx-auto space-y-6">
-            {productInfoSection}
-            {customerDataSection}
-            {paymentSection}
-            {orderBumpsSection}
-            {couponSection}
-            {orderSummarySection}
+            {productInfoSection}         {/* 1. produto principal */}
+            {customerDataSection}        {/* 2. dados do cliente */}
+            {paymentSection}             {/* 3. método de pagamento */}
+            {orderBumpsSection}          {/* 4. order bumps */}
+            {couponSection}              {/* 5. cupom */}
+            {orderSummarySection}        {/* 6. resumo do pedido */}
+            {/* Informações complementares (texto simples, menor, sem card) */}
             <div className="text-xs text-gray-600 mt-6 px-1 leading-relaxed">
               <p>ACESSO IMEDIATO</p>
               <p>GARANTIA DE 7 DIAS</p>
@@ -572,13 +423,14 @@ const Checkout = () => {
             </div>
           </div>
         ) : (
+          // DESKTOP: ordem solicitada anteriormente
           <div className="max-w-3xl mx-auto space-y-6">
-            {customerDataSection}
-            {productInfoSection}
-            {orderBumpsSection}
-            {couponSection}
-            {paymentSection}
-            <div className="space-y-4">
+            {customerDataSection}          {/* 1. dados do cliente */}
+            {productInfoSection}           {/* 2. informações do produto */}
+            {orderBumpsSection}            {/* 3. order bumps */}
+            {couponSection}                {/* 4. cupom */}
+            {paymentSection}               {/* 5. método de pagamento */}
+            <div className="space-y-4">    {/* 6. resumo + botão abaixo */}
               {orderSummarySection}
               <Button
                 type="button"
@@ -593,9 +445,10 @@ const Checkout = () => {
         )}
       </main>
 
+      {/* Barra fixa somente no mobile */}
       {isMobile && (
         <FixedBottomBar
-          totalPrice={finalPrice}
+          totalPrice={currentTotalPrice}
           isSubmitting={isSubmitting}
           onSubmit={handleCheckout}
         />
@@ -606,7 +459,7 @@ const Checkout = () => {
         onClose={() => setIsPixModalOpen(false)}
         orderId={pixDetails?.orderId || ""}
         pixDetails={pixDetails}
-        totalPrice={finalPrice}
+        totalPrice={currentTotalPrice}
         asaasPaymentId={asaasPaymentId || ""}
       />
 
