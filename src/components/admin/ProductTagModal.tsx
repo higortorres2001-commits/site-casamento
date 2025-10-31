@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,12 +12,12 @@ interface ProductTagModalProps {
   open: boolean;
   onClose: () => void;
   product: Product;
-  onSaved: (newTag: string | null) => void; // retorna tag salva para atualizar localmente
+  onSaved: (newTag: string | null) => void; // Atualiza localmente a tag no item da lista
 }
 
 const ProductTagModal = ({ open, onClose, product, onSaved }: ProductTagModalProps) => {
   const [tag, setTag] = useState<string>(product?.internal_tag ?? "");
-  const [saving, setSaving] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (product) setTag(product.internal_tag ?? "");
@@ -26,8 +25,8 @@ const ProductTagModal = ({ open, onClose, product, onSaved }: ProductTagModalPro
 
   const save = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!product) return;
-    setSaving(true);
+    if (!product || isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const newTag = tag?.trim() || null;
       const { error } = await supabase
@@ -39,13 +38,36 @@ const ProductTagModal = ({ open, onClose, product, onSaved }: ProductTagModalPro
         showError("Erro ao atualizar tag do produto: " + error.message);
       } else {
         showSuccess("Tag atualizada com sucesso!");
-        onSaved(newTag); // atualiza lista localmente
-        onClose(); // fecha modal imediatamente
+        onSaved(newTag);
+        onClose();
       }
-    } catch (err: any) {
+    } catch {
       showError("Erro ao atualizar tag.");
     } finally {
-      setSaving(false);
+      setIsSubmitting(false);
+    }
+  };
+
+  const removeTag = async () => {
+    if (!product || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({ internal_tag: null })
+        .eq("id", product.id);
+
+      if (error) {
+        showError("Erro ao apagar tag: " + error.message);
+      } else {
+        showSuccess("Tag apagada com sucesso!");
+        onSaved(null);
+        onClose();
+      }
+    } catch {
+      showError("Erro ao apagar tag.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -58,16 +80,7 @@ const ProductTagModal = ({ open, onClose, product, onSaved }: ProductTagModalPro
     >
       <DialogContent className="sm:max-w-md p-6">
         <DialogHeader>
-          <div className="flex items-center justify-between w-full">
-            <DialogTitle>Editar Tag do Produto</DialogTitle>
-            <button
-              onClick={onClose}
-              aria-label="Fechar"
-              className="text-gray-500 hover:text-gray-700 p-1 rounded"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          <DialogTitle>Editar Tag do Produto</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={save} className="space-y-4">
@@ -77,20 +90,30 @@ const ProductTagModal = ({ open, onClose, product, onSaved }: ProductTagModalPro
               value={tag}
               onChange={(e) => setTag(e.target.value)}
               placeholder="Ex.: premium, vip, interno..."
-              disabled={saving}
+              disabled={isSubmitting}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Deixe em branco para remover a tag deste produto.
+              Deixe em branco para remover a tag; ou use o botão Apagar Tag abaixo.
             </p>
           </div>
 
-          <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>
-              Fechar
+          <div className="flex items-center justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={removeTag}
+              disabled={isSubmitting}
+            >
+              Apagar Tag
             </Button>
-            <Button type="submit" className="bg-blue-600 text-white" disabled={saving}>
-              {saving ? "Salvando..." : "Salvar"}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" type="button" onClick={onClose} disabled={isSubmitting}>
+                Fechar
+              </Button>
+              <Button type="submit" className="bg-blue-600 text-white" disabled={isSubmitting}>
+                {isSubmitting ? "Salvando..." : "Salvar"}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

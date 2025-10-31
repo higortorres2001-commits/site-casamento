@@ -11,11 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Edit, Trash2, Loader2, FileText } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -134,24 +131,17 @@ const Products = () => {
     let hasErrors = false;
     const errorMessages: string[] = [];
 
-    const productData = {
-      ...formData,
-      user_id: user?.id,
-    };
+    const productData = { ...formData, user_id: user?.id };
 
     let currentProductId = editingProduct?.id;
     let newImageUrl = formData.image_url;
 
-    // Upload/remoção de imagem
     if (imageFile && user?.id) {
       const fileExtension = imageFile.name.split(".").pop();
       const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
       const { error: uploadError } = await supabase.storage
         .from("product-images")
-        .upload(filePath, imageFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+        .upload(filePath, imageFile, { cacheControl: "3600", upsert: false });
 
       if (uploadError) {
         errorMessages.push(`Erro ao fazer upload da imagem: ${uploadError.message}`);
@@ -174,7 +164,6 @@ const Products = () => {
     }
     (productData as any).image_url = newImageUrl;
 
-    // Criar/Atualizar produto
     if (editingProduct) {
       const { error } = await supabase.from("products").update(productData).eq("id", editingProduct.id);
       if (error) {
@@ -201,13 +190,11 @@ const Products = () => {
       return;
     }
 
-    // Upload de assets (PDF)
     if (files.length > 0 && currentProductId && user?.id) {
       for (const file of files) {
         const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
         const filePath = `${user.id}/${currentProductId}/${sanitizedFileName}-${Date.now()}`;
         const { error: uploadError } = await supabase.storage.from("product-assets").upload(filePath, file);
-
         if (uploadError) {
           errorMessages.push(`Erro ao fazer upload do arquivo ${file.name}: ${uploadError.message}`);
           hasErrors = true;
@@ -223,7 +210,6 @@ const Products = () => {
       }
     }
 
-    // Exclusão de assets se necessário
     if (deletedAssetIds.length > 0 && editingProduct) {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
@@ -247,13 +233,12 @@ const Products = () => {
     setIsSubmitting(false);
   };
 
-  // Tag: abrir modal
   const openTagModalForProduct = (product: Product) => {
     setTagModalProduct(product);
     setIsTagModalOpen(true);
   };
 
-  // Tag: salvar (atualiza localmente sem refetch)
+  // Atualiza somente o item alterado (sem refetch)
   const handleTagSaved = (newTag: string | null) => {
     if (!tagModalProduct) return;
     setProducts((prev) =>
@@ -261,7 +246,6 @@ const Products = () => {
     );
   };
 
-  // Excluir produto (mantém comportamento anterior)
   const handleConfirmDelete = (id: string) => {
     setProductToDelete(id);
     setIsConfirmDeleteOpen(true);
@@ -296,7 +280,7 @@ const Products = () => {
           <h1 className="text-3xl font-bold">Gerenciar Produtos</h1>
         </div>
         <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={handleCreateProduct}>
-          <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
+          Novo Produto
         </Button>
       </div>
 
@@ -344,19 +328,10 @@ const Products = () => {
                       <button
                         className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
                         onClick={() => openTagModalForProduct(product)}
-                        title="Editar tag deste produto"
+                        title={product.internal_tag ? "Editar tag deste produto" : "Criar tag para este produto"}
                       >
-                        {product.internal_tag ?? tagPlaceholder}
+                        {product.internal_tag ?? "CRIAR TAG"}
                       </button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openTagModalForProduct(product)}
-                        className="text-blue-600 hover:text-blue-700"
-                        title="Adicionar/editar tag"
-                      >
-                        <PlusCircle className="h-4 w-4" />
-                      </Button>
                     </div>
                   </TableCell>
 
@@ -427,7 +402,7 @@ const Products = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de tag por produto - sem refetch ao salvar */}
+      {/* Modal de tag por produto (atualiza localmente e fecha) */}
       {tagModalProduct && (
         <ProductTagModal
           open={isTagModalOpen}
@@ -437,7 +412,7 @@ const Products = () => {
         />
       )}
 
-      {/* Confirmação de exclusão (mantém comportamento existente) */}
+      {/* Confirmação de exclusão de produto */}
       <ConfirmDialog
         isOpen={isConfirmDeleteOpen}
         onClose={() => setIsConfirmDeleteOpen(false)}
