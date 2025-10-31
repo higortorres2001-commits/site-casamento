@@ -24,12 +24,19 @@ import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 declare global {
   interface Window {
     fbq: (...args: any[]) => void;
   }
 }
+
+type InstallmentOption = {
+  quantity: number;
+  installmentValue: number;
+  total?: number;
+};
 
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
@@ -51,6 +58,12 @@ const Checkout = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX");
   const [userProfile, setUserProfile] = useState<Partial<Profile> | null>(null);
+
+  // Parcelas
+  const [installmentOptions, setInstallmentOptions] = useState<InstallmentOption[]>([]);
+  const [installmentsLoading, setInstallmentsLoading] = useState(false);
+  const [selectedInstallment, setSelectedInstallment] = useState<string>("1");
+  const installmentsDebounceRef = useRef<number | null>(null);
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
@@ -155,6 +168,95 @@ const Checkout = () => {
     }
   }, [mainProduct, selectedOrderBumps, orderBumps, appliedCoupon]);
 
+  // Debounce para simular parcelamento quando valor final muda e método é cartão
+  useEffect(() => {
+    if (paymentMethod !== "CREDIT_CARD") {
+      setInstallmentOptions([]);
+      setSelectedInstallment("1");
+      return;
+    }
+
+    if (!currentTotalPrice || currentTotalPrice <= 0) {
+      setInstallmentOptions([]);
+      setSelectedInstallment("1");
+      return;
+    }
+
+    if (installmentsDebounceRef.current) {
+      clearTimeout(installmentsDebounceRef.current);
+    }
+    setInstallmentsLoading(true);
+
+    installmentsDebounceRef.current = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("calculate-installments", {
+          body: { value: currentTotalPrice },
+        });
+
+        if (error) {
+          console.error("Installments simulation error:", error);
+          setInstallmentOptions([]);
+          setSelectedInstallment("1");
+        } else {
+          const parsed: InstallmentOption[] = parseInstallmentsResponse(data);
+          setInstallmentOptions(parsed);
+          setSelectedInstallment(parsed[0]?.quantity ? String(parsed[0].quantity) : "1");
+        }
+      } catch (e) {
+        console.error("Installments simulation unexpected error:", e);
+        setInstallmentOptions([]);
+        setSelectedInstallment("1");
+      } finally {
+        setInstallmentsLoading(false);
+      }
+    }, 400) as unknown as number;
+
+    return () => {
+      if (installmentsDebounceRef.current) {
+        clearTimeout(installmentsDebounceRef.current);
+        installmentsDebounceRef.current = null;
+      }
+    };
+  }, [currentTotalPrice, paymentMethod]);
+
+  function parseInstallmentsResponse(resp: any): InstallmentOption[] {
+    const raw =
+      resp?.installments ||
+      resp?.data ||
+      resp?.installmentOptions ||
+      resp?.items ||
+      (Array.isArray(resp) ? resp : []);
+
+    if (!Array.isArray(raw)) return [];
+
+    return raw
+      .map((it: any) => {
+        const quantity =
+          it.quantity ??
+          it.installmentCount ??
+          it.installments ??
+          it.parcelas ??
+          it.number ??
+          1;
+
+        const installmentValue =
+          Number(it.installmentValue ?? it.value ?? it.valor ?? it.amount ?? it.installment_amount ?? 0);
+
+        const total =
+          Number(
+            it.total ??
+            it.totalValue ??
+            it.total_amount ??
+            it.totalValueWithInterest ??
+            (installmentValue * quantity)
+          );
+
+        return { quantity: Number(quantity), installmentValue, total };
+      })
+      .filter((x) => x.quantity > 0 && x.installmentValue > 0)
+      .sort((a, b) => a.quantity - b.quantity);
+  }
+
   useEffect(() => {
     if (
       !hasTrackedInitiateCheckout.current &&
@@ -247,6 +349,11 @@ const Checkout = () => {
           ...metaTrackingData,
           event_source_url: window.location.href,
         },
+        // Novos campos para suportar parcelas dinâmicas
+        totalPaymentValue: currentTotalPrice,
+        installmentCount: paymentMethod === "CREDIT_CARD" ? Number(selectedInstallment || "1") : undefined,
+        selectedBumpIds: selectedOrderBumps,
+        appliedCouponCode: appliedCoupon?.code || null,
       };
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
@@ -277,7 +384,7 @@ const Checkout = () => {
           level: "info",
           context: "client-checkout",
           message: "Checkout successful, payment initiated.",
-          metadata: { userId: user?.id, orderId: data.orderId, asaasPaymentId: data.id, paymentMethod },
+          metadata: { userId: user?.id, orderId: data.orderId, asaasPaymentId: data.id, paymentMethod, installmentCount: Number(selectedInstallment || "1") },
         });
       }
     } catch (err: any) {
@@ -382,7 +489,32 @@ const Checkout = () => {
         </RadioGroup>
 
         {paymentMethod === "CREDIT_CARD" && (
-          <div className="mt-6">
+          <div className="mt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Parcelamento
+              </label>
+              <Select
+                value={selectedInstallment}
+                onValueChange={setSelectedInstallment}
+                disabled={installmentsLoading || installmentOptions.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={installmentsLoading ? "Calculando..." : "Selecione as parcelas"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {installmentOptions.map((opt) => (
+                    <SelectItem key={opt.quantity} value={String(opt.quantity)}>
+                      {opt.quantity}x de R$ {opt.installmentValue.toFixed(2)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {installmentsLoading && (
+                <p className="mt-1 text-xs text-gray-500">Calculando parcelas...</p>
+              )}
+            </div>
+
             <CreditCardForm ref={creditCardFormRef} isLoading={isSubmitting} />
           </div>
         )}
