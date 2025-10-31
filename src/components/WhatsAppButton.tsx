@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { BrandWhatsapp } from 'lucide-react'; // Usando ícone do Lucide para WhatsApp
+import { MessageCircle } from 'lucide-react';
 
 const WHATSAPP_URL = "https://web.whatsapp.com/send?phone=5537991202425&text=";
 
@@ -18,7 +18,7 @@ const WhatsAppButton = () => {
         className="rounded-full w-14 h-14 bg-green-500 hover:bg-green-600 text-white shadow-lg flex items-center justify-center"
         size="icon"
       >
-        <BrandWhatsapp className="h-7 w-7" />
+        <MessageCircle className="h-7 w-7" />
       </Button>
     </a>
   );
