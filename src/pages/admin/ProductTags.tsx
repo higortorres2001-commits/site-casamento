@@ -7,8 +7,9 @@ import { useSession } from "@/components/SessionContextProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import TagEditorModal from "../../components/admin/TagEditorModal";
-import Brand from "../../components/Brand";
+import TagEditorModal from "@/components/admin/TagEditorModal";
+import Brand from "@/components/Brand";
+import { showError, showSuccess } from "@/utils/toast";
 
 type Tag = {
   id: string;
@@ -33,6 +34,7 @@ const ProductTags = () => {
     setLoading(true);
     const { data, error } = await supabase.from("product_tags").select("*").order("created_at", { ascending: false });
     if (error) {
+      showError("Erro ao carregar tags de produtos: " + error.message);
       console.error("Error fetching product tags:", error);
       setTags([]);
     } else {
@@ -51,16 +53,24 @@ const ProductTags = () => {
     if (!newTag.trim()) return;
     const { error } = await supabase.from("product_tags").insert({ tag: newTag.trim(), description: null });
     if (error) {
+      showError("Erro ao criar tag: " + error.message);
       console.error("Error creating tag:", error);
       return;
     }
+    showSuccess("Tag criada com sucesso!");
     setNewTag("");
     fetchTags();
   };
 
   const deleteTag = async (id: string) => {
     if (!window.confirm("Tem certeza que deseja excluir esta tag?")) return;
-    await supabase.from("product_tags").delete().eq("id", id);
+    const { error } = await supabase.from("product_tags").delete().eq("id", id);
+    if (error) {
+      showError("Erro ao excluir tag: " + error.message);
+      console.error("Error deleting tag:", error);
+      return;
+    }
+    showSuccess("Tag excluída com sucesso!");
     fetchTags();
   };
 
@@ -70,9 +80,11 @@ const ProductTags = () => {
     if (!payload.tag.trim() || !payload.id) return;
     const { error } = await supabase.from("product_tags").update({ tag: payload.tag.trim() }).eq("id", payload.id);
     if (error) {
+      showError("Erro ao atualizar tag: " + error.message);
       console.error("Error updating tag:", error);
       return;
     }
+    showSuccess("Tag atualizada com sucesso!");
     setOpenEditor(false);
     setEditingTag(undefined);
     fetchTags();
@@ -124,7 +136,7 @@ const ProductTags = () => {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex items-center justify-center p-6">
-              <div className="h-6 w-6 animate-pulse rounded-full bg-gray-300" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
             </div>
           ) : (
             <Table>
@@ -166,6 +178,7 @@ const ProductTags = () => {
         }}
         initialTag={editingTag}
         onSave={saveEditedTag}
+        isLoading={loading}
       />
     </div>
   );
