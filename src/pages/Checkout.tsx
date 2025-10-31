@@ -23,6 +23,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 
+// Declare global interface for window.fbq
 declare global {
   interface Window {
     fbq: (...args: any[]) => void;
@@ -51,6 +52,9 @@ const Checkout = () => {
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
+
+  // Track if InitiateCheckout has already been fired
+  const hasTrackedInitiateCheckout = useRef(false);
 
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
@@ -151,8 +155,29 @@ const Checkout = () => {
   }, [mainProduct, selectedOrderBumps, orderBumps, appliedCoupon]);
 
   useEffect(() => {
-    // Tracking InitiateCheckout somente uma vez
-  }, [mainProduct, currentTotalPrice, selectedOrderBumps, userProfile]);
+    if (
+      !hasTrackedInitiateCheckout.current &&
+      !isLoading &&
+      mainProduct &&
+      currentTotalPrice > 0 &&
+      userProfile &&
+      process.env.NODE_ENV === "production"
+    ) {
+      const productIds = [mainProduct.id, ...selectedOrderBumps];
+      const numItems = productIds.length;
+      const firstName = userProfile.name?.split(" ")[0] || null;
+      const lastName = userProfile.name?.split(" ").slice(1).join(" ") || null;
+
+      trackInitiateCheckout(currentTotalPrice, "BRL", productIds, numItems, {
+        email: userProfile.email,
+        phone: userProfile.whatsapp,
+        firstName,
+        lastName,
+      });
+
+      hasTrackedInitiateCheckout.current = true;
+    }
+  }, [isLoading, mainProduct, currentTotalPrice, selectedOrderBumps, userProfile]);
 
   const handleToggleOrderBump = (bumpId: string, isSelected: boolean) => {
     setSelectedOrderBumps((prev) =>
@@ -268,17 +293,6 @@ const Checkout = () => {
     }
   };
 
-  // Renderização com botão Voltar quando houver return_url
-  const renderReturnButton = mainProduct?.return_url ? (
-    <div className="mb-4">
-      <a href={mainProduct.return_url} target="_self" rel="noopener noreferrer">
-        <button className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-blue-700">
-          Voltar
-        </button>
-      </a>
-    </div>
-  ) : null;
-
   if (isLoading || isSessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -295,14 +309,13 @@ const Checkout = () => {
     );
   }
 
-  const selectedOrderBumpsDetails = orderBumps.filter((b) =>
-    selectedOrderBumps.includes(b.id)
+  const selectedOrderBumpsDetails = orderBumps.filter((bump) =>
+    selectedOrderBumps.includes(bump.id)
   );
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
       <CheckoutHeader />
-      {renderReturnButton}
       <main className="flex-1 container mx-auto p-4 md:p-8 pb-24">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
           <div className="space-y-6">
