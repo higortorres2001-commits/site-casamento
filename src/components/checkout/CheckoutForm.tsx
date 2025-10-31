@@ -102,20 +102,11 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                       const formatted = formatCPF(e.target.value);
                       field.onChange(formatted);
                     }}
-                    onBlur={(e) => {
-                      // Garante que o campo seja formatado corretamente ao perder o foco
-                      const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
-                      if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
-                        field.onChange(formatCPF(cleanedCpf));
-                      } else {
-                        field.onChange(e.target.value); // Mantém o valor digitado se for inválido para o usuário corrigir
-                      }
-                    }}
                     maxLength={14}
                     className="focus:ring-orange-500 focus:border-orange-500"
                   />
                 </FormControl>
-                <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
+                <FormMessage />
               </FormItem>
             )}
           />
