@@ -12,16 +12,10 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ProductTagSelector from "@/components/admin/ProductTagSelector";
 import { showError } from "@/utils/toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -69,7 +63,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
       return;
     }
 
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.startsWith("image/")) {
       setImageError("O arquivo selecionado não é uma imagem.");
       setSelectedImageFile(null);
       setImagePreviewUrl(initialImageUrl || null);
@@ -120,7 +114,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
     form.setValue("image_url", "", { shouldDirty: true });
   };
 
-  const currentImageToDisplay = selectedImageFile ? imagePreviewUrl : (form.getValues("image_url") || initialImageUrl);
+  const currentImageToDisplay = selectedImageFile ? imagePreviewUrl : form.getValues("image_url") || initialImageUrl;
 
   return (
     <div className="space-y-4">
@@ -146,6 +140,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
           </FormItem>
         )}
       />
+
       <FormField
         control={form.control}
         name="name"
@@ -159,6 +154,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
           </FormItem>
         )}
       />
+
       <FormField
         control={form.control}
         name="price"
@@ -172,6 +168,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
           </FormItem>
         )}
       />
+
       <FormField
         control={form.control}
         name="description"
@@ -185,6 +182,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
           </FormItem>
         )}
       />
+
       <FormField
         control={form.control}
         name="memberareaurl"
@@ -199,22 +197,22 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
         )}
       />
 
-      {/* Observação interna (internal_tag) - novo campo opcional */}
       <FormField
         control={form.control}
         name="internal_tag"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Observação interna (opcional)</FormLabel>
-            <FormControl>
-              <Input placeholder="Categoria / observação para controle interno" {...field} disabled={isLoading} />
-            </FormControl>
+            <FormLabel>Etiqueta interna (opcional)</FormLabel>
+            <ProductTagSelector
+              value={field.value}
+              onSelectTag={(tag) => field.onChange(tag ?? "")}
+              disabled={isLoading}
+            />
             <FormMessage />
           </FormItem>
         )}
       />
 
-      {/* Imagem do Produto */}
       <FormItem>
         <FormLabel>Imagem do Produto</FormLabel>
         <div className="flex items-center space-x-2">
