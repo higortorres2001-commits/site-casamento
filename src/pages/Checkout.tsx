@@ -1,3 +1,4 @@
+number) para evitar erro de toFixed() e tela branca no checkout.">
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
@@ -69,6 +70,11 @@ const Checkout = () => {
 
   const hasTrackedInitiateCheckout = useRef(false);
 
+  const normalizeProduct = (p: any): Product => ({
+    ...p,
+    price: Number(p.price),
+  });
+
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
       showError("ID do produto não fornecido.");
@@ -86,7 +92,6 @@ const Checkout = () => {
 
     if (error || !product) {
       console.error("Checkout DEBUG: Error fetching product details:", error);
-      // Não redireciona: mantém usuário na página com mensagem amigável
       showError("Produto indisponível para compra no momento.");
       setMainProduct(null);
       setOrderBumps([]);
@@ -97,11 +102,12 @@ const Checkout = () => {
       return;
     }
 
-    setMainProduct(product as Product);
+    const normalizedMain = normalizeProduct(product);
+    setMainProduct(normalizedMain);
     setSelectedOrderBumps([]);
-    setBaseTotalPrice(Number(product.price));
-    setFinalPrice(Number(product.price));
-    setCurrentTotalPrice(Number(product.price));
+    setBaseTotalPrice(Number(normalizedMain.price));
+    setFinalPrice(Number(normalizedMain.price));
+    setCurrentTotalPrice(Number(normalizedMain.price));
 
     if (product.orderbumps && product.orderbumps.length > 0) {
       const { data: bumpsData, error: bumpsError } = await supabase
@@ -113,7 +119,7 @@ const Checkout = () => {
         console.error("Checkout DEBUG: Error fetching order bumps:", bumpsError);
         setOrderBumps([]);
       } else {
-        setOrderBumps((bumpsData || []) as Product[]);
+        setOrderBumps((bumpsData || []).map(normalizeProduct) as Product[]);
       }
     } else {
       setOrderBumps([]);
@@ -132,9 +138,6 @@ const Checkout = () => {
 
       if (!error && data) {
         setUserProfile(data);
-        if (data.has_changed_password === false) {
-          // Mantém a pessoa na página de checkout; a troca de senha é sugerida apenas em /meus-produtos
-        }
       }
     }
   }, [user]);
@@ -157,9 +160,9 @@ const Checkout = () => {
 
     if (appliedCoupon) {
       if (appliedCoupon.discount_type === "percentage") {
-        calculated = calculated * (1 - appliedCoupon.value / 100);
+        calculated = calculated * (1 - Number(appliedCoupon.value) / 100);
       } else if (appliedCoupon.discount_type === "fixed") {
-        calculated = Math.max(0, calculated - appliedCoupon.value);
+        calculated = Math.max(0, calculated - Number(appliedCoupon.value));
       }
     }
 
@@ -369,7 +372,7 @@ const Checkout = () => {
           setPixDetails(data);
           setIsPixModalOpen(true);
         } else if (paymentMethod === "CREDIT_CARD") {
-          window.location.href = "/confirmacao"; // mantém a navegação simples
+          window.location.href = "/confirmacao";
         }
       }
     } catch (err: any) {
