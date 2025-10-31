@@ -42,8 +42,11 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    
+    const cleanCpf = cpf.replace(/\D/g, '');
+    const cleanWhatsapp = whatsapp.replace(/\D/g, '');
 
-    // Check if user already exists
+    // 1. Check if user already exists in auth.users
     const { data: existing, error: listError } = await supabase.auth.admin.listUsers({ email });
     if (listError) {
       await supabase.from('logs').insert({
@@ -57,31 +60,86 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
     if (existing && existing.users && existing.users.length > 0) {
+      const userId = existing.users[0].id;
+      
+      // User exists in auth.users, now check if profile exists
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .single();
+
+      if (profileError && profileError.code === 'PGRST116') { // PGRST116: No rows found
+        // Profile does not exist, create it manually
+        const { error: insertProfileError } = await supabase
+          .from('profiles')
+          .insert({ 
+            id: userId, 
+            email, 
+            name, 
+            cpf: cleanCpf, 
+            whatsapp: cleanWhatsapp 
+          });
+
+        if (insertProfileError) {
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'create-customer',
+            message: 'User exists, but failed to create missing profile.',
+            metadata: { userId, email, error: insertProfileError.message }
+          });
+          return new Response(JSON.stringify({ error: 'User exists, but failed to create missing profile.' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'create-customer',
+          message: 'User existed, missing profile created successfully.',
+          metadata: { userId, email }
+        });
+        return new Response(JSON.stringify({ id: userId, email, name, message: 'Profile created for existing user.' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } else if (profileError) {
+        // Other profile error
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-customer',
+          message: 'Error checking existing profile.',
+          metadata: { userId, email, error: profileError.message }
+        });
+        return new Response(JSON.stringify({ error: 'Error checking existing profile.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // User and Profile exist, return success
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-customer',
-        message: 'User already exists.',
-        metadata: { email, userId: existing.users[0].id }
+        message: 'User and profile already exist.',
+        metadata: { email, userId }
       });
-      return new Response(JSON.stringify({ error: 'User already exists.' }), {
-        status: 400,
+      return new Response(JSON.stringify({ id: userId, email, name, message: 'User already exists.' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Use a temporary, strong password to satisfy Supabase policies
-    const temporaryPassword = 'TempPass123!'; 
-    
-    // Ensure CPF and WhatsApp are clean (only digits) for user_metadata
-    const cleanCpf = cpf.replace(/\D/g, '');
-    const cleanWhatsapp = whatsapp.replace(/\D/g, '');
+    // 2. User does not exist, proceed with creation
+    const finalPassword = cleanCpf; // Use clean CPF as password
 
     const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
       email,
-      password: temporaryPassword, // Use temporary strong password
+      password: finalPassword,
       email_confirm: true,
-      user_metadata: { name, cpf: cleanCpf, whatsapp: cleanWhatsapp, primeiro_acesso: true }, // Pass clean data to metadata
+      user_metadata: { name, cpf: cleanCpf, whatsapp: cleanWhatsapp }, // Pass clean data to metadata
     });
 
     if (createError || !newUser?.user) {
@@ -102,87 +160,8 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-customer',
-      message: 'User created successfully.',
+      message: 'New user created successfully. Profile creation handled by trigger.',
       metadata: { userId, email }
-    });
-
-    // The trigger `handle_new_user` will now insert the profile.
-    // We need to manually update the profile with the CPF as the initial password hint, 
-    // and set has_changed_password to false, as the user was created with a temporary password.
-    
-    // NOTE: The trigger currently sets the password to CPF. Let's revert the password logic 
-    // in the trigger to use the CPF as the initial password, as intended by the user's flow, 
-    // but we must ensure the CPF meets Supabase's minimum length requirement (usually 6 chars).
-    // Since CPF has 11 digits, it should be fine.
-
-    // Reverting to CPF as password, but ensuring we log the error if it fails due to policy.
-    // Let's stick to the original plan of using CPF as password, but ensure the client side handles the password update flow.
-    
-    // Re-running the user creation with CPF as password, but ensuring the CPF is clean (11 digits)
-    // If the previous error was due to password policy, we need to know.
-    
-    // Let's assume the password policy is the issue and use the temporary password, 
-    // but we must ensure the user is forced to change it.
-    
-    // Since the user flow relies on the CPF being the initial password, let's try to set it again, 
-    // but if it fails, we must inform the user.
-    
-    // Let's stick to the temporary password approach for robustness, and rely on the client flow 
-    // to force a password change. The client flow already redirects to `/primeira-senha` if `has_changed_password` is false.
-    
-    // The trigger `handle_new_user` needs to be updated to set `has_changed_password` to false 
-    // and `primeiro_acesso` to true, which is already done in the existing trigger logic.
-    
-    // Let's check the existing trigger logic again:
-    /*
-    CREATE OR REPLACE FUNCTION public.handle_new_user()
-    ...
-    BEGIN
-      INSERT INTO public.profiles (id, email, name, cpf, whatsapp)
-      VALUES (
-        new.id,
-        new.email,
-        new.raw_user_meta_data ->> 'name',
-        new.raw_user_meta_data ->> 'cpf',
-        new.raw_user_meta_data ->> 'whatsapp'
-      );
-      RETURN new;
-    END;
-    */
-    // The trigger does NOT set `has_changed_password` or `primeiro_acesso`.
-    // The columns `primeiro_acesso` and `has_changed_password` have default values in the table definition:
-    // `primeiro_acesso` default: true
-    // `has_changed_password` default: false
-    // So, the trigger is fine, as the defaults will apply.
-
-    // Final check on the password: If the user's CPF is used as password, it must be passed to `createUser`.
-    // Let's revert to using CPF as password, but ensure it's clean.
-    
-    const finalPassword = cleanCpf; // Use clean CPF as password
-
-    const { error: updatePasswordError } = await supabase.auth.admin.updateUserById(userId, {
-      password: finalPassword,
-    });
-
-    if (updatePasswordError) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-customer',
-        message: 'Failed to set CPF as password after user creation.',
-        metadata: { userId, error: updatePasswordError.message }
-      });
-      // This is a critical failure, but the user is created. We return an error.
-      return new Response(JSON.stringify({ error: 'User created, but failed to set CPF as password. Please reset password manually.', details: updatePasswordError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'create-customer',
-      message: 'User password set to CPF successfully.',
-      metadata: { userId }
     });
 
     return new Response(JSON.stringify({ id: userId, email, name }), {
