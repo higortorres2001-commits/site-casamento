@@ -1,4 +1,3 @@
-number; 
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
