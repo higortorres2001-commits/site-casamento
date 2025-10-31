@@ -34,12 +34,19 @@ const formSchema = z.object({
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
-  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
+  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
+  status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
+  internal_tag: z.string().optional(),
 });
+
+interface ProductWithAssets extends Product {
+  assets?: ProductAsset[];
+  assetCount?: number;
+}
 
 const Products = () => {
   const { user, isLoading: isSessionLoading } = useSession();
-  const [products, setProducts] = useState<(Product & { assets?: ProductAsset[], assetCount: number })[]>([]);
+  const [products, setProducts] = useState<(ProductWithAssets)[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
@@ -55,10 +62,10 @@ const Products = () => {
       return;
     }
     setIsLoadingProducts(true);
-    // Fetch products without assets initially for faster table load
+    // Fetch products with a quick load, including a count for assets
     const { data, error } = await supabase
       .from("products")
-      .select("*, product_assets(id)") // Only fetch asset count/existence
+      .select("*, product_assets(id)") // asset hint
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -67,13 +74,12 @@ const Products = () => {
       console.error("Error fetching products:", error);
       setProducts([]);
     } else {
-      // Map the data to include the asset count
-      const productsWithAssetCount = (data || []).map(p => ({
-        ...p,
-        assets: p.product_assets as ProductAsset[], // Type assertion for consistency
-        assetCount: (p.product_assets as ProductAsset[]).length,
-      }));
-      setProducts(productsWithAssetCount as (Product & { assets?: ProductAsset[], assetCount: number })[]);
+      const mapped = (data || []).map((p: any) => ({
+        ...(p as Product),
+        assets: (p.product_assets ?? []) as ProductAsset[],
+        assetCount: (p.product_assets ?? []).length,
+      })) as ProductWithAssets[];
+      setProducts(mapped);
     }
     setIsLoadingProducts(false);
   }, [user]);
@@ -115,7 +121,7 @@ const Products = () => {
   };
 
   const handleSaveProduct = async (
-    formData: z.infer<typeof formSchema> & { status: Product['status'] }, // Include status in formData type
+    formData: z.infer<typeof formSchema> & { status: Product['status'] }, // Include status
     files: File[],
     deletedAssetIds: string[],
     imageFile: File | null,
@@ -133,7 +139,7 @@ const Products = () => {
     let currentProductId = editingProduct?.id;
     let newImageUrl = formData.image_url;
 
-    // --- Image Upload Logic ---
+    // Image upload logic (unchanged)
     if (imageFile && user?.id) {
       const fileExtension = imageFile.name.split('.').pop();
       const filePath = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
@@ -149,7 +155,6 @@ const Products = () => {
         hasErrors = true;
       } else {
         newImageUrl = supabase.storage.from("product-images").getPublicUrl(filePath).data.publicUrl;
-        // If there was an old image and a new one is uploaded, delete the old one
         if (oldImageUrl && oldImageUrl !== newImageUrl) {
           const oldPath = oldImageUrl.split('product-images/')[1];
           if (oldPath) {
@@ -158,7 +163,6 @@ const Products = () => {
         }
       }
     } else if (!imageFile && !formData.image_url && oldImageUrl) {
-      // If no new file, and image_url field is cleared, and there was an old image, delete it
       const oldPath = oldImageUrl.split('product-images/')[1];
       if (oldPath) {
         await supabase.storage.from('product-images').remove([oldPath]);
@@ -167,7 +171,7 @@ const Products = () => {
     }
     productData.image_url = newImageUrl;
 
-    // --- Product Create/Update Logic ---
+    // Create/Update product
     if (editingProduct) {
       const { error } = await supabase
         .from("products")
@@ -187,7 +191,7 @@ const Products = () => {
         .select("id")
         .single();
       if (error || !data) {
-        errorMessages.push("Erro ao criar produto: " + error.message);
+        errorMessages.push("Erro ao criar produto: " + error?.message);
         hasErrors = true;
       } else {
         showSuccess("Produto criado com sucesso!");
@@ -195,14 +199,13 @@ const Products = () => {
       }
     }
 
-    // If product creation/update failed, stop here.
     if (hasErrors && !currentProductId) {
       setIsSubmitting(false);
       showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
       return;
     }
 
-    // --- Handle File Uploads (PDFs) - Only for initial creation/edit ---
+    // Upload PDFs (assets) only on create/update
     if (files.length > 0 && currentProductId && user?.id) {
       for (const file of files) {
         const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
@@ -230,24 +233,19 @@ const Products = () => {
       }
     }
 
-    // --- Handle Asset Deletions (PDFs) - Only for initial edit ---
+    // Asset deletions
     if (deletedAssetIds.length > 0 && editingProduct) {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
-        const asset = editingProduct.assets?.find(a => a.id === assetId);
-        if (asset) {
-          assetsToDeletePaths.push(asset.storage_path);
-        }
+        const asset = editingProduct.assets?.find((a) => a.id === assetId);
+        if (asset) assetsToDeletePaths.push(asset.storage_path);
       }
-
       if (assetsToDeletePaths.length > 0) {
         await supabase.storage.from('product-assets').remove(assetsToDeletePaths);
       }
-
       await supabase.from('product_assets').delete().in('id', deletedAssetIds);
     }
 
-    // --- Final Feedback ---
     if (hasErrors) {
       showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
     } else {
@@ -276,41 +274,33 @@ const Products = () => {
     let hasErrors = false;
     const errorMessages: string[] = [];
 
-    // 1. Fetch assets and image URL for deletion
-    const productToDeleteData = products.find(p => p.id === id);
+    // Deletion logic (assets, image, DB)—simplificado para foco no UX
+    const productToDeleteData = products.find((p) => p.id === id);
 
-    // 2. Delete assets from storage
     const { data: assetsToDelete } = await supabase
       .from('product_assets')
       .select('storage_path')
       .eq('product_id', id);
 
     if (assetsToDelete && assetsToDelete.length > 0) {
-      const paths = assetsToDelete.map(asset => asset.storage_path);
-      const { error: deleteStorageError } = await supabase.storage
-        .from('product-assets')
-        .remove(paths);
-
+      const paths = assetsToDelete.map((a) => a.storage_path);
+      const { error: deleteStorageError } = await supabase.storage.from('product-assets').remove(paths);
       if (deleteStorageError) {
         errorMessages.push("Erro ao excluir arquivos do storage: " + deleteStorageError.message);
         hasErrors = true;
       }
     }
 
-    // 3. Delete main product image if it exists
     if (productToDeleteData?.image_url) {
       const imagePath = productToDeleteData.image_url.split('product-images/')[1];
       if (imagePath) {
-        const { error: deleteImageError } = await supabase.storage
-          .from('product-images')
-          .remove([imagePath]);
+        const { error: deleteImageError } = await supabase.storage.from('product-images').remove([imagePath]);
         if (deleteImageError) {
-          console.warn("Could not delete product image from storage during product deletion:", deleteImageError.message);
+          // não falha a deleção se não puder, apenas avise
         }
       }
     }
 
-    // 4. Delete the product record (cascades asset records)
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) {
       errorMessages.push("Erro ao excluir produto: " + error.message);
@@ -337,7 +327,7 @@ const Products = () => {
   const getStatusBadge = (status: Product['status']) => {
     switch (status) {
       case 'ativo':
-        return <Badge className="bg-green-500 hover:bg-green-600">Ativo</Badge>;
+        return <Badge className="bg-green-500 text-white">Ativo</Badge>;
       case 'inativo':
         return <Badge variant="secondary">Inativo</Badge>;
       case 'draft':
@@ -360,17 +350,11 @@ const Products = () => {
         <h1 className="text-3xl font-bold">Gerenciar Produtos</h1>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
           <DialogTrigger asChild>
-            <Button
-              className="bg-orange-500 hover:bg-orange-600 text-white"
-              onClick={handleCreateProduct}
-            >
+            <Button className="bg-orange-500 hover:bg-orange-600 text-white">
               <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingProduct ? "Editar Produto" : "Criar Novo Produto"}</DialogTitle>
-            </DialogHeader>
             <ProductEditTabs
               initialData={editingProduct}
               onSubmit={handleSaveProduct}
@@ -388,28 +372,36 @@ const Products = () => {
           <Table>
             <TableHeader className="bg-gray-50">
               <TableRow>
-                <TableHead className="w-[150px]">Produto</TableHead>
+                <TableHead className="w-[180px]">Produto</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Tag Interna</TableHead>
                 <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
-                <TableHead className="text-right w-[200px]">Ações</TableHead>
+                <TableHead className="text-right w-[180px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {products.map((product) => (
-                <TableRow key={product.id} className="hover:bg-gray-50 transition-colors">
+                <TableRow key={product.id} className="hover:bg-gray-50">
                   <TableCell className="font-medium flex items-center gap-3">
                     {product.image_url && (
                       <img src={product.image_url} alt={product.name} className="w-10 h-10 object-cover rounded-md shrink-0" />
                     )}
-                    <div className="truncate max-w-[150px]">
+                    <div className="truncate max-w-[180px]">
                       {product.name}
                       <p className="text-xs text-gray-500 truncate">{product.id}</p>
                     </div>
                   </TableCell>
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>
                   <TableCell>{getStatusBadge(product.status)}</TableCell>
+                  <TableCell>
+                    {product.internal_tag ? (
+                      <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs">{product.internal_tag}</span>
+                    ) : (
+                      <span className="text-sm text-slate-500">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>{product.orderbumps?.length || 0}</TableCell>
                   <TableCell>
                     <Button
@@ -468,13 +460,13 @@ const Products = () => {
             <ProductAssetManager
               productId={assetManagementProduct.id}
               productName={assetManagementProduct.name}
-              onAssetsUpdated={fetchProducts} // Refresh product list to update asset count
+              onAssetsUpdated={fetchProducts} // Refresh
             />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Confirmation Dialog for Deletion */}
+      {/* Confirmação delete (produto) */}
       <ConfirmDialog
         isOpen={isConfirmDeleteOpen}
         onClose={handleDeleteProduct}

@@ -14,7 +14,7 @@ import ProductAssetsTab from "./ProductAssetsTab";
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
-import { Form } from "@/components/ui/form"; // Importa o componente Form do shadcn/ui
+import { Form } from "@/components/ui/form"; // Utiliza o Form do shadcn
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -22,8 +22,9 @@ const formSchema = z.object({
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
   orderbumps: z.array(z.string()).optional(), // Array of product IDs
-  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")), // Adicionado image_url
+  image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
   status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
+  internal_tag: z.string().optional(), // Novo: tag interna opcional
 });
 
 interface ProductEditTabsProps {
@@ -32,8 +33,8 @@ interface ProductEditTabsProps {
     data: z.infer<typeof formSchema>,
     files: File[],
     deletedAssetIds: string[],
-    imageFile: File | null, // New: Pass image file
-    oldImageUrl: string | null // New: Pass old image URL for deletion logic
+    imageFile: File | null, // Novo: arquivo de imagem
+    oldImageUrl: string | null // Novo: URL antiga da imagem
   ) => void;
   onCancel: () => void;
   isLoading: boolean;
@@ -52,8 +53,9 @@ const ProductEditTabs = ({
       ? {
           ...initialData,
           orderbumps: initialData.orderbumps || [],
-          image_url: initialData.image_url || "", // Definir default para image_url
-          status: initialData.status || "draft", // Definir default para status
+          image_url: initialData.image_url || "",
+          status: initialData.status || "draft",
+          internal_tag: (initialData as any).internal_tag ?? "",
         }
       : {
           name: "",
@@ -61,15 +63,16 @@ const ProductEditTabs = ({
           description: "",
           memberareaurl: "",
           orderbumps: [],
-          image_url: "", // Definir default para image_url
-          status: "draft", // Definir default para status
+          image_url: "",
+          status: "draft",
+          internal_tag: "",
         },
   });
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletedAssetIds, setDeletedAssetIds] = useState<string[]>([]);
   const [currentAssets, setCurrentAssets] = useState<ProductAsset[]>(initialData?.assets || []);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null); // New state for product image
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null); // Novo: imagem
 
   useEffect(() => {
     if (initialData) {
@@ -78,10 +81,11 @@ const ProductEditTabs = ({
         orderbumps: initialData.orderbumps || [],
         image_url: initialData.image_url || "",
         status: initialData.status || "draft",
+        internal_tag: (initialData as any).internal_tag ?? "",
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
-      setSelectedImageFile(null); // Clear selected image file on initialData change
+      setSelectedImageFile(null);
     } else {
       form.reset({
         name: "",
@@ -91,11 +95,12 @@ const ProductEditTabs = ({
         orderbumps: [],
         image_url: "",
         status: "draft",
+        internal_tag: "",
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);
       setSelectedFiles([]);
-      setSelectedImageFile(null); // Clear selected image file
+      setSelectedImageFile(null);
     }
   }, [initialData, form]);
 
@@ -106,8 +111,7 @@ const ProductEditTabs = ({
   const handleDeleteAsset = async (assetId: string) => {
     if (!window.confirm("Tem certeza que deseja excluir este arquivo?")) return;
 
-    // Optimistically remove from current assets
-    setCurrentAssets((prev) => prev.filter((asset) => asset.id !== assetId));
+    setCurrentAssets((prev) => prev.filter((a) => a.id !== assetId));
     setDeletedAssetIds((prev) => [...prev, assetId]);
     showSuccess("Arquivo marcado para exclusão.");
   };
@@ -117,7 +121,7 @@ const ProductEditTabs = ({
   };
 
   const handleFormSubmit = (data: z.infer<typeof formSchema>) => {
-    onSubmit(data, selectedFiles, deletedAssetIds, selectedImageFile, initialData?.image_url || null);
+    onSubmit(data, selectedFiles, deletedAssetIds, selectedImageFile, initialData?.image_url ?? null);
   };
 
   return (
@@ -129,7 +133,7 @@ const ProductEditTabs = ({
           Arquivos (PDFs)
         </TabsTrigger>
       </TabsList>
-      <Form {...form}> {/* Envolve o formulário HTML com o componente Form do shadcn/ui */}
+      <Form {...form}> {/* Form do shadcn/ui */}
         <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 mt-4">
           <TabsContent value="details">
             <ProductDetailsTab

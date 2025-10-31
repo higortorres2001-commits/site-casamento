@@ -18,6 +18,7 @@ export type Product = {
   orderbumps: string[] | null;
   image_url: string | null;
   status: 'draft' | 'ativo' | 'inativo'; // Adicionado o campo status
+  internal_tag?: string | null; // Tag interna opcional para observações administrativas
 };
 
 export type ProductAsset = {
