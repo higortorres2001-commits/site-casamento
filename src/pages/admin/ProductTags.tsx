@@ -134,22 +134,30 @@ const ProductTags = () => {
         <CardHeader className="pb-2">
           <CardTitle>Adicionar Nova Tag</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row items-center gap-3">
-          <input
-            className="border rounded-md p-2 w-full sm:flex-1"
-            placeholder="Nova tag (ex: premium, vip, etc.)"
-            value={newTag}
-            onChange={(event) => setNewTag(event.target.value)}
-          />
-          <input
-            className="border rounded-md p-2 w-full sm:flex-2"
-            placeholder="Descrição opcional"
-            value={newDesc}
-            onChange={(event) => setNewDesc(event.target.value)}
-          />
-          <Button onClick={createTag} className="bg-blue-600 hover:bg-blue-700 text-white">
-            Adicionar Tag
-          </Button>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end p-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nova Tag</label>
+            <input
+              className="border rounded-md p-2 w-full"
+              placeholder="Nova tag (ex: premium, vip, etc.)"
+              value={newTag}
+              onChange={(event) => setNewTag(event.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrição (opcional)</label>
+            <input
+              className="border rounded-md p-2 w-full"
+              placeholder="Descrição opcional"
+              value={newDesc}
+              onChange={(event) => setNewDesc(event.target.value)}
+            />
+          </div>
+          <div className="md:col-span-2 flex justify-end">
+            <Button onClick={createTag} className="bg-blue-600 hover:bg-blue-700 text-white">
+              Adicionar Tag
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

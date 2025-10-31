@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 
-type Tag = { id: string; tag: string; description?: string; created_at?: string };
+type Tag = { id?: string; tag: string; description?: string };
 
 interface TagEditorModalProps {
   open: boolean;
@@ -48,20 +48,31 @@ const TagEditorModal = ({
         <DialogHeader>
           <DialogTitle>{initialTag ? "Editar Tag" : "Nova Tag"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tag</label>
             <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Nome da tag" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Descrição (opcional)</label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder=" Observação interna" rows={3} />
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Observação interna" rows={3} />
           </div>
         </div>
-        <div className="mt-4 flex justify-end space-x-2">
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+
+        <div className="mt-6 flex justify-end space-x-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
           <Button onClick={handleSubmit} className="bg-blue-600 text-white" disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Salvando...
+              </span>
+            ) : (
+              "Salvar"
+            )}
           </Button>
         </div>
       </DialogContent>
