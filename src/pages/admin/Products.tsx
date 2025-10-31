@@ -15,9 +15,9 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
-  // DialogTrigger removed to avoid "DialogTrigger must be used within Dialog" error
+  DialogTitle
 } from "@/components/ui/dialog";
+// DialogTrigger removed to avoid "DialogTrigger must be used within Dialog" error
 import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
@@ -26,7 +26,7 @@ import { useSession } from "@/components/SessionContextProvider";
 import * as z from "zod";
 import ConfirmDialog from "@/components/ui/confirm-dialog";
 import ProductAssetManager from "@/components/admin/ProductAssetManager";
-import ProductTagModal from "@/components/admin/ProductTagModal"; // Novo modal para edição de tag por produto
+import ProductTagModal from "@/components/admin/ProductTagModal"; // Modal para editar tag por produto
 import { Badge } from "@/components/ui/badge";
 
 type ProductWithAssets = Product & { assets?: ProductAsset[]; assetCount?: number; };
@@ -49,6 +49,7 @@ const Products = () => {
   const [products, setProducts] = useState<ProductWithAssets[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithAssets | undefined>(undefined);
   const [assetManagementProduct, setAssetManagementProduct] = useState<Product | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,8 +103,6 @@ const Products = () => {
   };
 
   const handleOpenEditProduct = (productId: string) => {
-    // Busca detalhes completos para edição
-    // Mantemos comportamento existente para edição de produto
     handleEditProduct(productId);
   };
 
@@ -271,9 +270,7 @@ const Products = () => {
     setIsSubmitting(false);
   };
 
-  // Funções de edição de tag por produto com modal dedicado
-  // (integração já existente em ProductTagModal)
-
+  // Abre modal de tag diretamente na linha da tabela
   const handleOpenTagModalForProduct = (product: Product) => {
     setTagModalProduct(product);
     setIsTagModalOpen(true);
@@ -293,7 +290,7 @@ const Products = () => {
     }
 
     const id = productToDelete;
-    // ... exclusão de produto existente
+    // deletions já existentes...
   };
 
   // Renderização
@@ -437,23 +434,18 @@ const Products = () => {
         </div>
       )}
 
-      {/* Conteúdo do modal de edição de produto (quando aberto) mantém a mesma estrutura */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-6">
-          <ProductEditTabs
-            initialData={editingProduct}
-            onSubmit={handleSaveProduct}
-            onCancel={() => setIsModalOpen(false)}
-            isLoading={isSubmitting}
+      {/* Asset Management Modal (existente) */}
+      <Dialog open={isAssetModalOpen} onOpenChange={setIsAssetModalOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <ProductAssetManager
+            productId={assetManagementProduct?.id ?? ""}
+            productName={assetManagementProduct?.name ?? ""}
+            onAssetsUpdated={fetchProductsMemo}
           />
         </DialogContent>
       </Dialog>
 
-      {/* Modal de gestão de assets, modal de edição de tag por produto e demais modais já existentes */}
-      <Dialog open={!!assetManagementProduct} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto" />
-      </Dialog>
-
+      {/* Tag Editor Modal por produto */}
       {tagModalProduct && (
         <ProductTagModal
           open={isTagModalOpen}

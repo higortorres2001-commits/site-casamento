@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,10 +46,18 @@ const ProductTagModal = ({ open, onClose, product, onUpdated }: ProductTagModalP
   };
 
   return (
-    <Dialog open={open} onOpenChange={() => { /* suprime fechamento por overlay */ }}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { 
+      // Fecha o modal quando o overlay é clicado ou usuário pressiona ESC
+      if (!nextOpen) onClose();
+    }}>
       <DialogContent className="sm:max-w-md p-6">
         <DialogHeader>
-          <DialogTitle>Editar Tag do Produto</DialogTitle>
+          <div className="flex items-center justify-between w-full">
+            <DialogTitle>Editar Tag do Produto</DialogTitle>
+            <button onClick={onClose} aria-label="Fechar" className="text-gray-500 hover:text-gray-700 p-1 rounded">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </DialogHeader>
 
         <form onSubmit={save} className="space-y-4">
