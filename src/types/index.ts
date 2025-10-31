@@ -17,8 +17,9 @@ export type Product = {
   memberareaurl: string | null;
   orderbumps: string[] | null;
   image_url: string | null;
-  status: 'draft' | 'ativo' | 'inativo'; // Adicionado o campo status
-  internal_tag?: string | null; // Tag interna opcional para observações administrativas
+  status: 'draft' | 'ativo' | 'inativo';
+  internal_tag?: string | null;
+  checkout_return_url?: string | null; // Nova URL de retorno do checkout
 };
 
 export type ProductAsset = {
@@ -27,7 +28,7 @@ export type ProductAsset = {
   file_name: string;
   storage_path: string;
   created_at: string;
-  signed_url?: string | null; // Adicionado para armazenar a URL assinada
+  signed_url?: string | null;
 };
 
 export type Profile = {

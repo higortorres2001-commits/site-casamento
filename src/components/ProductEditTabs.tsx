@@ -14,17 +14,18 @@ import ProductAssetsTab from "./ProductAssetsTab";
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
-import { Form } from "@/components/ui/form"; // Utiliza o Form do shadcn
+import { Form } from "@/components/ui/form";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
   price: z.coerce.number().min(0.01, "O preço deve ser maior que zero"),
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
-  orderbumps: z.array(z.string()).optional(), // Array of product IDs
+  orderbumps: z.array(z.string()).optional(),
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
-  status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
-  internal_tag: z.string().optional(), // Novo: tag interna opcional
+  status: z.enum(["draft", "ativo", "inativo"]),
+  internal_tag: z.string().optional(),
+  checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")), // NOVO
 });
 
 interface ProductEditTabsProps {
@@ -33,8 +34,8 @@ interface ProductEditTabsProps {
     data: z.infer<typeof formSchema>,
     files: File[],
     deletedAssetIds: string[],
-    imageFile: File | null, // Novo: arquivo de imagem
-    oldImageUrl: string | null // Novo: URL antiga da imagem
+    imageFile: File | null,
+    oldImageUrl: string | null
   ) => void;
   onCancel: () => void;
   isLoading: boolean;
@@ -56,6 +57,7 @@ const ProductEditTabs = ({
           image_url: initialData.image_url || "",
           status: initialData.status || "draft",
           internal_tag: (initialData as any).internal_tag ?? "",
+          checkout_return_url: initialData.checkout_return_url || "",
         }
       : {
           name: "",
@@ -66,13 +68,14 @@ const ProductEditTabs = ({
           image_url: "",
           status: "draft",
           internal_tag: "",
+          checkout_return_url: "",
         },
   });
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletedAssetIds, setDeletedAssetIds] = useState<string[]>([]);
   const [currentAssets, setCurrentAssets] = useState<ProductAsset[]>(initialData?.assets || []);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null); // Novo: imagem
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (initialData) {
@@ -82,6 +85,7 @@ const ProductEditTabs = ({
         image_url: initialData.image_url || "",
         status: initialData.status || "draft",
         internal_tag: (initialData as any).internal_tag ?? "",
+        checkout_return_url: initialData.checkout_return_url || "",
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
@@ -96,6 +100,7 @@ const ProductEditTabs = ({
         image_url: "",
         status: "draft",
         internal_tag: "",
+        checkout_return_url: "",
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);
@@ -133,7 +138,7 @@ const ProductEditTabs = ({
           Arquivos (PDFs)
         </TabsTrigger>
       </TabsList>
-      <Form {...form}> {/* Form do shadcn/ui */}
+      <Form {...form}>
         <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 mt-4">
           <TabsContent value="details">
             <ProductDetailsTab

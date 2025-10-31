@@ -2,23 +2,31 @@
 
 import React from "react";
 import { Link } from "react-router-dom";
-// Importa o Brand via caminho relativo para evitar problemas com alias
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 import Brand from "../Brand";
 
-const CheckoutHeader = () => {
-  // Removida a lógica de fetchShopUrl e o estado shopUrl, pois o link será removido.
+interface CheckoutHeaderProps {
+  backUrl?: string;
+}
 
+const CheckoutHeader = ({ backUrl }: CheckoutHeaderProps) => {
   return (
     <header className="bg-white shadow-sm py-4 px-4 md:px-8 sticky top-0 z-40 w-full h-16 flex items-center justify-between">
       <div className="flex items-center">
-        {/* Logo substituído pela Brand SemEstress */}
-        <Brand />
+        <Link to="/" aria-label="Início">
+          <Brand />
+        </Link>
       </div>
-      <Link to="/" className="text-2xl font-bold text-gray-800 ml-4">
-        <Brand />
-      </Link>
       <div className="w-1/3 flex justify-end">
-        {/* Placeholder para alinhamento */}
+        {backUrl ? (
+          <a href={backUrl}>
+            <Button variant="outline" className="flex items-center gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Voltar
+            </Button>
+          </a>
+        ) : null}
       </div>
     </header>
   );

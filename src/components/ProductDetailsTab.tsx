@@ -20,17 +20,18 @@ const formSchema = z.object({
   price: z.coerce.number().min(0.01, "O preço deve ser maior que zero"),
   description: z.string().optional(),
   memberareaurl: z.string().url("URL inválida").optional().or(z.literal("")),
-  orderbumps: z.array(z.string()).optional(), // Array of product IDs
+  orderbumps: z.array(z.string()).optional(),
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
-  status: z.enum(["draft", "ativo", "inativo"]), // Adicionado status
-  internal_tag: z.string().optional(), // Mantido no schema para compatibilidade, porém sem UI
+  status: z.enum(["draft", "ativo", "inativo"]),
+  internal_tag: z.string().optional(),
+  checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")), // NOVO
 });
 
 interface ProductDetailsTabProps {
   form: UseFormReturn<z.infer<typeof formSchema>>;
   isLoading: boolean;
-  onImageFileChange: (file: File | null) => void; // Novo: passar arquivo de imagem para o upload
-  initialImageUrl?: string | null; // Novo: URL inicial da imagem
+  onImageFileChange: (file: File | null) => void;
+  initialImageUrl?: string | null;
 }
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -41,7 +42,6 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
 
-  // Preview inicial se houver
   useEffect(() => {
     if (initialImageUrl && !selectedImageFile) {
       setImagePreviewUrl(initialImageUrl);
@@ -195,7 +195,19 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
         )}
       />
 
-      {/* Campo de tag removido do modal conforme solicitado */}
+      <FormField
+        control={form.control}
+        name="checkout_return_url"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>URL de retorno do checkout</FormLabel>
+            <FormControl>
+              <Input placeholder="Ex: https://sua-landing.com" {...field} disabled={isLoading} className="focus:ring-orange-500 focus:border-orange-500" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
       <FormItem>
         <FormLabel>Imagem do Produto</FormLabel>

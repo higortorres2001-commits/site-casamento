@@ -23,7 +23,6 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 
-// Declare global interface for window.fbq
 declare global {
   interface Window {
     fbq: (...args: any[]) => void;
@@ -53,7 +52,6 @@ const Checkout = () => {
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
 
-  // Track if InitiateCheckout has already been fired
   const hasTrackedInitiateCheckout = useRef(false);
 
   const fetchProductDetails = useCallback(async () => {
@@ -80,7 +78,7 @@ const Checkout = () => {
       return;
     }
 
-    setMainProduct(product);
+    setMainProduct(product as Product);
     setSelectedOrderBumps([]);
     setOriginalTotalPrice(Number(product.price));
     setCurrentTotalPrice(Number(product.price));
@@ -95,7 +93,7 @@ const Checkout = () => {
         console.error("Checkout DEBUG: Error fetching order bumps:", bumpsError);
         setOrderBumps([]);
       } else {
-        setOrderBumps(bumpsData || []);
+        setOrderBumps((bumpsData || []) as Product[]);
       }
     } else {
       setOrderBumps([]);
@@ -313,9 +311,11 @@ const Checkout = () => {
     selectedOrderBumps.includes(bump.id)
   );
 
+  const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
-      <CheckoutHeader />
+      <CheckoutHeader backUrl={backUrl} />
       <main className="flex-1 container mx-auto p-4 md:p-8 pb-24">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
           <div className="space-y-6">
