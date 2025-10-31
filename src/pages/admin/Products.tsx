@@ -375,7 +375,7 @@ const Products = () => {
                 <TableHead className="w-[180px]">Produto</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Tag Interna</TableHead>
+                <TableHead>Tag interna</TableHead>
                 <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
                 <TableHead className="text-right w-[180px]">Ações</TableHead>
