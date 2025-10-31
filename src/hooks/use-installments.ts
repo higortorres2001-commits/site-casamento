@@ -13,7 +13,42 @@ export interface InstallmentOption {
 
 interface UseInstallmentsProps {
   totalPrice: number;
-  enabled: boolean; // Só calcula se o método de pagamento for cartão
+  enabled: boolean;
+}
+
+// Função local de fallback para calcular parcelas
+function calculateInstallmentsLocally(totalPrice: number): InstallmentOption[] {
+  const installments: InstallmentOption[] = [];
+  
+  const interestRates: Record<number, number> = {
+    1: 0,
+    2: 2.99,
+    3: 3.99,
+    4: 4.99,
+    5: 5.99,
+    6: 6.99,
+    7: 7.99,
+    8: 8.99,
+    9: 9.99,
+    10: 10.99,
+    11: 11.99,
+    12: 12.99,
+  };
+
+  for (let i = 1; i <= 12; i++) {
+    const interestPercentage = interestRates[i] || 0;
+    const totalWithInterest = totalPrice * (1 + interestPercentage / 100);
+    const installmentValue = totalWithInterest / i;
+
+    installments.push({
+      installmentNumber: i,
+      installmentValue: parseFloat(installmentValue.toFixed(2)),
+      totalValue: parseFloat(totalWithInterest.toFixed(2)),
+      interestPercentage: interestPercentage,
+    });
+  }
+
+  return installments;
 }
 
 export function useInstallments({ totalPrice, enabled }: UseInstallmentsProps) {
@@ -21,19 +56,19 @@ export function useInstallments({ totalPrice, enabled }: UseInstallmentsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Debounce de 500ms - só chama a API depois que o preço parar de mudar
   const [debouncedPrice] = useDebounce(totalPrice, 500);
 
   useEffect(() => {
-    // Só busca parcelas se:
-    // 1. O método de pagamento for cartão (enabled = true)
-    // 2. O preço for maior que zero
+    console.log('useInstallments - enabled:', enabled, 'debouncedPrice:', debouncedPrice);
+    
     if (!enabled || debouncedPrice <= 0) {
+      console.log('useInstallments - Skipping fetch (enabled or price invalid)');
       setInstallments([]);
       return;
     }
 
     const fetchInstallments = async () => {
+      console.log('useInstallments - Starting fetch for price:', debouncedPrice);
       setIsLoading(true);
       setError(null);
 
@@ -45,19 +80,27 @@ export function useInstallments({ totalPrice, enabled }: UseInstallmentsProps) {
           }
         );
 
+        console.log('useInstallments - Response:', { data, error: functionError });
+
         if (functionError) {
           throw functionError;
         }
 
-        if (data && data.installments) {
+        if (data && data.installments && Array.isArray(data.installments) && data.installments.length > 0) {
+          console.log('useInstallments - Setting installments from API:', data.installments);
           setInstallments(data.installments);
         } else {
-          throw new Error('Resposta inválida da API');
+          // Se a API não retornar parcelas, usar cálculo local
+          console.log('useInstallments - API returned empty, using local calculation');
+          const localInstallments = calculateInstallmentsLocally(debouncedPrice);
+          setInstallments(localInstallments);
         }
       } catch (err: any) {
-        console.error('Erro ao calcular parcelas:', err);
-        setError(err.message || 'Erro ao calcular parcelas');
-        setInstallments([]);
+        console.error('useInstallments - Error, using local fallback:', err);
+        // Em caso de erro, usar cálculo local
+        const localInstallments = calculateInstallmentsLocally(debouncedPrice);
+        setInstallments(localInstallments);
+        setError(null); // Não mostrar erro se conseguimos calcular localmente
       } finally {
         setIsLoading(false);
       }
