@@ -20,6 +20,7 @@ import AdminLayout from "./components/layout/AdminLayout";
 import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import WhatsAppButton from "./components/WhatsAppButton";
+import ProductTags from "./pages/admin/ProductTags";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
               <Route path="/admin/cupons" element={<Coupons />} />
               <Route path="/admin/customers" element={<Customers />} /> {/* NEW: Customers admin route */} 
               <Route path="/admin/logs" element={<Logs />} />
+              <Route path="/admin/product-tags" element={<ProductTags />} /> {/* Novo: Tags admin */}
             </Route>
 
             <Route element={<PublicLayout />}>

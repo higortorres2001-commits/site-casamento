@@ -90,7 +90,15 @@ const Logs = () => {
       console.error("Error fetching logs:", error);
       setLogs([]);
     } else {
-      setLogs(data || []);
+      // Sanitize metadata: remove internal_tag if present
+      const sanitized = (data || []).map((log: Log) => {
+        if (log.metadata && typeof log.metadata === "object") {
+          const { internal_tag, ...rest } = log.metadata;
+          return { ...log, metadata: rest };
+        }
+        return log;
+      });
+      setLogs(sanitized);
     }
 
     setIsLoading(false);
@@ -148,7 +156,8 @@ const Logs = () => {
     if (!metadata) return "N/A";
     try {
       const serialized = typeof metadata === "string" ? metadata : JSON.stringify(metadata);
-      return serialized.length > 200 ? `${serialized.slice(0, 200)}…` : serialized;
+      const clean = serialized?.replace(/"internal_tag\\":\\s*"[^"]*",?/, ""); // tenta remover internal_tag
+      return clean.length > 200 ? `${clean.slice(0, 200)}…` : clean;
     } catch {
       return "Metadados não legíveis";
     }
@@ -178,12 +187,7 @@ const Logs = () => {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Logs do Sistema</h1>
-        <Button
-          variant="destructive"
-          onClick={handleClearLogs}
-          disabled={isLoading}
-          className="flex items-center gap-2"
-        >
+        <Button variant="destructive" onClick={handleClearLogs} disabled={isLoading} className="flex items-center gap-2">
           <Trash2 className="h-4 w-4" /> Limpar Logs
         </Button>
       </div>
