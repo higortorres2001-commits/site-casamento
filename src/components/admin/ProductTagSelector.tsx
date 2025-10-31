@@ -50,16 +50,19 @@ const ProductTagSelector: React.FC<ProductTagSelectorProps> = ({
 
   const handleSaveTag = async (payload: { id?: string; tag: string; }) => {
     if (!payload.tag?.trim()) return;
-    if (payload.id) {
-      const { error } = await supabase.from("product_tags").update({ tag: payload.tag.trim() }).eq("id", payload.id);
-      if (error) console.error("Error updating tag:", error);
-    } else {
-      const { error } = await supabase.from("product_tags").insert({ tag: payload.tag.trim() });
-      if (error) console.error("Error creating tag:", error);
+    try {
+      if (payload.id) {
+        await supabase.from("product_tags").update({ tag: payload.tag.trim() }).eq("id", payload.id);
+      } else {
+        await supabase.from("product_tags").insert({ tag: payload.tag.trim() });
+      }
+      // refresh tags
+      const { data, error } = await supabase.from("product_tags").select("id, tag").order("tag", { ascending: true });
+      if (!error) setTags((data ?? []) as TagOption[]);
+    } catch (err) {
+      console.error("Error saving tag inline:", err);
     }
-    // refresh tags
-    const { data, error } = await supabase.from("product_tags").select("id, tag").order("tag", { ascending: true });
-    if (!error) setTags((data ?? []) as TagOption[]);
+    // Do not close the modal here to keep UX consistent with file editing flow
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
