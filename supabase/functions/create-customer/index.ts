@@ -57,11 +57,16 @@ serve(async (req) => {
 
     // Create user (password derived from CPF if not provided)
     const password = cpf?.toString() || 'TempPass123';
+    
+    // Ensure CPF and WhatsApp are clean (only digits) for user_metadata
+    const cleanCpf = cpf.replace(/\D/g, '');
+    const cleanWhatsapp = whatsapp.replace(/\D/g, '');
+
     const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, cpf, whatsapp },
+      user_metadata: { name, cpf: cleanCpf, whatsapp: cleanWhatsapp }, // Pass clean data to metadata
     });
 
     if (createError || !newUser?.user) {
@@ -79,23 +84,12 @@ serve(async (req) => {
 
     const userId = newUser.user.id;
 
-    // Seed profile
-    const { error: insertProfileError } = await supabase
-      .from('profiles')
-      .insert({ id: userId, name, cpf, email, whatsapp });
-
-    if (insertProfileError) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-customer',
-        message: 'Failed to insert profile for new user.',
-        metadata: { userId, error: insertProfileError.message }
-      });
-      return new Response(JSON.stringify({ error: 'Failed to seed user profile.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // Seed profile (This step is redundant if the trigger works, but kept as fallback/initial data)
+    // NOTE: The trigger `handle_new_user` should handle this insertion.
+    // We rely on the trigger to insert the profile, so we remove the manual insert here to avoid conflicts.
+    
+    // The trigger `handle_new_user` is responsible for inserting the profile.
+    // We assume the trigger is correctly configured to run AFTER INSERT on auth.users.
 
     return new Response(JSON.stringify({ id: userId, email, name }), {
       status: 200,
