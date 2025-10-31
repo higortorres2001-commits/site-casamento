@@ -15,7 +15,6 @@ import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditC
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
-import AdditionalInfoCard from "@/components/checkout/AdditionalInfoCard";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -317,7 +316,7 @@ const Checkout = () => {
 
   const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
 
-  // Seções
+  // Seções como blocos reutilizáveis (mesmo visual, só mudamos a ordem)
   const customerDataSection = (
     <Card className="bg-white rounded-xl shadow-lg p-6">
       <CardHeader className="pb-4">
@@ -404,19 +403,24 @@ const Checkout = () => {
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
       <CheckoutHeader backUrl={backUrl} />
-      <main className={`flex-1 container mx-auto p-4 md:p-8 ${isMobile ? "pb-40" : "pb-24"}`}>
+      <main className="flex-1 container mx-auto p-4 md:p-8 pb-24">
         {isMobile ? (
-          // MOBILE: nova ordem solicitada
-          <div className="max-w-3xl mx-auto space-y-6">
-            {productInfoSection}       {/* 1. produto */}
-            {customerDataSection}      {/* 2. dados do cliente */}
-            {paymentSection}           {/* 3. método de pagamento */}
-            {orderBumpsSection}        {/* 4. order bumps */}
-            {couponSection}            {/* 5. cupom */}
-            <AdditionalInfoCard />     {/* 6. informações complementares */}
+          // MOBILE: mantém layout atual
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            <div className="space-y-6">
+              {productInfoSection}
+              {orderBumpsSection}
+              {couponSection}
+              {orderSummarySection}
+            </div>
+
+            <div className="space-y-6">
+              {customerDataSection}
+              {paymentSection}
+            </div>
           </div>
         ) : (
-          // DESKTOP: mantém ordem solicitada anteriormente + botão abaixo do resumo
+          // DESKTOP: usa a ordem solicitada 1..6 e botão abaixo do resumo
           <div className="max-w-3xl mx-auto space-y-6">
             {customerDataSection}          {/* 1. dados do cliente */}
             {productInfoSection}           {/* 2. informações do produto */}
