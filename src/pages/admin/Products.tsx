@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Edit, Trash2, Loader2, FileText } from "lucide-react";
+import { Edit, Trash2, Loader2, FileText, Copy } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -22,6 +22,7 @@ import ConfirmDialog from "@/components/ui/confirm-dialog";
 import ProductAssetManager from "@/components/admin/ProductAssetManager";
 import ProductTagModal from "@/components/admin/ProductTagModal";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type ProductWithAssets = Product & { assets?: ProductAsset[]; assetCount?: number };
 
@@ -251,6 +252,16 @@ const Products = () => {
     setIsConfirmDeleteOpen(true);
   };
 
+  const handleCopyCheckoutLink = async (productId: string) => {
+    try {
+      const link = `${window.location.origin}/checkout/${productId}`;
+      await navigator.clipboard.writeText(link);
+      showSuccess("Link de checkout copiado!");
+    } catch {
+      showError("Não foi possível copiar o link.");
+    }
+  };
+
   const tagPlaceholder = "Sem tag";
 
   const getStatusBadge = (status: Product["status"]) => {
@@ -299,7 +310,7 @@ const Products = () => {
                 <TableHead>Tag Interna</TableHead>
                 <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
-                <TableHead className="text-right w-[180px]">Ações</TableHead>
+                <TableHead className="text-right w-[220px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -353,6 +364,21 @@ const Products = () => {
                   </TableCell>
 
                   <TableCell className="text-right">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleCopyCheckoutLink(product.id)}
+                          className="mr-1 text-gray-600 hover:text-blue-600"
+                          title="Copiar link de checkout"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Copiar link do checkout</TooltipContent>
+                    </Tooltip>
+
                     <Button
                       variant="ghost"
                       size="icon"
@@ -379,7 +405,7 @@ const Products = () => {
         </div>
       )}
 
-      {/* Modal de edição de produto - agora com rolagem no próprio conteúdo */}
+      {/* Modal de edição de produto - rolagem no próprio conteúdo */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
           <ProductEditTabs
