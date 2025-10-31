@@ -71,17 +71,19 @@ serve(async (req) => {
         .eq('id', userId)
         .single();
 
+      const profileData = { 
+        id: userId, 
+        email, 
+        name, 
+        cpf: cleanCpf, 
+        whatsapp: cleanWhatsapp 
+      };
+
       if (profileError && profileError.code === 'PGRST116') { // PGRST116: No rows found
         // Profile does not exist, create it manually
         const { error: insertProfileError } = await supabase
           .from('profiles')
-          .insert({ 
-            id: userId, 
-            email, 
-            name, 
-            cpf: cleanCpf, 
-            whatsapp: cleanWhatsapp 
-          });
+          .insert(profileData);
 
         if (insertProfileError) {
           await supabase.from('logs').insert({
@@ -119,14 +121,32 @@ serve(async (req) => {
         });
       }
       
-      // User and Profile exist, return success
+      // User and Profile exist, update profile data
+      const { error: updateProfileError } = await supabase
+        .from('profiles')
+        .update({ name, cpf: cleanCpf, whatsapp: cleanWhatsapp })
+        .eq('id', userId);
+
+      if (updateProfileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-customer',
+          message: 'User and profile exist, but failed to update profile data.',
+          metadata: { userId, email, error: updateProfileError.message }
+        });
+        return new Response(JSON.stringify({ error: 'User exists, but failed to update profile data.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-customer',
-        message: 'User and profile already exist.',
+        message: 'User and profile already exist. Profile data updated.',
         metadata: { email, userId }
       });
-      return new Response(JSON.stringify({ id: userId, email, name, message: 'User already exists.' }), {
+      return new Response(JSON.stringify({ id: userId, email, name, message: 'User already exists. Profile data updated.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
