@@ -316,7 +316,7 @@ const Checkout = () => {
 
   const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
 
-  // Seções como blocos reutilizáveis (mesmo visual, só mudamos a ordem)
+  // Seções como blocos reutilizáveis
   const customerDataSection = (
     <Card className="bg-white rounded-xl shadow-lg p-6">
       <CardHeader className="pb-4">
@@ -400,27 +400,30 @@ const Checkout = () => {
     />
   );
 
+  const contentPaddingBottomClass = isMobile ? "pb-48" : "pb-24";
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
       <CheckoutHeader backUrl={backUrl} />
-      <main className="flex-1 container mx-auto p-4 md:p-8 pb-24">
+      <main className={`flex-1 container mx-auto p-4 md:p-8 ${contentPaddingBottomClass}`}>
         {isMobile ? (
-          // MOBILE: mantém layout atual
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            <div className="space-y-6">
-              {productInfoSection}
-              {orderBumpsSection}
-              {couponSection}
-              {orderSummarySection}
-            </div>
-
-            <div className="space-y-6">
-              {customerDataSection}
-              {paymentSection}
+          // MOBILE: ordem solicitada
+          <div className="max-w-3xl mx-auto space-y-6">
+            {productInfoSection}         {/* 1. produto principal */}
+            {customerDataSection}        {/* 2. dados do cliente */}
+            {paymentSection}             {/* 3. método de pagamento */}
+            {orderBumpsSection}          {/* 4. order bumps */}
+            {couponSection}              {/* 5. cupom */}
+            {orderSummarySection}        {/* 6. resumo do pedido */}
+            {/* Informações complementares (texto simples, menor, sem card) */}
+            <div className="text-xs text-gray-600 mt-6 px-1 leading-relaxed">
+              <p>ACESSO IMEDIATO</p>
+              <p>GARANTIA DE 7 DIAS</p>
+              <p>PAGAMENTO PROCESSADO POR ESCRITORIO CHEIO CNPJ N 44.962.282/0001-83 HIGOR R T S</p>
             </div>
           </div>
         ) : (
-          // DESKTOP: usa a ordem solicitada 1..6 e botão abaixo do resumo
+          // DESKTOP: ordem solicitada anteriormente
           <div className="max-w-3xl mx-auto space-y-6">
             {customerDataSection}          {/* 1. dados do cliente */}
             {productInfoSection}           {/* 2. informações do produto */}
