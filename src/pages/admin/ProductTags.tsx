@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Trash2, Edit } from "lucide-react";
+import { Trash2, Edit, Plus } from "lucide-react";
 import { useSession } from "@/components/SessionContextProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,12 @@ const ProductTags = () => {
   const [editingTag, setEditingTag] = useState<Tag | undefined>(undefined);
   const [newTag, setNewTag] = useState("");
   const [newDesc, setNewDesc] = useState("");
+
+  // Open modal for creating a new tag
+  const handleOpenCreateTag = () => {
+    setEditingTag(undefined);
+    setOpenEditor(true);
+  };
 
   const isAdmin = !!user;
 
@@ -116,7 +122,12 @@ const ProductTags = () => {
           <Brand />
           <h1 className="text-3xl font-bold">Gerenciar Tags de Produtos</h1>
         </div>
-        <span className="text-sm text-gray-500">Tags usadas para classificação interna</span>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={handleOpenCreateTag}>
+            <Plus className="h-4 w-4 mr-2" /> Nova Tag
+          </Button>
+          <span className="text-sm text-gray-500 hidden sm:inline">Tags usadas para classificação interna</span>
+        </div>
       </div>
 
       <Card className="mb-6">
