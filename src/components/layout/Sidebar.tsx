@@ -1,23 +1,31 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users } from 'lucide-react'; // Added Users icon
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
-import { useSession } from '@/components/SessionContextProvider'; // Import useSession
+import { useSession } from '@/components/SessionContextProvider';
 
-interface SidebarProps {
-  isMobile: boolean;
-  onCloseMobileMenu?: () => void;
-}
+const Sidebar = ({ isMobile, onCloseMobileMenu }: { isMobile: boolean; onCloseMobileMenu?: () => void; }) => {
+  const { user } = useSession();
+  const [isAdmin, setIsAdmin] = useState(false);
 
-const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
-
-const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
-  const { user } = useSession(); // Obter o usuário da sessão
-  const isAdmin = user?.email === ADMIN_EMAIL; // Verificar se é administrador
+  // Detect admin status from profile.is_admin
+  useEffect(() => {
+    const fetchAdmin = async () => {
+      if (!user?.id) return;
+      try {
+        const { data, error } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
+        if (!error && data?.is_admin) setIsAdmin(true);
+        else setIsAdmin(false);
+      } catch {
+        setIsAdmin(false);
+      }
+    };
+    fetchAdmin();
+  }, [user?.id]);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -33,11 +41,11 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border p-4">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-sidebar-primary-foreground">
-          {isAdmin ? "Admin" : "Minha Conta"} {/* Título dinâmico */}
+          {isAdmin ? "Admin" : "Minha Conta"}
         </h2>
         {isMobile && (
           <Button variant="ghost" size="icon" onClick={onCloseMobileMenu}>
-            <Home className="h-5 w-5" /> {/* Using Home icon as a close button for simplicity */}
+            <Home className="h-5 w-5" />
           </Button>
         )}
       </div>
@@ -50,7 +58,8 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
           <BookOpen className="h-4 w-4" />
           Meus Produtos
         </Link>
-        {isAdmin && ( // Admin links
+
+        {isAdmin && (
           <>
             <Link to="/admin/products" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Package className="h-4 w-4" />
