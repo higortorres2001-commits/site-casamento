@@ -18,7 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen } from "lucide-react";
+import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen, Eye } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -39,25 +39,25 @@ const formSchema = z.object({
 
 const Products = () => {
   const { user, isLoading: isSessionLoading } = useSession();
+
   const [products, setProducts] = useState<(Product & { assets?: ProductAsset[], assetCount: number })[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<(Product & { assets?: ProductAsset[] }) | undefined>(undefined);
-  const [assetManagementProduct, setAssetManagementProduct] = useState<Product | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
-  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
+  // Edit/Create modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<(Product & { assets?: ProductAsset[] }) | undefined>(undefined);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch products for admin view
   const fetchProducts = useCallback(async () => {
     if (!user?.id) {
       setIsLoadingProducts(false);
       return;
     }
     setIsLoadingProducts(true);
-    // Busca produtos do admin, incluindo assets para contagem
     const { data, error } = await supabase
       .from("products")
-      .select("*, product_assets(id)") // asset count
+      .select("*, product_assets(id)")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -84,11 +84,13 @@ const Products = () => {
     }
   }, [user, isSessionLoading, fetchProducts]);
 
+  // Open new product editor (creating)
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
-    setIsModalOpen(true);
+    setIsEditModalOpen(true);
   };
 
+  // Open existing product for editing
   const handleEditProduct = async (productId: string) => {
     const { data, error } = await supabase
       .from("products")
@@ -103,28 +105,90 @@ const Products = () => {
     }
 
     setEditingProduct(data as Product & { assets?: ProductAsset[] });
-    setIsModalOpen(true);
+    setIsEditModalOpen(true);
   };
 
-  const handleOpenAssetManager = (product: Product & { assetCount: number }) => {
-    setAssetManagementProduct(product);
-    // Usado na modal de assets – não alterado aqui
+  // Create or update product handler wired to ProductEditTabs
+  const handleEditSubmit = async (formData: z.infer<typeof formSchema>, imageFile: File | null) => {
+    setIsSubmitting(true);
+    try {
+      if (!editingProduct) {
+        // Create new product
+        const payload: any = {
+          user_id: user?.id,
+          name: formData.name,
+          price: formData.price,
+          description: formData.description ?? null,
+          memberareaurl: formData.memberareaurl ?? null,
+          orderbumps: formData.orderbumps ?? null,
+          image_url: formData.image_url ?? null,
+          status: formData.status,
+          tag: formData.tag ?? null,
+          return_url: formData.return_url ?? null,
+        };
+        // Remove undefined/nil keys
+        Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
+
+        const { data: newProduct, error } = await supabase.from("products").insert(payload).select("*").single();
+        if (error) {
+          showError("Erro ao criar produto: " + error.message);
+          console.error("Create product error:", error);
+        } else {
+          showSuccess("Produto criado com sucesso!");
+          setIsEditModalOpen(false);
+          fetchProducts();
+        }
+      } else {
+        // Update existing product
+        const payload: any = {
+          name: formData.name,
+          price: formData.price,
+          description: formData.description ?? null,
+          memberareaurl: formData.memberareaurl ?? null,
+          orderbumps: formData.orderbumps ?? null,
+          image_url: formData.image_url ?? null,
+          status: formData.status,
+          tag: formData.tag ?? null,
+          return_url: formData.return_url ?? null,
+        };
+        Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
+
+        const { data: updated, error } = await supabase.from("products").update(payload).eq("id", editingProduct!.id).select("*").single();
+        if (error) {
+          showError("Erro ao atualizar produto: " + error.message);
+        } else {
+          showSuccess("Produto atualizado com sucesso!");
+          setIsEditModalOpen(false);
+          fetchProducts();
+        }
+      }
+    } catch (err: any) {
+      console.error("Erro no submit de edição/criação:", err);
+      showError("Erro ao salvar produto.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSaveProduct = async (
-    formData: z.infer<typeof formSchema> & { status: Product['status'] },
-    files: File[],
-    deletedAssetIds: string[],
-    imageFile: File | null,
-    oldImageUrl: string | null
-  ) => {
-    // Logica de salvamento permanece conforme existente (não alterado para este patch)
-  };
-
+  // Delete simplificado (sem mudança de payload)
   const handleDeleteProduct = async (confirmed: boolean) => {
-    // Lógica de deleção permanece conforme existente (não alterado para este patch)
+    if (!confirmed || !productToDelete) return;
+    try {
+      const { error } = await supabase.from("products").delete().eq("id", productToDelete);
+      if (error) {
+        showError("Erro ao excluir produto: " + error.message);
+      } else {
+        showSuccess("Produto excluído com sucesso!");
+        fetchProducts();
+      }
+    } catch (err: any) {
+      showError("Erro ao excluir produto.");
+    } finally {
+      setProductToDelete(null);
+    }
   };
 
+  // Reutilizar link de checkout como bonus (opcional)
   const handleGenerateCheckoutLink = (productId: string) => {
     const checkoutUrl = `${window.location.origin}/checkout/${productId}`;
     navigator.clipboard.writeText(checkoutUrl)
@@ -132,10 +196,8 @@ const Products = () => {
       .catch(() => showError("Falha ao copiar o link."));
   };
 
-  const getStatusBadge = (status: Product['status']) => {
-    // Mantemos a lógica existente (não alterado aqui)
-    return null;
-  };
+  // UI de status (simplificada)
+  const getTagForDisplay = (p: Product) => p.tag ?? "—";
 
   if (isSessionLoading || isLoadingProducts) {
     return (
@@ -145,17 +207,27 @@ const Products = () => {
     );
   }
 
+  // Atual modal de edição (com conteúdo do ProductEditTabs)
+  const isAdmin = true; // consideramos admin por contexto de tela; os campos de admin já são controlados no ProductEditTabs
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Gerenciar Produtos</h1>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
           <DialogTrigger asChild>
             <Button className="bg-orange-500 hover:bg-orange-600 text-white">
               <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
             </Button>
           </DialogTrigger>
-          {/* Conteúdo do modal de edição é mantido pela ProductEditTabs fora deste snippet */}
+          <DialogContent className="sm:max-w-4xl p-0">
+            <ProductEditTabs
+              initialData={editingProduct}
+              onSubmit={handleEditSubmit}
+              onCancel={() => setIsEditModalOpen(false)}
+              isLoading={isSubmitting}
+            />
+          </DialogContent>
         </Dialog>
       </div>
 
@@ -169,8 +241,6 @@ const Products = () => {
                 <TableHead>Produto</TableHead>
                 <TableHead>Tag</TableHead>
                 <TableHead>Preço</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
                 <TableHead className="text-right w-[200px]">Ações</TableHead>
               </TableRow>
@@ -184,14 +254,10 @@ const Products = () => {
                     )}
                     <div className="truncate max-w-[150px]">{product.name}</div>
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600">{product.tag ?? "—"}</TableCell>
+                  <TableCell className="text-sm text-gray-600">{getTagForDisplay(product)}</TableCell>
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>
-                  <TableCell>{/* Status badge renderizado no admin se necessário */}</TableCell>
-                  <TableCell>{product.orderbumps?.length ?? 0}</TableCell>
                   <TableCell>
-                    <Button variant="outline" size="sm" className="flex items-center">
-                      <FileText className="h-4 w-4 mr-1" /> {product.assetCount ?? 0} Arquivo(s)
-                    </Button>
+                    <span className="text-sm text-gray-600">{product.assetCount ?? 0} arquivo(s)</span>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => handleEditProduct(product.id)} className="mr-1 text-gray-600 hover:text-orange-500" title="Editar Produto">
@@ -200,7 +266,7 @@ const Products = () => {
                     <Button variant="ghost" size="icon" onClick={() => handleGenerateCheckoutLink(product.id)} className="mr-1" title="Copiar Link de Checkout">
                       <LinkIcon className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteProduct(true)} className="text-red-500 hover:text-red-700" title="Excluir Produto">
+                    <Button variant="ghost" size="icon" onClick={() => setProductToDelete(product.id)} className="text-red-500 hover:text-red-700" title="Excluir Produto">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -210,6 +276,22 @@ const Products = () => {
           </Table>
         </div>
       )}
+
+      {/* Confirmação de exclusão (pode permanecer simples) */}
+      <Dialog open={!!productToDelete} onOpenChange={() => setProductToDelete(null)}>
+        <DialogContent className="sm:max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle>Excluir Produto</DialogTitle>
+          </DialogHeader>
+          <div className="mt-4 text-sm text-gray-700">
+            Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setProductToDelete(null)}>Cancelar</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={() => handleDeleteProduct(true)}>Excluir</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
