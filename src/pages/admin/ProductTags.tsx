@@ -14,10 +14,9 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Trash2, Edit } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import TagEditorModal from "@/components/admin/TagEditorModal";
-import Brand from "@/components/Brand";
+import TagEditorModal from "../../../components/admin/TagEditorModal";
+import Brand from "../../../components/Brand";
 import { useSession } from "@/components/SessionContextProvider";
-import { formatDate } from "@/utils/date"; // caso tenha util, se não, omit
 
 type Tag = {
   id: string;
@@ -136,7 +135,7 @@ const ProductTags = () => {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex items-center justify-center p-6">
-              <Loader2 className="h-6 w-6 animate-spin" />
+              <div className="h-6 w-6 animate-pulse bg-gray-300 rounded-full" />
             </div>
           ) : (
             <Table>
