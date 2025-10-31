@@ -13,7 +13,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Info } from "lucide-react"; // Importar o ícone de informação
+import { Info } from "lucide-react";
+import InstallmentSelector from "./InstallmentSelector";
+import { useInstallments } from "@/hooks/use-installments";
 
 export interface CreditCardFormRef {
   submitForm: () => Promise<boolean>;
@@ -30,14 +32,16 @@ const formSchema = z.object({
     .min(1, "O CEP é obrigatório")
     .regex(/^\d{5}-?\d{3}$/, "CEP inválido (formato XXXXX-XXX)"),
   addressNumber: z.string().min(1, "O número é obrigatório"),
+  installmentCount: z.number().min(1, "Selecione o número de parcelas"),
 });
 
 interface CreditCardFormProps {
   isLoading: boolean;
+  totalPrice: number;
 }
 
 const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
-  ({ isLoading }, ref) => {
+  ({ isLoading, totalPrice }, ref) => {
     const form = useForm<z.infer<typeof formSchema>>({
       resolver: zodResolver(formSchema),
       defaultValues: {
@@ -48,7 +52,14 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
         ccv: "",
         postalCode: "",
         addressNumber: "",
+        installmentCount: 1,
       },
+    });
+
+    // Hook para calcular parcelas com debounce
+    const { installments, isLoading: isLoadingInstallments, error: installmentsError } = useInstallments({
+      totalPrice,
+      enabled: true, // Sempre habilitado quando este form está visível
     });
 
     useImperativeHandle(ref, () => ({
@@ -61,8 +72,8 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
 
     const formatCEP = (value: string) => {
       if (!value) return "";
-      value = value.replace(/\D/g, ""); // Remove tudo o que não é dígito
-      value = value.replace(/^(\d{5})(\d)/, "$1-$2"); // Coloca o hífen após o 5º dígito
+      value = value.replace(/\D/g, "");
+      value = value.replace(/^(\d{5})(\d)/, "$1-$2");
       return value;
     };
 
@@ -98,9 +109,8 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
                     placeholder="XXXX XXXX XXXX XXXX"
                     {...field}
                     disabled={isLoading}
-                    maxLength={19} // Max length for formatted card number
+                    maxLength={19}
                     onChange={(e) => {
-                      // Basic formatting for card number
                       const value = e.target.value.replace(/\D/g, '').substring(0, 16);
                       const formatted = value.replace(/(\d{4})(?=\d)/g, '$1 ');
                       field.onChange(formatted);
@@ -184,7 +194,25 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
             />
           </div>
 
-          {/* Novos campos de endereço para cobrança */}
+          {/* Seletor de Parcelas */}
+          <FormField
+            control={form.control}
+            name="installmentCount"
+            render={({ field }) => (
+              <FormItem>
+                <InstallmentSelector
+                  installments={installments}
+                  isLoading={isLoadingInstallments}
+                  error={installmentsError}
+                  selectedInstallment={field.value}
+                  onSelectInstallment={field.onChange}
+                  disabled={isLoading}
+                />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
           <div className="space-y-4 pt-4 border-t border-gray-200">
             <h3 className="text-lg font-semibold text-gray-800">Dados de Cobrança do Cartão</h3>
             <FormField
@@ -198,7 +226,7 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
                       placeholder="XXXXX-XXX"
                       {...field}
                       disabled={isLoading}
-                      maxLength={9} // 5 dígitos + hífen + 3 dígitos
+                      maxLength={9}
                       onChange={(e) => {
                         field.onChange(formatCEP(e.target.value));
                       }}

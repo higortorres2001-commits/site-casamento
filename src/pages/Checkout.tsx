@@ -316,7 +316,6 @@ const Checkout = () => {
 
   const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
 
-  // Seções como blocos reutilizáveis
   const customerDataSection = (
     <Card className="bg-white rounded-xl shadow-lg p-6">
       <CardHeader className="pb-4">
@@ -383,7 +382,11 @@ const Checkout = () => {
 
         {paymentMethod === "CREDIT_CARD" && (
           <div className="mt-6">
-            <CreditCardForm ref={creditCardFormRef} isLoading={isSubmitting} />
+            <CreditCardForm 
+              ref={creditCardFormRef} 
+              isLoading={isSubmitting}
+              totalPrice={currentTotalPrice}
+            />
           </div>
         )}
       </CardContent>
@@ -407,15 +410,13 @@ const Checkout = () => {
       <CheckoutHeader backUrl={backUrl} />
       <main className={`flex-1 container mx-auto p-4 md:p-8 ${contentPaddingBottomClass}`}>
         {isMobile ? (
-          // MOBILE: ordem solicitada
           <div className="max-w-3xl mx-auto space-y-6">
-            {productInfoSection}         {/* 1. produto principal */}
-            {customerDataSection}        {/* 2. dados do cliente */}
-            {paymentSection}             {/* 3. método de pagamento */}
-            {orderBumpsSection}          {/* 4. order bumps */}
-            {couponSection}              {/* 5. cupom */}
-            {orderSummarySection}        {/* 6. resumo do pedido */}
-            {/* Informações complementares (texto simples, menor, sem card) */}
+            {productInfoSection}
+            {customerDataSection}
+            {paymentSection}
+            {orderBumpsSection}
+            {couponSection}
+            {orderSummarySection}
             <div className="text-xs text-gray-600 mt-6 px-1 leading-relaxed">
               <p>ACESSO IMEDIATO</p>
               <p>GARANTIA DE 7 DIAS</p>
@@ -423,14 +424,13 @@ const Checkout = () => {
             </div>
           </div>
         ) : (
-          // DESKTOP: ordem solicitada anteriormente
           <div className="max-w-3xl mx-auto space-y-6">
-            {customerDataSection}          {/* 1. dados do cliente */}
-            {productInfoSection}           {/* 2. informações do produto */}
-            {orderBumpsSection}            {/* 3. order bumps */}
-            {couponSection}                {/* 4. cupom */}
-            {paymentSection}               {/* 5. método de pagamento */}
-            <div className="space-y-4">    {/* 6. resumo + botão abaixo */}
+            {customerDataSection}
+            {productInfoSection}
+            {orderBumpsSection}
+            {couponSection}
+            {paymentSection}
+            <div className="space-y-4">
               {orderSummarySection}
               <Button
                 type="button"
@@ -445,7 +445,6 @@ const Checkout = () => {
         )}
       </main>
 
-      {/* Barra fixa somente no mobile */}
       {isMobile && (
         <FixedBottomBar
           totalPrice={currentTotalPrice}

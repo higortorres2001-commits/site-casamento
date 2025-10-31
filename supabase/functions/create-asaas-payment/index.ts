@@ -7,12 +7,10 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS OPTIONS request
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Initialize Supabase client with service role for admin access
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -25,8 +23,8 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    console.log('create-asaas-payment: Received request body:', requestBody); // Log para depuração
-    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = requestBody; // Added metaTrackingData
+    console.log('create-asaas-payment: Received request body:', requestBody);
+    const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = requestBody;
 
     if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
@@ -55,7 +53,7 @@ serve(async (req) => {
     }
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
-    const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL'); // Get the base URL from environment variable
+    const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
     const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
     const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
 
@@ -76,10 +74,10 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/v3 or your sandbox URL.',
+        message: 'ASAAS_API_URL not set in Supabase secrets.',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'ASAAS_API_URL not set in Supabase secrets. Please set it to https://api.asaas.com/v3 or your sandbox URL.' }), {
+      return new Response(JSON.stringify({ error: 'ASAAS_API_URL not set in Supabase secrets.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -105,7 +103,6 @@ serve(async (req) => {
     }
 
     if (existingUsers && existingUsers.users.length > 0) {
-      // User exists
       userId = existingUsers.users[0].id;
       console.log(`Existing user found: ${userId}`);
       await supabase.from('logs').insert({
@@ -115,7 +112,6 @@ serve(async (req) => {
         metadata: { email, userId }
       });
 
-      // Update profile if necessary (e.g., name, cpf, email, whatsapp might be new/updated)
       const { error: updateProfileError } = await supabase
         .from('profiles')
         .update({ name, cpf, email, whatsapp })
@@ -129,15 +125,13 @@ serve(async (req) => {
           message: 'Error updating existing user profile.',
           metadata: { userId, error: updateProfileError.message }
         });
-        // Continue even if profile update fails, as payment is primary goal
       }
     } else {
-      // User does not exist, create new user
       const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
         email,
-        password: cpf, // CPF as password
-        email_confirm: true, // Automatically confirm email
-        user_metadata: { name, cpf, whatsapp }, // Store name, cpf, and whatsapp in user_metadata
+        password: cpf,
+        email_confirm: true,
+        user_metadata: { name, cpf, whatsapp },
       });
 
       if (createUserError || !newUser?.user) {
@@ -212,7 +206,7 @@ serve(async (req) => {
       if (coupon.discount_type === 'percentage') {
         totalPrice = totalPrice * (1 - (parseFloat(coupon.value) / 100));
       } else if (coupon.discount_type === 'fixed') {
-        totalPrice = Math.max(0, totalPrice - parseFloat(coupon.value)); // Ensure price doesn't go below zero
+        totalPrice = Math.max(0, totalPrice - parseFloat(coupon.value));
       }
       console.log(`Coupon ${coupon_code} applied. New total price: ${totalPrice}`);
       await supabase.from('logs').insert({
@@ -223,24 +217,22 @@ serve(async (req) => {
       });
     }
 
-    // Capture client IP and User Agent from request headers
     const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
     const clientUserAgent = req.headers.get('user-agent') || '';
 
-    // Enhance metaTrackingData with server-side captured info
     const fullMetaTrackingData = {
       ...metaTrackingData,
       client_ip_address: clientIpAddress,
       client_user_agent: clientUserAgent,
     };
 
-    // --- Meta CAPI InitiateCheckout Event ---
+    // Meta CAPI InitiateCheckout Event
     if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN && process.env.NODE_ENV === 'production') {
       const capiPayload = {
         data: [
           {
             event_name: 'InitiateCheckout',
-            event_time: Math.floor(Date.now() / 1000), // Unix timestamp
+            event_time: Math.floor(Date.now() / 1000),
             event_source_url: fullMetaTrackingData.event_source_url,
             user_data: {
               em: email,
@@ -257,7 +249,7 @@ serve(async (req) => {
               num_items: productIds.length,
             },
             action_source: 'website',
-            event_id: `initiate_checkout_capi_${Date.now()}`, // Unique event ID for CAPI
+            event_id: `initiate_checkout_capi_${Date.now()}`,
           },
         ],
       };
@@ -305,8 +297,6 @@ serve(async (req) => {
         metadata: { userId, metaPixelIdSet: !!META_PIXEL_ID, capiAccessTokenSet: !!META_CAPI_ACCESS_TOKEN, isProduction: process.env.NODE_ENV === 'production' }
       });
     }
-    // --- End Meta CAPI InitiateCheckout Event ---
-
 
     // 5. Insert new order with 'pending' status
     const { data: order, error: orderInsertError } = await supabase
@@ -316,7 +306,6 @@ serve(async (req) => {
         ordered_product_ids: productIds,
         total_price: totalPrice,
         status: 'pending',
-        // Store Meta tracking data with the order
         meta_tracking_data: fullMetaTrackingData, 
       })
       .select()
@@ -345,19 +334,15 @@ serve(async (req) => {
 
     // 6. Make request to Asaas API to create payment
     const asaasPaymentsUrl = `${ASAAS_BASE_URL}/payments`;
-    // const asaasTokenizeUrl = `${ASAAS_BASE_URL}/creditCard/tokenizeCreditCard`; // Removed as tokenization is no longer used
 
-    console.log('Asaas Payments URL:', asaasPaymentsUrl); // Log the constructed URL
+    console.log('Asaas Payments URL:', asaasPaymentsUrl);
 
     const asaasHeaders = {
       'Content-Type': 'application/json',
       'access_token': ASAAS_API_KEY,
     };
 
-    // Asaas requires CPF/CNPJ without formatting
     const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
-
-    // Ensure total price is formatted to 2 decimal places for Asaas API
     const formattedTotalPrice = totalPrice.toFixed(2);
 
     let asaasPayload: any = {
@@ -367,13 +352,13 @@ serve(async (req) => {
         cpfCnpj: customerCpfCnpj,
         phone: whatsapp,
       },
-      value: parseFloat(formattedTotalPrice), // Asaas expects value in BRL (decimal)
+      value: parseFloat(formattedTotalPrice),
       description: `Order #${order.id} payment`,
-      dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Due date for tomorrow
+      dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     };
 
     let finalAsaasResponseData: any;
-    let clientResponseData: any; // This will hold the data sent back to the client
+    let clientResponseData: any;
 
     if (paymentMethod === 'PIX') {
       asaasPayload.billingType = 'PIX';
@@ -399,9 +384,8 @@ serve(async (req) => {
         });
       }
       finalAsaasResponseData = await asaasResponse.json();
-      asaasPaymentId = finalAsaasResponseData.id; // Get the payment ID from the initial response
+      asaasPaymentId = finalAsaasResponseData.id;
 
-      // Now, fetch the PIX QR Code details
       const pixQrCodeUrl = `${ASAAS_BASE_URL}/payments/${asaasPaymentId}/pixQrCode`;
       const pixQrCodeResponse = await fetch(pixQrCodeUrl, { method: 'GET', headers: asaasHeaders });
 
@@ -428,7 +412,6 @@ serve(async (req) => {
 
       const pixQrCodeData = await pixQrCodeResponse.json();
       
-      // Construct the client response specifically for PIX as requested
       clientResponseData = {
         id: asaasPaymentId,
         orderId: order.id,
@@ -457,11 +440,10 @@ serve(async (req) => {
         });
       }
 
-      // Direct Charge: Create Payment with raw Credit Card details
       asaasPayload.billingType = 'CREDIT_CARD';
       asaasPayload.creditCard = {
         holderName: creditCard.holderName,
-        number: creditCard.cardNumber.replace(/\s/g, ''), // Remove spaces
+        number: creditCard.cardNumber.replace(/\s/g, ''),
         expiryMonth: creditCard.expiryMonth,
         expiryYear: creditCard.expiryYear,
         ccv: creditCard.ccv,
@@ -471,12 +453,17 @@ serve(async (req) => {
         email: email,
         cpfCnpj: customerCpfCnpj,
         phone: whatsapp,
-        postalCode: creditCard.postalCode.replace(/\D/g, ''), // Clean postal code
+        postalCode: creditCard.postalCode.replace(/\D/g, ''),
         addressNumber: creditCard.addressNumber,
       };
-      asaasPayload.remoteIp = clientIpAddress; // Use captured IP
-      asaasPayload.callbackUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional callback
-      asaasPayload.returnUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/confirmacao`; // Optional return URL
+      
+      // NOVO: Adicionar número de parcelas
+      if (creditCard.installmentCount && creditCard.installmentCount > 1) {
+        asaasPayload.installmentCount = creditCard.installmentCount;
+        asaasPayload.installmentValue = parseFloat((totalPrice / creditCard.installmentCount).toFixed(2));
+      }
+      
+      asaasPayload.remoteIp = clientIpAddress;
 
       const asaasPaymentResponse = await fetch(asaasPaymentsUrl, {
         method: 'POST',
@@ -499,7 +486,6 @@ serve(async (req) => {
         });
       }
       finalAsaasResponseData = await asaasPaymentResponse.json();
-      // For credit card, the client response can be the full Asaas response + our orderId
       clientResponseData = { ...finalAsaasResponseData, orderId: order.id };
       console.log('Credit card direct charge payment created successfully, client response prepared:', clientResponseData);
       await supabase.from('logs').insert({
@@ -522,7 +508,6 @@ serve(async (req) => {
       });
     }
 
-    // If asaasPaymentId was not set in the PIX block, set it here for credit card
     if (!asaasPaymentId && finalAsaasResponseData.id) {
       asaasPaymentId = finalAsaasResponseData.id;
     }
@@ -550,7 +535,6 @@ serve(async (req) => {
       metadata: { orderId, userId, asaasPaymentId, asaasPaymentData: finalAsaasResponseData }
     });
 
-    // Return the prepared clientResponseData
     return new Response(JSON.stringify(clientResponseData), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
