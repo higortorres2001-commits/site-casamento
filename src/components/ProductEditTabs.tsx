@@ -11,7 +11,6 @@ import { Product, ProductAsset } from "@/types";
 import ProductDetailsTab from "./ProductDetailsTab";
 import ProductOrderBumpsTab from "./ProductOrderBumpsTab";
 import ProductAssetsTab from "./ProductAssetsTab";
-import { showSuccess } from "@/utils/toast";
 import { Form } from "@/components/ui/form";
 
 const formSchema = z.object({
@@ -114,7 +113,6 @@ const ProductEditTabs = ({
     if (!window.confirm("Tem certeza que deseja excluir este arquivo?")) return;
     setCurrentAssets((prev) => prev.filter((a) => a.id !== assetId));
     setDeletedAssetIds((prev) => [...prev, assetId]);
-    showSuccess("Arquivo marcado para exclusão.");
   };
 
   const handleImageFileChange = (file: File | null) => {
