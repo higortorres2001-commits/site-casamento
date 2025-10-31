@@ -1,12 +1,9 @@
 "use client";
 
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
-import Brand from '@/components/Brand';
-import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
-import { showError } from '@/utils/toast';
+import React from "react";
+import { Link } from "react-router-dom";
+// Importa o Brand via caminho relativo para evitar problemas com alias
+import Brand from "../Brand";
 
 const CheckoutHeader = () => {
   // Removida a lógica de fetchShopUrl e o estado shopUrl, pois o link será removido.
