@@ -22,6 +22,8 @@ import { useSession } from "@/components/SessionContextProvider";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
+import { Button } from "@/components/ui/button";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 declare global {
   interface Window {
@@ -34,6 +36,7 @@ const Checkout = () => {
   const navigate = useNavigate();
   const { user, isLoading: isSessionLoading } = useSession();
   const metaTrackingData = useMetaTrackingData();
+  const isMobile = useIsMobile();
 
   const [mainProduct, setMainProduct] = useState<Product | null>(null);
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
@@ -313,99 +316,140 @@ const Checkout = () => {
 
   const backUrl = !user && mainProduct.checkout_return_url ? mainProduct.checkout_return_url : undefined;
 
+  // Seções como blocos reutilizáveis (mesmo visual, só mudamos a ordem)
+  const customerDataSection = (
+    <Card className="bg-white rounded-xl shadow-lg p-6">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-xl font-bold text-gray-800">Seus Dados</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <CheckoutForm
+          ref={checkoutFormRef}
+          onSubmit={() => {}}
+          isLoading={isSubmitting}
+          initialData={userProfile || undefined}
+        />
+      </CardContent>
+    </Card>
+  );
+
+  const productInfoSection = <MainProductDisplayCard product={mainProduct} />;
+
+  const orderBumpsSection = orderBumps.length > 0 ? (
+    <Card className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+      <CardTitle className="text-xl font-bold text-gray-800">
+        Adicione mais ao seu pedido!
+      </CardTitle>
+      {orderBumps.map((bump) => (
+        <OrderBumpCard
+          key={bump.id}
+          product={bump}
+          isSelected={selectedOrderBumps.includes(bump.id)}
+          onToggle={handleToggleOrderBump}
+        />
+      ))}
+    </Card>
+  ) : null;
+
+  const couponSection = <CouponInputCard onCouponApplied={handleCouponApplied} />;
+
+  const paymentSection = (
+    <Card className="bg-white rounded-xl shadow-lg p-6">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-xl font-bold text-gray-800">Método de Pagamento</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <RadioGroup
+          value={paymentMethod}
+          onValueChange={(value: "PIX" | "CREDIT_CARD") => setPaymentMethod(value)}
+          className="grid grid-cols-1 gap-4"
+        >
+          <div className="flex items-center space-x-2 p-4 border rounded-md cursor-pointer has-[:checked]:border-orange-500 has-[:checked]:ring-2 has-[:checked]:ring-orange-500">
+            <RadioGroupItem value="PIX" id="pix" className="text-orange-500" />
+            <Label htmlFor="pix" className="flex-1 cursor-pointer text-base font-medium">
+              PIX
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2 p-4 border rounded-md cursor-pointer has-[:checked]:border-orange-500 has-[:checked]:ring-2 has-[:checked]:ring-orange-500">
+            <RadioGroupItem value="CREDIT_CARD" id="credit-card" className="text-orange-500" />
+            <Label
+              htmlFor="credit-card"
+              className="flex-1 cursor-pointer text-base font-medium"
+            >
+              Cartão de Crédito
+            </Label>
+          </div>
+        </RadioGroup>
+
+        {paymentMethod === "CREDIT_CARD" && (
+          <div className="mt-6">
+            <CreditCardForm ref={creditCardFormRef} isLoading={isSubmitting} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const orderSummarySection = (
+    <OrderSummaryAccordion
+      mainProduct={mainProduct}
+      selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+      originalTotalPrice={originalTotalPrice}
+      currentTotalPrice={currentTotalPrice}
+      appliedCoupon={appliedCoupon}
+    />
+  );
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-100">
       <CheckoutHeader backUrl={backUrl} />
       <main className="flex-1 container mx-auto p-4 md:p-8 pb-24">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
-          <div className="space-y-6">
-            <MainProductDisplayCard product={mainProduct} />
+        {isMobile ? (
+          // MOBILE: mantém layout atual
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            <div className="space-y-6">
+              {productInfoSection}
+              {orderBumpsSection}
+              {couponSection}
+              {orderSummarySection}
+            </div>
 
-            {orderBumps.length > 0 && (
-              <Card className="bg-white rounded-xl shadow-lg p-6 space-y-4">
-                <CardTitle className="text-xl font-bold text-gray-800">
-                  Adicione mais ao seu pedido!
-                </CardTitle>
-                {orderBumps.map((bump) => (
-                  <OrderBumpCard
-                    key={bump.id}
-                    product={bump}
-                    isSelected={selectedOrderBumps.includes(bump.id)}
-                    onToggle={handleToggleOrderBump}
-                  />
-                ))}
-              </Card>
-            )}
-
-            <CouponInputCard onCouponApplied={handleCouponApplied} />
-
-            <OrderSummaryAccordion
-              mainProduct={mainProduct}
-              selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-              originalTotalPrice={originalTotalPrice}
-              currentTotalPrice={currentTotalPrice}
-              appliedCoupon={appliedCoupon}
-            />
+            <div className="space-y-6">
+              {customerDataSection}
+              {paymentSection}
+            </div>
           </div>
-
-          <div className="space-y-6">
-            <Card className="bg-white rounded-xl shadow-lg p-6">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-xl font-bold text-gray-800">Seus Dados</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <CheckoutForm
-                  ref={checkoutFormRef}
-                  onSubmit={() => {}}
-                  isLoading={isSubmitting}
-                  initialData={userProfile || undefined}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white rounded-xl shadow-lg p-6">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-xl font-bold text-gray-800">Método de Pagamento</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <RadioGroup
-                  value={paymentMethod}
-                  onValueChange={(value: "PIX" | "CREDIT_CARD") => setPaymentMethod(value)}
-                  className="grid grid-cols-1 gap-4"
-                >
-                  <div className="flex items-center space-x-2 p-4 border rounded-md cursor-pointer has-[:checked]:border-orange-500 has-[:checked]:ring-2 has-[:checked]:ring-orange-500">
-                    <RadioGroupItem value="PIX" id="pix" className="text-orange-500" />
-                    <Label htmlFor="pix" className="flex-1 cursor-pointer text-base font-medium">
-                      PIX
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2 p-4 border rounded-md cursor-pointer has-[:checked]:border-orange-500 has-[:checked]:ring-2 has-[:checked]:ring-orange-500">
-                    <RadioGroupItem value="CREDIT_CARD" id="credit-card" className="text-orange-500" />
-                    <Label
-                      htmlFor="credit-card"
-                      className="flex-1 cursor-pointer text-base font-medium"
-                    >
-                      Cartão de Crédito
-                    </Label>
-                  </div>
-                </RadioGroup>
-
-                {paymentMethod === "CREDIT_CARD" && (
-                  <div className="mt-6">
-                    <CreditCardForm ref={creditCardFormRef} isLoading={isSubmitting} />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        ) : (
+          // DESKTOP: usa a ordem solicitada 1..6 e botão abaixo do resumo
+          <div className="max-w-3xl mx-auto space-y-6">
+            {customerDataSection}          {/* 1. dados do cliente */}
+            {productInfoSection}           {/* 2. informações do produto */}
+            {orderBumpsSection}            {/* 3. order bumps */}
+            {couponSection}                {/* 4. cupom */}
+            {paymentSection}               {/* 5. método de pagamento */}
+            <div className="space-y-4">    {/* 6. resumo + botão abaixo */}
+              {orderSummarySection}
+              <Button
+                type="button"
+                onClick={handleCheckout}
+                disabled={isSubmitting}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg"
+              >
+                {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Finalizar Compra Agora"}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
-      <FixedBottomBar
-        totalPrice={currentTotalPrice}
-        isSubmitting={isSubmitting}
-        onSubmit={handleCheckout}
-      />
+      {/* Barra fixa somente no mobile */}
+      {isMobile && (
+        <FixedBottomBar
+          totalPrice={currentTotalPrice}
+          isSubmitting={isSubmitting}
+          onSubmit={handleCheckout}
+        />
+      )}
 
       <PixPaymentModal
         isOpen={isPixModalOpen}
