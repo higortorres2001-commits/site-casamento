@@ -38,6 +38,7 @@ interface ProductDetailsTabProps {
   isLoading: boolean;
   onImageFileChange: (file: File | null) => void;
   initialImageUrl?: string | null;
+  isAdmin?: boolean;
 }
 
 const ProductDetailsTab = ({
@@ -45,15 +46,13 @@ const ProductDetailsTab = ({
   isLoading,
   onImageFileChange,
   initialImageUrl,
+  isAdmin = false,
 }: ProductDetailsTabProps) => {
-  // Mantemos o hook local para manipular imagem de pré-visualização
-  // e a comunicação com o parent via onImageFileChange.
-
+  // Mantemos a pré-visualização da imagem
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(initialImageUrl ?? null);
   const [imageError, setImageError] = useState<string | null>(null);
 
-  // Lógica simplificada de imagem: arquivo opcional, apenas pré-visualização
   const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (file) {
@@ -69,35 +68,38 @@ const ProductDetailsTab = ({
     }
   };
 
-  // Campo de etiqueta (tag) e URL de retorno foram adicionados
   return (
     <div className="space-y-4">
-      <FormField
-        control={form?.control}
-        name="tag"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Tag (opcional)</FormLabel>
-            <FormControl>
-              <Input placeholder="Ex: curso-marketing" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form?.control}
-        name="return_url"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Return URL</FormLabel>
-            <FormControl>
-              <Input placeholder="https://seu-site.com/voltar-para-produto" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {isAdmin && (
+        <>
+          <FormField
+            control={form?.control}
+            name="tag"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Tag (opcional)</FormLabel>
+                <FormControl>
+                  <Input placeholder="Ex: curso-marketing" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form?.control}
+            name="return_url"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Return URL</FormLabel>
+                <FormControl>
+                  <Input placeholder="https://seu-site.com/voltar-para-produto" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </>
+      )}
       <FormItem>
         <FormLabel>Imagem do Produto</FormLabel>
         <div className="flex items-center space-x-2">
