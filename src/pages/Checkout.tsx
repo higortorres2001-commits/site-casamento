@@ -15,6 +15,7 @@ import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditC
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
+import InstallmentDebug from "@/components/checkout/InstallmentDebug";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -381,7 +382,10 @@ const Checkout = () => {
         </RadioGroup>
 
         {paymentMethod === "CREDIT_CARD" && (
-          <div className="mt-6">
+          <div className="mt-6 space-y-4">
+            {/* DEBUG TEMPORÁRIO */}
+            <InstallmentDebug />
+            
             <CreditCardForm 
               ref={creditCardFormRef} 
               isLoading={isSubmitting}
