@@ -16,9 +16,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, FolderOpen, Eye } from "lucide-react";
+import { Edit, Trash2, PlusCircle, Link as LinkIcon, Loader2, FileText, Eye } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -47,6 +48,9 @@ const Products = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<(Product & { assets?: ProductAsset[] }) | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Delete confirmation state
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
   // Fetch products for admin view
   const fetchProducts = useCallback(async () => {
@@ -126,7 +130,6 @@ const Products = () => {
           tag: formData.tag ?? null,
           return_url: formData.return_url ?? null,
         };
-        // Remove undefined/nil keys
         Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
         const { data: newProduct, error } = await supabase.from("products").insert(payload).select("*").single();
@@ -170,9 +173,9 @@ const Products = () => {
     }
   };
 
-  // Delete simplificado (sem mudança de payload)
-  const handleDeleteProduct = async (confirmed: boolean) => {
-    if (!confirmed || !productToDelete) return;
+  // Delete product
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return;
     try {
       const { error } = await supabase.from("products").delete().eq("id", productToDelete);
       if (error) {
@@ -186,6 +189,11 @@ const Products = () => {
     } finally {
       setProductToDelete(null);
     }
+  };
+
+  // Delete confirmation flow
+  const confirmDelete = (id: string) => {
+    setProductToDelete(id);
   };
 
   // Reutilizar link de checkout como bonus (opcional)
@@ -207,28 +215,13 @@ const Products = () => {
     );
   }
 
-  // Atual modal de edição (com conteúdo do ProductEditTabs)
-  const isAdmin = true; // consideramos admin por contexto de tela; os campos de admin já são controlados no ProductEditTabs
-
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Gerenciar Produtos</h1>
-        <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-              <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl p-0">
-            <ProductEditTabs
-              initialData={editingProduct}
-              onSubmit={handleEditSubmit}
-              onCancel={() => setIsEditModalOpen(false)}
-              isLoading={isSubmitting}
-            />
-          </DialogContent>
-        </Dialog>
+        <Button onClick={handleCreateProduct} className="bg-orange-500 hover:bg-orange-600 text-white">
+          <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Produto
+        </Button>
       </div>
 
       {products.length === 0 ? (
@@ -242,7 +235,7 @@ const Products = () => {
                 <TableHead>Tag</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Materiais</TableHead>
-                <TableHead className="text-right w-[200px]">Ações</TableHead>
+                <TableHead className="text-right w-[240px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -266,7 +259,7 @@ const Products = () => {
                     <Button variant="ghost" size="icon" onClick={() => handleGenerateCheckoutLink(product.id)} className="mr-1" title="Copiar Link de Checkout">
                       <LinkIcon className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setProductToDelete(product.id)} className="text-red-500 hover:text-red-700" title="Excluir Produto">
+                    <Button variant="ghost" size="icon" onClick={() => confirmDelete(product.id)} className="text-red-500 hover:text-red-700" title="Excluir Produto">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -277,19 +270,37 @@ const Products = () => {
         </div>
       )}
 
-      {/* Confirmação de exclusão (pode permanecer simples) */}
-      <Dialog open={!!productToDelete} onOpenChange={() => setProductToDelete(null)}>
+      {/* Dialog de edição / criação */}
+      <Dialog open={isEditModalOpen} onOpenChange={(open) => setIsEditModalOpen(!!open)}>
+        <DialogContent className="sm:max-w-4xl p-0">
+          <ProductEditTabs
+            initialData={editingProduct}
+            onSubmit={handleEditSubmit}
+            onCancel={() => setIsEditModalOpen(false)}
+            isLoading={isSubmitting}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação de exclusão */}
+      <Dialog open={!!productToDelete} onOpenChange={(open) => {
+        if (!open) setProductToDelete(null);
+      }}>
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader>
             <DialogTitle>Excluir Produto</DialogTitle>
           </DialogHeader>
-          <div className="mt-4 text-sm text-gray-700">
+          <div className="mt-2 mb-4 text-sm text-gray-700">
             Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.
           </div>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setProductToDelete(null)}>Cancelar</Button>
-            <Button className="bg-red-600 hover:bg-red-700" onClick={() => handleDeleteProduct(true)}>Excluir</Button>
-          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setProductToDelete(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleDeleteProduct} className="bg-red-600 hover:bg-red-700 text-white">
+              Excluir
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
