@@ -25,9 +25,8 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    console.log('=== ASAAS WEBHOOK RECEIVED ===');
-    console.log('Full webhook payload:', JSON.stringify(requestBody, null, 2));
     
+    // 1. Log the received webhook payload
     await supabase.from('logs').insert({
       level: 'info',
       context: 'asaas-webhook',
@@ -35,24 +34,16 @@ serve(async (req) => {
       metadata: { asaasNotification: requestBody }
     });
 
-    // Check if the event is PAYMENT_CONFIRMED
+    // 2. Check for relevant event (PAYMENT_CONFIRMED)
     if (requestBody.event !== 'PAYMENT_CONFIRMED') {
-      console.log(`Ignoring non-PAYMENT_CONFIRMED event: ${requestBody.event}`);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'asaas-webhook',
-        message: `Ignoring non-PAYMENT_CONFIRMED event: ${requestBody.event}`,
-        metadata: { event: requestBody.event }
-      });
       return new Response(JSON.stringify({ message: 'Event not relevant, ignored.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    asaasPaymentId = requestBody.payment.id;
-    console.log('Processing PAYMENT_CONFIRMED for payment ID:', asaasPaymentId);
-
+    asaasPaymentId = requestBody.payment?.id;
+    
     if (!asaasPaymentId) {
       await supabase.from('logs').insert({
         level: 'error',
@@ -66,8 +57,7 @@ serve(async (req) => {
       });
     }
 
-    // 1. Find the order in the 'orders' table
-    console.log('Searching for order with asaas_payment_id:', asaasPaymentId);
+    // 3. Find the order in the 'orders' table
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('id, user_id, ordered_product_ids, status, total_price, meta_tracking_data')
@@ -75,33 +65,30 @@ serve(async (req) => {
       .single();
 
     if (orderError || !order) {
-      console.error('Order not found for payment ID:', asaasPaymentId, 'Error:', orderError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'asaas-webhook',
         message: 'Order not found for the given asaas_payment_id.',
         metadata: { asaasPaymentId, error: orderError?.message }
       });
-      return new Response(JSON.stringify({ error: 'Order not found for the given asaas_payment_id.' }), {
-        status: 404,
+      // Return 200 to prevent Asaas from retrying endlessly if the order is genuinely missing
+      return new Response(JSON.stringify({ message: 'Order not found, but webhook acknowledged.' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
     
     orderId = order.id;
     userId = order.user_id;
-    console.log('Order found:', orderId, 'User:', userId, 'Current status:', order.status);
 
-    // 2. If the order status is not 'paid', update it to 'paid'
+    // 4. If the order status is not 'paid', update it to 'paid'
     if (order.status !== 'paid') {
-      console.log('Updating order status to paid...');
       const { error: updateOrderError } = await supabase
         .from('orders')
         .update({ status: 'paid' })
         .eq('id', order.id);
 
       if (updateOrderError) {
-        console.error('Error updating order status:', updateOrderError);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'asaas-webhook',
@@ -113,29 +100,9 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      console.log(`Order ${order.id} status updated to 'paid' successfully`);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'asaas-webhook',
-        message: `Order ${order.id} status updated to 'paid'.`,
-        metadata: { orderId, asaasPaymentId, userId }
-      });
-    } else {
-      console.log(`Order ${order.id} already 'paid', skipping status update.`);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'asaas-webhook',
-        message: `Order ${order.id} already 'paid', skipping status update.`,
-        metadata: { orderId, asaasPaymentId, userId }
-      });
     }
 
-    // 3. Get user_id and ordered_product_ids from the order
-    const orderedProductIds = order.ordered_product_ids;
-    console.log('Products to grant access:', orderedProductIds);
-
-    // 4. Fetch the user profile to get current access, name, email, CPF, and WhatsApp
-    console.log('Fetching user profile for user:', userId);
+    // 5. Fetch the user profile to get current access and contact info
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id, access, name, email, cpf, whatsapp')
@@ -143,35 +110,30 @@ serve(async (req) => {
       .single();
 
     if (profileError || !profile) {
-      console.error('Error fetching profile:', profileError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'asaas-webhook',
         message: 'User profile not found.',
         metadata: { userId, orderId, asaasPaymentId, error: profileError?.message }
       });
-      return new Response(JSON.stringify({ error: 'User profile not found.' }), {
-        status: 404,
+      return new Response(JSON.stringify({ message: 'User profile not found, but order updated.' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log('User profile found. Current access:', profile.access);
-
-    // 5. Merge ordered_product_ids with the existing 'access' array without duplicates
+    // 6. Merge ordered_product_ids with the existing 'access' array without duplicates
+    const orderedProductIds = order.ordered_product_ids;
     const existingAccess = profile.access || [];
     const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
-    console.log('New access array (merged):', newAccess);
 
-    // 6. Update the 'profiles' table with the new 'access' array and set primeiro_acesso to TRUE
-    console.log('Updating user profile with new access...');
+    // 7. Update the 'profiles' table with the new 'access' array and set has_changed_password to FALSE (to force password change on first login)
     const { error: updateProfileError } = await supabase
       .from('profiles')
-      .update({ access: newAccess, primeiro_acesso: true })
+      .update({ access: newAccess, has_changed_password: false }) // Set to false to force password change
       .eq('id', userId);
 
     if (updateProfileError) {
-      console.error('Error updating profile access:', updateProfileError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'asaas-webhook',
@@ -183,11 +145,11 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    console.log(`Profile ${userId} access updated successfully with new products and primeiro_acesso set to true.`);
+    
     await supabase.from('logs').insert({
       level: 'info',
       context: 'asaas-webhook',
-      message: `Profile ${userId} access updated with new products and primeiro_acesso set to true.`,
+      message: `Profile ${userId} access updated successfully.`,
       metadata: { userId, orderId, asaasPaymentId, newAccess }
     });
 
@@ -196,7 +158,6 @@ serve(async (req) => {
     const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
 
     if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN && process.env.NODE_ENV === 'production') {
-      console.log('Sending Meta CAPI Purchase event...');
       const capiPayload = {
         data: [
           {
@@ -231,7 +192,6 @@ serve(async (req) => {
 
         if (!metaResponse.ok) {
           const errorData = await metaResponse.json();
-          console.error('Meta CAPI Purchase error:', errorData);
           await supabase.from('logs').insert({
             level: 'error',
             context: 'meta-capi-purchase',
@@ -239,40 +199,33 @@ serve(async (req) => {
             metadata: { orderId, userId, capiPayload, metaError: errorData, statusCode: metaResponse.status }
           });
         } else {
-          console.log('Meta CAPI Purchase event sent successfully.');
           await supabase.from('logs').insert({
             level: 'info',
             context: 'meta-capi-purchase',
             message: 'Purchase event sent to Meta CAPI successfully.',
-            metadata: { orderId, userId, capiPayload }
+            metadata: { orderId, userId }
           });
         }
       } catch (metaError: any) {
-        console.error('Error sending Meta CAPI Purchase event:', metaError);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'meta-capi-purchase',
           message: `Unhandled error sending Purchase event to Meta CAPI: ${metaError.message}`,
-          metadata: { orderId, userId, capiPayload, errorStack: metaError.stack }
+          metadata: { orderId, userId, errorStack: metaError.stack }
         });
       }
-    } else {
-      console.warn('Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping Purchase CAPI event.');
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'meta-capi-purchase',
-        message: 'Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping Purchase CAPI event.',
-        metadata: { userId, metaPixelIdSet: !!META_PIXEL_ID, capiAccessTokenSet: !!META_CAPI_ACCESS_TOKEN, isProduction: process.env.NODE_ENV === 'production' }
-      });
     }
     // --- End Meta CAPI Purchase Event ---
 
-    // 7. Send "Acesso Liberado" email with login details
+    // 8. Send "Acesso Liberado" email with login details
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (RESEND_API_KEY && profile.email && profile.cpf) {
-      console.log('Sending access liberation email to:', profile.email);
       const emailSubject = "Seu acesso foi liberado!";
-      const loginUrl = `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app')}/login`;
+      // Assuming the client application URL is derived from SUPABASE_URL for now, 
+      // but ideally this should be a separate environment variable (e.g., APP_URL)
+      const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'YOUR_APP_URL';
+      const loginUrl = `${appUrl}/login`;
+      
       const emailBody = `
         Parabéns! Seu pagamento foi confirmado. Para acessar seus produtos, use os dados abaixo na nossa página de login:
 
@@ -299,7 +252,6 @@ serve(async (req) => {
 
       if (!resendResponse.ok) {
         const errorData = await resendResponse.json();
-        console.error('Error sending email via Resend:', errorData);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'asaas-webhook',
@@ -307,7 +259,6 @@ serve(async (req) => {
           metadata: { userId, orderId, asaasPaymentId, email: profile.email, resendError: errorData }
         });
       } else {
-        console.log(`Access liberation email sent successfully to ${profile.email}`);
         await supabase.from('logs').insert({
           level: 'info',
           context: 'asaas-webhook',
@@ -315,17 +266,8 @@ serve(async (req) => {
           metadata: { userId, orderId, asaasPaymentId, email: profile.email }
         });
       }
-    } else {
-      console.warn('RESEND_API_KEY, user email, or CPF not available. Skipping email sending.');
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'asaas-webhook',
-        message: 'RESEND_API_KEY, user email, or CPF not available. Skipping email sending.',
-        metadata: { userId, orderId, asaasPaymentId, email: profile.email, cpf: profile.cpf, resendApiKeySet: !!RESEND_API_KEY }
-      });
     }
 
-    console.log('=== WEBHOOK PROCESSED SUCCESSFULLY ===');
     // Return a 200 OK response to Asaas
     return new Response(JSON.stringify({ message: 'Webhook processed successfully.' }), {
       status: 200,
@@ -333,8 +275,6 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('=== WEBHOOK ERROR ===');
-    console.error('Edge Function error:', error);
     await supabase.from('logs').insert({
       level: 'error',
       context: 'asaas-webhook',
