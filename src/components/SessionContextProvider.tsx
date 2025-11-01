@@ -30,45 +30,6 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
     latestUserRef.current = user;
   }, [session, user]);
 
-  const checkProfileAndRedirect = async (currentUser: User | null, currentPath: string) => {
-    if (!currentUser) return;
-
-    const requiresPasswordUpdate = currentPath === '/primeira-senha';
-    const isPublicPath = [
-      '/login',
-      '/checkout/',
-      '/confirmacao',
-      '/processando-pagamento',
-      '/primeira-senha',
-      '/update-password',
-    ].some(path => 
-      path.endsWith('/') ? currentPath.startsWith(path) : currentPath === path
-    );
-
-    // Se já estiver na página de troca de senha, não redirecionar
-    if (requiresPasswordUpdate) return;
-
-    // Verifica o status has_changed_password no perfil
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('has_changed_password')
-      .eq('id', currentUser.id)
-      .single();
-
-    if (error) {
-      console.error("Error fetching profile for password check:", error);
-      return;
-    }
-
-    if (profile && profile.has_changed_password === false) {
-      console.log('SessionContextProvider: User requires password update. Redirecting to /primeira-senha.');
-      navigate('/primeira-senha');
-    } else if (currentUser && currentPath === '/login') {
-      // Se estiver logado e na página de login, redireciona para produtos
-      navigate('/meus-produtos');
-    }
-  };
-
   useEffect(() => {
     const publicPaths = [
       '/login',
@@ -90,14 +51,16 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       async (event, currentSession) => {
         console.log('SessionContextProvider DEBUG: Auth state change event:', event, 'Session:', currentSession ? 'exists' : 'null', 'User object reference:', currentSession?.user);
 
+        // Use os valores mais recentes dos refs para a comparação
         const currentSessionState = latestSessionRef.current;
         const currentUserState = latestUserRef.current;
 
+        // Verifica se a sessão ou o usuário realmente mudaram
         const hasSessionChanged = 
           currentSession?.user?.id !== currentUserState?.id || 
           currentSession?.expires_at !== currentSessionState?.expires_at ||
-          (currentSession === null && currentSessionState !== null) ||
-          (currentSession !== null && currentSessionState === null);
+          (currentSession === null && currentSessionState !== null) || // Detecta logout
+          (currentSession !== null && currentSessionState === null); // Detecta login
 
         if (hasSessionChanged) {
           setSession(currentSession);
@@ -109,24 +72,25 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         setIsLoading(false);
 
         if (event === 'SIGNED_OUT') {
-          if (!isPublicPath) {
+          if (!isPublicPath) { // Only redirect if not on a public path
             console.log('SessionContextProvider DEBUG: SIGNED_OUT, not public path. Redirecting to /login.');
             navigate('/login');
           } else {
             console.log('SessionContextProvider DEBUG: SIGNED_OUT, on public path. Not redirecting.');
           }
-        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'PASSWORD_RECOVERY') {
-          if (currentSession?.user) {
-            // Verifica se precisa trocar a senha após login/recuperação
-            await checkProfileAndRedirect(currentSession.user, location.pathname);
+        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          if (currentSession && location.pathname === '/login') {
+            console.log('SessionContextProvider DEBUG: SIGNED_IN/INITIAL_SESSION, on /login. Redirecting to /meus-produtos.');
+            navigate('/meus-produtos');
           }
         }
       }
     );
 
-    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null', 'User object reference:', initialSession?.user);
       
+      // Aplica a mesma lógica de detecção de mudança para a sessão inicial
       const currentSessionState = latestSessionRef.current;
       const currentUserState = latestUserRef.current;
       const hasInitialSessionChanged = 
@@ -144,12 +108,12 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       }
       setIsLoading(false);
 
-      if (initialSession) {
-        // Verifica se precisa trocar a senha após a sessão inicial
-        await checkProfileAndRedirect(initialSession.user, location.pathname);
-      } else if (!isPublicPath) {
+      // If no session and not on a public path, redirect to login
+      if (!initialSession && !isPublicPath) {
         console.log('SessionContextProvider DEBUG: No initial session and not public path. Redirecting to /login.');
         navigate('/login');
+      } else if (initialSession) {
+        console.log('SessionContextProvider DEBUG: Initial session exists for user:', initialSession.user.email);
       } else {
         console.log('SessionContextProvider DEBUG: No initial session, but on public path. Not redirecting.');
       }
@@ -159,7 +123,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       console.log('SessionContextProvider DEBUG: Unsubscribing from auth listener.');
       authListener.subscription.unsubscribe();
     };
-  }, [navigate, location.pathname]);
+  }, [navigate, location.pathname]); // As dependências deste useEffect são apenas navigate e location.pathname
+                                    // session e user são acessados via refs para evitar loops de re-renderização.
 
   return (
     <SessionContext.Provider value={{ session, user, isLoading }}>

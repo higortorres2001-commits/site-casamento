@@ -12,7 +12,6 @@ serve(async (req) => {
   }
 
   // Service role client for admin operations
-  // Using the service role key grants admin privileges, including auth.admin methods.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -47,7 +46,6 @@ serve(async (req) => {
     }
 
     // 1. Update user password in Supabase Auth (Admin API)
-    // The client created with the service role key should expose auth.admin
     const { data: updateAuthData, error: updateAuthError } = await supabase.auth.admin.updateUser(
       userId,
       { password: newPassword }
