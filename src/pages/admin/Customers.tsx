@@ -258,6 +258,11 @@ const Customers = () => {
     await fetchCustomers();
     closeEditor();
   };
+  
+  const handlePasswordReset = () => {
+    // Força o refresh da lista para garantir que o status has_changed_password seja atualizado
+    fetchCustomers();
+  };
 
   const filteredCustomers = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -635,11 +640,13 @@ const Customers = () => {
             id: editingCustomer.id,
             name: editingCustomer.name,
             email: editingCustomer.email,
+            cpf: editingCustomer.cpf, // Passando o CPF
             access: editingCustomer.access,
           }}
           products={massProducts}
           onSave={saveCustomerEdits}
           onRemoveAccess={removeAllAccess}
+          onPasswordReset={handlePasswordReset} // Passando o callback
         />
       )}
     </div>

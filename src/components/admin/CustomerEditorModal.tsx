@@ -7,14 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Product } from "@/types";
+import { Loader2, KeyRound } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { showError, showSuccess } from "@/utils/toast";
 
 interface CustomerEditorModalProps {
   open: boolean;
   onClose: () => void;
-  customer: any; // Profile with id, name, email, access
+  customer: any; // Profile with id, name, email, access, cpf
   products: { id: string; name: string }[];
   onSave: (payload: { id: string; name?: string; email?: string; access?: string[] | null }) => void;
   onRemoveAccess?: () => void;
+  onPasswordReset: () => void; // Novo callback para forçar o refresh após reset
 }
 
 const CustomerEditorModal = ({
@@ -24,15 +28,19 @@ const CustomerEditorModal = ({
   products,
   onSave,
   onRemoveAccess,
+  onPasswordReset,
 }: CustomerEditorModalProps) => {
   const [name, setName] = useState<string>(customer?.name ?? "");
   const [email, setEmail] = useState<string>(customer?.email ?? "");
+  const [cpf, setCpf] = useState<string>(customer?.cpf ?? "");
   const [selected, setSelected] = useState<string[]>(customer?.access ?? []);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   useEffect(() => {
     if (customer) {
       setName(customer.name ?? "");
       setEmail(customer.email ?? "");
+      setCpf(customer.cpf ?? "");
       setSelected(customer.access ?? []);
     }
   }, [customer, open]);
@@ -43,6 +51,43 @@ const CustomerEditorModal = ({
 
   const handleSave = () => {
     onSave({ id: customer.id, name, email, access: selected.length ? selected : [] });
+  };
+
+  const handleResetPassword = async () => {
+    if (!customer?.id || !cpf) {
+      showError("CPF ou ID do cliente ausente.");
+      return;
+    }
+
+    if (!window.confirm(`Tem certeza que deseja redefinir a senha de ${customer.name ?? customer.email} para o CPF (${cpf})?`)) {
+      return;
+    }
+
+    setIsResettingPassword(true);
+    const cleanCpf = cpf.replace(/[^\d]+/g, "");
+
+    try {
+      const { error } = await supabase.functions.invoke("reset-customer-password", {
+        body: {
+          userId: customer.id,
+          newPassword: cleanCpf,
+        },
+      });
+
+      if (error) {
+        showError("Erro ao redefinir senha: " + error.message);
+        console.error("Reset password error:", error);
+      } else {
+        showSuccess("Senha redefinida com sucesso! A nova senha é o CPF do cliente.");
+        onPasswordReset(); // Força o refresh da lista de clientes se necessário
+        onClose();
+      }
+    } catch (err: any) {
+      showError("Erro inesperado ao redefinir senha.");
+      console.error("Unexpected reset password error:", err);
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   return (
@@ -57,6 +102,8 @@ const CustomerEditorModal = ({
             <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email do cliente" />
             <Label>Nome</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome do cliente" />
+            <Label>CPF</Label>
+            <Input value={cpf} disabled placeholder="CPF do cliente (somente leitura)" />
           </div>
 
           <div className="space-y-3">
@@ -78,18 +125,34 @@ const CustomerEditorModal = ({
           </div>
         </div>
 
-        <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
+        <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+          <Button
+            variant="outline"
+            className="text-red-600 hover:bg-red-50"
+            onClick={handleResetPassword}
+            disabled={isResettingPassword || !cpf}
+          >
+            {isResettingPassword ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <KeyRound className="h-4 w-4 mr-2" />
+            )}
+            Redefinir Senha (CPF)
           </Button>
-          <Button onClick={handleSave} className="bg-orange-500 hover:bg-orange-600 text-white">
-            Salvar Cliente
-          </Button>
-        </DialogFooter>
+          
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSave} className="bg-orange-500 hover:bg-orange-600 text-white">
+              Salvar Cliente
+            </Button>
+          </DialogFooter>
+        </div>
 
         {onRemoveAccess && (
           <div className="mt-3 text-right">
-            <Button variant="danger" onClick={onRemoveAccess} className="text-white bg-red-500 hover:bg-red-600">
+            <Button variant="destructive" onClick={onRemoveAccess} className="text-white bg-red-500 hover:bg-red-600">
               Remover todos os acessos
             </Button>
           </div>
