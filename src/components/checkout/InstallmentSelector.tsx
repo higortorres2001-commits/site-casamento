@@ -65,11 +65,6 @@ const InstallmentSelector = ({
           ))}
         </SelectContent>
       </Select>
-      {selectedInstallment > 1 && installments.length > 0 && (
-        <p className="text-xs text-gray-500">
-          {installments.find(i => i.installmentNumber === selectedInstallment)?.interestPercentage || 0}% de juros
-        </p>
-      )}
     </div>
   );
 };
