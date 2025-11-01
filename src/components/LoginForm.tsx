@@ -61,8 +61,12 @@ const LoginForm = () => {
     }
 
     setIsLoading(true);
+    
+    // Usar a URL completa para garantir que o Supabase redirecione corretamente
+    const redirectToUrl = `${window.location.origin}/primeira-senha`;
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`,
+      redirectTo: redirectToUrl,
     });
 
     if (error) {

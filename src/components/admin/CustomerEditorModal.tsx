@@ -103,8 +103,11 @@ const CustomerEditorModal = ({
 
     setIsSendingRecovery(true);
     try {
+      // Usar encodeURIComponent para garantir que a URL de redirecionamento seja preservada
+      const redirectToUrl = `${window.location.origin}/primeira-senha`;
+      
       const { error } = await supabase.auth.resetPasswordForEmail(customer.email, {
-        redirectTo: `${window.location.origin}/primeira-senha`, // Redireciona para a tela de troca de senha
+        redirectTo: redirectToUrl,
       });
 
       if (error) {
