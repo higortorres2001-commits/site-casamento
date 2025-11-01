@@ -9,6 +9,8 @@ const corsHeaders = {
 // Função de fallback para calcular parcelas manualmente
 function calculateInstallmentsFallback(totalPrice: number) {
   const installments = [];
+  const MAX_INSTALLMENTS = 6;
+  const MIN_INSTALLMENT_VALUE = 6.00;
   
   // Taxas de juros por parcela (ajuste conforme necessário)
   const interestRates: Record<number, number> = {
@@ -26,10 +28,15 @@ function calculateInstallmentsFallback(totalPrice: number) {
     12: 12.99,
   };
 
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= MAX_INSTALLMENTS; i++) {
     const interestPercentage = interestRates[i] || 0;
     const totalWithInterest = totalPrice * (1 + interestPercentage / 100);
     const installmentValue = totalWithInterest / i;
+
+    if (installmentValue < MIN_INSTALLMENT_VALUE) {
+      // Se o valor da parcela for menor que R$ 6,00, paramos de adicionar parcelas
+      break;
+    }
 
     installments.push({
       installmentNumber: i,

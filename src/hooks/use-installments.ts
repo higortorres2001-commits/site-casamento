@@ -19,6 +19,8 @@ interface UseInstallmentsProps {
 // Função local de fallback para calcular parcelas
 function calculateInstallmentsLocally(totalPrice: number): InstallmentOption[] {
   const installments: InstallmentOption[] = [];
+  const MAX_INSTALLMENTS = 6;
+  const MIN_INSTALLMENT_VALUE = 6.00;
   
   const interestRates: Record<number, number> = {
     1: 0,
@@ -35,10 +37,15 @@ function calculateInstallmentsLocally(totalPrice: number): InstallmentOption[] {
     12: 12.99,
   };
 
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= MAX_INSTALLMENTS; i++) {
     const interestPercentage = interestRates[i] || 0;
     const totalWithInterest = totalPrice * (1 + interestPercentage / 100);
     const installmentValue = totalWithInterest / i;
+
+    if (installmentValue < MIN_INSTALLMENT_VALUE) {
+      // Se o valor da parcela for menor que R$ 6,00, paramos de adicionar parcelas
+      break;
+    }
 
     installments.push({
       installmentNumber: i,
