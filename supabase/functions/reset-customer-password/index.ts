@@ -25,6 +25,13 @@ serve(async (req) => {
     userId = requestBody.userId;
     const newPassword = requestBody.newPassword;
 
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'reset-customer-password',
+      message: 'Attempting password reset.',
+      metadata: { userId, passwordLength: newPassword?.length, requestBody }
+    });
+
     if (!userId || !newPassword) {
       await supabase.from('logs').insert({
         level: 'error',
@@ -91,7 +98,7 @@ serve(async (req) => {
       level: 'error',
       context: 'reset-customer-password',
       message: 'Unhandled error in edge function.',
-      metadata: { error: error?.message, stack: error?.stack, userId }
+      metadata: { error: error?.message, stack: error?.stack, userId, requestBody }
     });
     return new Response(JSON.stringify({ error: error?.message ?? 'Unknown error' }), {
       status: 500,
