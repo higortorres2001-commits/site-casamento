@@ -232,36 +232,46 @@ const Checkout = () => {
       }
     }
 
-    try {
-      const productIdsToOrder = [mainProduct.id, ...selectedOrderBumps];
-      const payload = {
-        name: checkoutFormData.name,
-        email: checkoutFormData.email,
-        cpf: checkoutFormData.cpf,
-        whatsapp: checkoutFormData.whatsapp,
-        productIds: productIdsToOrder,
-        coupon_code: appliedCoupon?.code || null,
-        paymentMethod,
-        creditCard: paymentMethod === "CREDIT_CARD" ? creditCardFormData : undefined,
-        metaTrackingData: {
-          ...metaTrackingData,
-          event_source_url: window.location.href,
-        },
-      };
+    const productIdsToOrder = [mainProduct.id, ...selectedOrderBumps];
+    const payload = {
+      name: checkoutFormData.name,
+      email: checkoutFormData.email,
+      cpf: checkoutFormData.cpf,
+      whatsapp: checkoutFormData.whatsapp,
+      productIds: productIdsToOrder,
+      coupon_code: appliedCoupon?.code || null,
+      paymentMethod,
+      creditCard: paymentMethod === "CREDIT_CARD" ? creditCardFormData : undefined,
+      metaTrackingData: {
+        ...metaTrackingData,
+        event_source_url: window.location.href,
+      },
+    };
 
+    try {
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: payload,
       });
 
       if (error) {
-        showError("Erro ao finalizar compra: " + error.message);
-        console.error("Checkout error:", error);
+        // Log detalhado do erro da Edge Function
         await supabase.from("logs").insert({
           level: "error",
           context: "client-checkout",
           message: `Failed to finalize checkout: ${error.message}`,
-          metadata: { userId: user?.id, payload, error: error.message },
+          metadata: { 
+            userId: user?.id, 
+            payload, 
+            errorName: error.name,
+            errorMessage: error.message,
+            errorDetails: JSON.stringify(error),
+          },
         });
+        
+        // Mensagem de erro mais clara para o usuário
+        showError(`Erro ao finalizar compra: ${error.message || 'Falha na comunicação com o servidor de pagamento.'}`);
+        console.error("Checkout error:", error);
+        
       } else if (data) {
         showSuccess("Pedido criado com sucesso!");
         setAsaasPaymentId(data.id);
@@ -281,14 +291,15 @@ const Checkout = () => {
         });
       }
     } catch (err: any) {
-      showError("Erro inesperado ao finalizar compra: " + err.message);
-      console.error("Unexpected checkout error:", err);
+      // Log de erro inesperado (e.g., erro de rede antes de chegar ao Supabase)
       await supabase.from("logs").insert({
         level: "error",
         context: "client-checkout",
         message: `Unhandled error during checkout: ${err.message}`,
-        metadata: { userId: user?.id, errorStack: err.stack },
+        metadata: { userId: user?.id, errorStack: err.stack, payload },
       });
+      showError("Erro inesperado ao finalizar compra. Verifique sua conexão.");
+      console.error("Unexpected checkout error:", err);
     } finally {
       setIsSubmitting(false);
     }

@@ -90,7 +90,8 @@ export function useInstallments({ totalPrice, enabled }: UseInstallmentsProps) {
         console.log('useInstallments - Response:', { data, error: functionError });
 
         if (functionError) {
-          throw functionError;
+          // Se houver um erro na chamada da função (incluindo falha de rede/comunicação)
+          throw new Error(functionError.message || 'Failed to invoke calculate-installments function.');
         }
 
         if (data && data.installments && Array.isArray(data.installments) && data.installments.length > 0) {
@@ -104,10 +105,10 @@ export function useInstallments({ totalPrice, enabled }: UseInstallmentsProps) {
         }
       } catch (err: any) {
         console.error('useInstallments - Error, using local fallback:', err);
-        // Em caso de erro, usar cálculo local
+        // Em caso de erro (incluindo falha de rede), usar cálculo local
         const localInstallments = calculateInstallmentsLocally(debouncedPrice);
         setInstallments(localInstallments);
-        setError(null); // Não mostrar erro se conseguimos calcular localmente
+        setError("Não foi possível calcular as parcelas com o servidor. Usando cálculo padrão.");
       } finally {
         setIsLoading(false);
       }
