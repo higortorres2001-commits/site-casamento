@@ -22,7 +22,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
 
 const formSchema = z.object({
-  newPassword: z.string().min(6, "A nova senha deve ter pelo menos 6 caracteres."),
+  newPassword: z.string()
+    .min(6, "A nova senha deve ter pelo menos 6 caracteres.")
+    .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/, 
+      "A senha deve conter pelo menos uma letra e um número"),
   confirmPassword: z.string().min(6, "A confirmação da senha deve ter pelo menos 6 caracteres."),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "As senhas não coincidem.",
@@ -64,6 +67,16 @@ const UpdatePassword = () => {
       });
 
       if (updateAuthError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'update-password',
+          message: 'Failed to update password in auth',
+          metadata: { 
+            userId: user.id, 
+            errorType: updateAuthError.name, 
+            errorMessage: updateAuthError.message 
+          }
+        });
         showError("Erro ao atualizar a senha: " + updateAuthError.message);
         console.error("Update password error:", updateAuthError);
         return;
@@ -72,18 +85,49 @@ const UpdatePassword = () => {
       // 2. Update has_changed_password in profiles table
       const { error: updateProfileError } = await supabase
         .from('profiles')
-        .update({ has_changed_password: true })
+        .update({ 
+          has_changed_password: true,
+          primeiro_acesso: false 
+        })
         .eq('id', user.id);
 
       if (updateProfileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'update-password',
+          message: 'Failed to update profile after password change',
+          metadata: { 
+            userId: user.id, 
+            errorType: updateProfileError.name, 
+            errorMessage: updateProfileError.message 
+          }
+        });
         showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
         console.error("Update profile has_changed_password error:", updateProfileError);
         // Even if profile update fails, password is changed, so proceed.
       }
 
+      // Log successful password update
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'update-password',
+        message: 'User successfully updated password',
+        metadata: { userId: user.id }
+      });
+
       showSuccess("Senha atualizada com sucesso! Você será redirecionado.");
       navigate("/meus-produtos"); // Redirect to products page after successful update
     } catch (error: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'update-password',
+        message: 'Unexpected error during password update',
+        metadata: { 
+          userId: user.id, 
+          errorMessage: error.message, 
+          errorStack: error.stack 
+        }
+      });
       showError("Erro inesperado: " + error.message);
       console.error("Unexpected error:", error);
     } finally {

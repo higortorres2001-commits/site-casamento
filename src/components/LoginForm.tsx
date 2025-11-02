@@ -38,19 +38,76 @@ const LoginForm = () => {
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setIsLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
+    try {
+      const { error, data: sessionData } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
 
-    if (error) {
-      showError("Erro ao fazer login: E-mail ou senha inválidos.");
-      console.error("Login error:", error);
-    } else {
+      if (error) {
+        console.error("Login error details:", error);
+        
+        // Adicionar logs mais detalhados para diagnóstico
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'login-attempt',
+          message: 'Login failed',
+          metadata: { 
+            email: data.email, 
+            errorType: error.name, 
+            errorMessage: error.message 
+          }
+        });
+
+        // Mensagens de erro mais específicas
+        if (error.message.includes('Invalid login credentials')) {
+          showError("Email ou senha incorretos. Verifique suas credenciais.");
+        } else if (error.message.includes('Email not confirmed')) {
+          showError("Por favor, confirme seu email antes de fazer login.");
+        } else {
+          showError("Erro ao fazer login. Tente novamente.");
+        }
+        return;
+      }
+
+      // Verificar se o usuário existe no perfil
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, has_changed_password')
+        .eq('id', sessionData.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        showError("Perfil do usuário não encontrado.");
+        await supabase.auth.signOut();
+        return;
+      }
+
+      // Se nunca trocou a senha, redirecionar para troca
+      if (!profile.has_changed_password) {
+        navigate("/primeira-senha");
+        return;
+      }
+
+      // Log de login bem-sucedido
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'login-success',
+        message: 'User logged in successfully',
+        metadata: { 
+          userId: sessionData.user.id, 
+          email: sessionData.user.email 
+        }
+      });
+
       showSuccess("Login realizado com sucesso!");
       navigate("/meus-produtos");
+    } catch (err: any) {
+      console.error("Unexpected login error:", err);
+      showError("Erro inesperado. Tente novamente.");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleForgotPassword = async () => {
@@ -61,17 +118,23 @@ const LoginForm = () => {
     }
 
     setIsLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/update-password`,
-    });
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/update-password`,
+      });
 
-    if (error) {
-      showError("Erro ao solicitar recuperação de senha: " + error.message);
-      console.error("Forgot password error:", error);
-    } else {
-      showSuccess("Um link de recuperação de senha foi enviado para o seu email.");
+      if (error) {
+        showError("Erro ao solicitar recuperação de senha: " + error.message);
+        console.error("Forgot password error:", error);
+      } else {
+        showSuccess("Um link de recuperação de senha foi enviado para o seu email.");
+      }
+    } catch (err: any) {
+      showError("Erro inesperado ao solicitar recuperação de senha.");
+      console.error("Unexpected forgot password error:", err);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   return (
