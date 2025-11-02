@@ -8,7 +8,7 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import Products from "./pages/admin/Products";
 import Coupons from "./pages/admin/Coupons";
-import Customers from "./pages/admin/Customers"; // NEW: admin customers page
+import Customers from "./pages/admin/Customers";
 import Checkout from "./pages/Checkout";
 import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
@@ -16,6 +16,7 @@ import Confirmation from "./pages/Confirmation";
 import ProcessingPayment from "./pages/ProcessingPayment";
 import Logs from "./pages/admin/Logs";
 import UpdatePassword from "./pages/UpdatePassword";
+import ResetPassword from "./pages/ResetPassword"; // Importar a nova página
 import AdminLayout from "./components/layout/AdminLayout";
 import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
@@ -35,13 +36,14 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/checkout/:productId" element={<Checkout />} />
             <Route path="/primeira-senha" element={<UpdatePassword />} />
+            <Route path="/update-password" element={<ResetPassword />} /> {/* Nova rota */}
 
             <Route element={<AdminLayout />}>
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
-              <Route path="/admin/customers" element={<Customers />} /> {/* NEW: Customers admin route */} 
+              <Route path="/admin/customers" element={<Customers />} />
               <Route path="/admin/logs" element={<Logs />} />
-              <Route path="/admin/product-tags" element={<ProductTags />} /> {/* Novo: Tags admin */}
+              <Route path="/admin/product-tags" element={<ProductTags />} />
             </Route>
 
             <Route element={<PublicLayout />}>
