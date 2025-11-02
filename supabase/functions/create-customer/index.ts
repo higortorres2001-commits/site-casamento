@@ -11,7 +11,6 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Service role client for admin operations
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -22,53 +21,60 @@ serve(async (req) => {
     const { email, name, cpf, whatsapp } = payload;
 
     if (!email || !name || !cpf || !whatsapp) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-customer',
-        message: 'Missing required fields (email, name, cpf, whatsapp) in request.',
-        metadata: { payload }
-      });
       return new Response(JSON.stringify({ error: 'Missing required fields.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Sanitize CPF to use as initial password
     const sanitizedCpf = cpf.replace(/[^\d]+/g, '');
+    const defaultPassword = `Sem123${sanitizedCpf.substring(0, 3)}`;
 
-    // Check if user already exists
-    const { data: existing, error: listError } = await supabase.auth.admin.listUsers({ email });
-    if (listError) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-customer',
-        message: 'Error listing users.',
-        metadata: { email, listError: listError.message }
-      });
-      return new Response(JSON.stringify({ error: 'Failed to check existing user.' }), {
-        status: 500,
+    // Primeiro, verificar se o usuário já existe no Auth
+    const { data: existingUsers, error: listError } = await supabase.auth.admin.listUsers({ email });
+    
+    let userId: string;
+
+    if (existingUsers && existingUsers.users.length > 0) {
+      // Usuário já existe no Auth
+      userId = existingUsers.users[0].id;
+      
+      // Tentar atualizar o perfil do usuário
+      const { error: upsertError } = await supabase
+        .from('profiles')
+        .upsert({ 
+          id: userId, 
+          name, 
+          cpf: sanitizedCpf, 
+          email, 
+          whatsapp,
+          primeiro_acesso: true,
+          has_changed_password: false
+        }, {
+          onConflict: 'id'
+        });
+
+      if (upsertError) {
+        console.error('Error upserting profile:', upsertError);
+        return new Response(JSON.stringify({ error: 'Failed to update user profile.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ 
+        id: userId, 
+        message: 'Usuário atualizado com sucesso.' 
+      }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (existing && existing.users && existing.users.length > 0) {
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'create-customer',
-        message: 'User already exists.',
-        metadata: { email }
-      });
-      return new Response(JSON.stringify({ error: 'Usuário já cadastrado.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Create user with CPF as initial password
+    // Se o usuário não existe, criar novo usuário
     const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
       email,
-      password: sanitizedCpf,
+      password: defaultPassword,
       email_confirm: true,
       user_metadata: { 
         name, 
@@ -78,24 +84,18 @@ serve(async (req) => {
     });
 
     if (createError || !newUser?.user) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-customer',
-        message: 'Failed to create new user account.',
-        metadata: { email, error: createError?.message }
-      });
-      return new Response(JSON.stringify({ error: 'Falha ao criar usuário.' }), {
+      return new Response(JSON.stringify({ error: 'Failed to create user account.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const userId = newUser.user.id;
+    userId = newUser.user.id;
 
-    // Seed profile with additional checks
+    // Criar perfil
     const { error: insertProfileError } = await supabase
       .from('profiles')
-      .upsert({ 
+      .insert({ 
         id: userId, 
         name, 
         cpf: sanitizedCpf, 
@@ -103,50 +103,26 @@ serve(async (req) => {
         whatsapp,
         primeiro_acesso: true,
         has_changed_password: false
-      }, {
-        onConflict: 'id'
       });
 
     if (insertProfileError) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-customer',
-        message: 'Failed to insert/update profile for new user.',
-        metadata: { userId, error: insertProfileError.message }
-      });
-      return new Response(JSON.stringify({ error: 'Falha ao criar perfil.' }), {
+      return new Response(JSON.stringify({ error: 'Failed to create profile.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Log successful user creation
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'create-customer',
-      message: 'New user and profile created successfully.',
-      metadata: { userId, email, name }
-    });
-
     return new Response(JSON.stringify({ 
       id: userId, 
-      email, 
-      name,
-      message: 'Usuário criado com sucesso. Use o CPF como senha inicial.' 
+      message: 'Usuário criado com sucesso.' 
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    console.error('Create customer edge function error:', error);
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'create-customer',
-      message: 'Unhandled error in edge function.',
-      metadata: { error: error?.message, stack: error?.stack }
-    });
-    return new Response(JSON.stringify({ error: error?.message ?? 'Unknown error' }), {
+    console.error('Unexpected error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
