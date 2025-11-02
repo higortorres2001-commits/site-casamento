@@ -76,6 +76,10 @@ serve(async (req) => {
       });
     }
 
+    // Limpar CPF - remover qualquer formatação
+    const cleanCpf = cpf.replace(/[^0-9]/g, '');
+    console.log('Cleaned CPF for password:', cleanCpf);
+
     // Check if user exists
     const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ email });
 
@@ -99,18 +103,19 @@ serve(async (req) => {
       
       const { error: updateProfileError } = await supabase
         .from('profiles')
-        .update({ name, cpf, email, whatsapp })
+        .update({ name, cpf: cleanCpf, email, whatsapp })
         .eq('id', userId);
 
       if (updateProfileError) {
         console.error('Error updating profile:', updateProfileError);
       }
     } else {
+      // Criar usuário com CPF limpo (apenas números) como senha
       const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
         email,
-        password: cpf,
+        password: cleanCpf, // Usar CPF limpo como senha
         email_confirm: true,
-        user_metadata: { name, cpf, whatsapp },
+        user_metadata: { name, cpf: cleanCpf, whatsapp },
       });
 
       if (createUserError || !newUser?.user) {
@@ -119,7 +124,7 @@ serve(async (req) => {
           level: 'error',
           context: 'create-asaas-payment',
           message: 'Failed to create user',
-          metadata: { email, error: createUserError?.message }
+          metadata: { email, cpf: cleanCpf, error: createUserError?.message }
         });
         return new Response(JSON.stringify({ error: 'Failed to create user account' }), {
           status: 500,
@@ -127,7 +132,15 @@ serve(async (req) => {
         });
       }
       userId = newUser.user.id;
-      console.log(`New user created: ${userId}`);
+      console.log(`New user created: ${userId} with password length: ${cleanCpf.length}`);
+      
+      // Log para debug
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'create-asaas-payment',
+        message: 'New user created with CPF as password',
+        metadata: { userId, email, cpfLength: cleanCpf.length }
+      });
     }
 
     // Fetch products
@@ -229,7 +242,7 @@ serve(async (req) => {
       'access_token': ASAAS_API_KEY,
     };
 
-    const customerCpfCnpj = cpf.replace(/[^0-9]/g, '');
+    const customerCpfCnpj = cleanCpf; // Usar CPF já limpo
     const formattedTotalPrice = totalPrice.toFixed(2);
 
     let asaasPayload: any = {

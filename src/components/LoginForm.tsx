@@ -39,9 +39,12 @@ const LoginForm = () => {
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
+      // Remove qualquer formatação da senha (caso o usuário digite o CPF formatado)
+      const cleanPassword = data.password.replace(/\D/g, '');
+      
       const { error, data: sessionData } = await supabase.auth.signInWithPassword({
         email: data.email,
-        password: data.password,
+        password: cleanPassword, // Usa a senha limpa (apenas números)
       });
 
       if (error) {
@@ -55,13 +58,14 @@ const LoginForm = () => {
           metadata: { 
             email: data.email, 
             errorType: error.name, 
-            errorMessage: error.message 
+            errorMessage: error.message,
+            passwordLength: cleanPassword.length
           }
         });
 
         // Mensagens de erro mais específicas
         if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos. Verifique suas credenciais.");
+          showError("Email ou senha incorretos. Se é seu primeiro acesso, use apenas os números do seu CPF como senha (sem pontos ou traços).");
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
@@ -142,7 +146,11 @@ const LoginForm = () => {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="text-center">
           <p className="text-lg text-gray-700 mb-2">Bem-vindo! Use o e-mail da sua compra para entrar.</p>
-          <p className="text-sm text-gray-600 mb-6">Primeiro acesso? Sua senha são os números do seu CPF (sem pontos ou traços).</p>
+          <p className="text-sm text-gray-600 mb-6">
+            <strong>Primeiro acesso?</strong> Sua senha são apenas os <strong>números do seu CPF</strong> (sem pontos ou traços).
+            <br />
+            <span className="text-xs text-gray-500">Exemplo: se seu CPF é 123.456.789-00, use 12345678900</span>
+          </p>
         </div>
 
         <FormField
@@ -171,7 +179,7 @@ const LoginForm = () => {
               <FormLabel>Senha</FormLabel>
               <FormControl>
                 <Input
-                  placeholder="Sua senha"
+                  placeholder="Apenas números do CPF no primeiro acesso"
                   {...field}
                   className="focus:ring-orange-500 focus:border-orange-500"
                   type="password"
