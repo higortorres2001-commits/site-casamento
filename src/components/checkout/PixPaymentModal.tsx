@@ -35,6 +35,7 @@ const PixPaymentModal = ({
   const pollingIntervalRef = useRef<number | null>(null);
   const pollingTimeoutRef = useRef<number | null>(null); // Ref for the timeout
   const [isPolling, setIsPolling] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(false);
 
   const checkPaymentStatus = async () => {
     if (!asaasPaymentId) {
@@ -52,9 +53,15 @@ const PixPaymentModal = ({
         // showError("Erro ao verificar status do pagamento."); // Avoid spamming toasts
       } else if (data && (data.status === "CONFIRMED" || data.status === "RECEIVED")) {
         showSuccess("Seu pagamento foi confirmado!");
+        
+        // Verificar se o acesso foi concedido
+        if (data.accessGranted) {
+          setAccessGranted(true);
+        }
+        
         stopPolling();
         onClose(); // Close the modal
-        navigate("/confirmacao");
+        navigate("/confirmacao", { state: { orderId, totalPrice } });
       } else {
         console.log("Payment status still pending:", data?.status);
       }
@@ -209,6 +216,13 @@ const PixPaymentModal = ({
               ) : (
                 "Já paguei, verificar acesso"
               )}
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full text-gray-600"
+              onClick={handleGoToProcessing}
+            >
+              Fechar e continuar depois
             </Button>
           </div>
         </div>
