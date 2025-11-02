@@ -103,11 +103,53 @@ const Confirmation = () => {
     }
   }, [location.state, location.search, user, isSessionLoading]);
 
-  // Rest of the component remains the same
-  // ... (keep all other code from the previous Confirmation component)
+  // Loading state
+  if (isLoadingData || isSessionLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
-    // Existing return statement from the previous implementation
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+          <CardTitle className="text-2xl font-bold text-gray-800">
+            Compra Confirmada!
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center space-y-4">
+          {orderId && (
+            <p className="text-gray-600">
+              Número do pedido: <span className="font-semibold">{orderId.substring(0, 8)}</span>
+            </p>
+          )}
+          {totalPrice && (
+            <p className="text-xl font-bold text-gray-900">
+              Total: R$ {totalPrice.toFixed(2)}
+            </p>
+          )}
+          <p className="text-gray-600">
+            Você receberá um e-mail com os detalhes de acesso em breve.
+          </p>
+          <div className="flex flex-col space-y-2">
+            <Link to="/meus-produtos" className="w-full">
+              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+                Acessar Meus Produtos
+              </Button>
+            </Link>
+            <Link to="/" className="w-full">
+              <Button variant="outline" className="w-full">
+                Voltar para Início
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 
