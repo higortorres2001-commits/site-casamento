@@ -80,12 +80,52 @@ export function useInstallments({ totalPrice, enabled }: UseInstallmentsProps) {
       setError(null);
 
       try {
-        const { data, error: functionError } = await supabase.functions.invoke(
-          'calculate-installments',
-          {
-            body: { totalPrice: debouncedPrice },
+        let data;
+        let functionError;
+        
+        // Primeira tentativa: usar o SDK do Supabase
+        try {
+          const result = await supabase.functions.invoke(
+            'calculate-installments',
+            {
+              body: { totalPrice: debouncedPrice },
+            }
+          );
+          data = result.data;
+          functionError = result.error;
+        } catch (sdkError) {
+          console.error('SDK invocation failed, trying direct fetch:', sdkError);
+          
+          // Se falhar, tenta chamada direta via fetch
+          const supabaseUrl = "https://hsxhmpxrtfvydnfxtcbx.supabase.co";
+          const functionUrl = `${supabaseUrl}/functions/v1/calculate-installments`;
+          
+          // Obter o token de autenticação atual (se o usuário estiver logado)
+          const { data: authData } = await supabase.auth.getSession();
+          const token = authData?.session?.access_token;
+          
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          
+          // Adicionar token de autenticação se disponível
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
           }
-        );
+          
+          // Fazer chamada direta via fetch
+          const response = await fetch(functionUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ totalPrice: debouncedPrice }),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Direct fetch failed: ${response.statusText}`);
+          }
+          
+          data = await response.json();
+        }
 
         console.log('useInstallments - Response:', { data, error: functionError });
 
