@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -14,18 +14,27 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import PasswordRequirements from "@/components/PasswordRequirements";
 
 const formSchema = z.object({
   newPassword: z.string()
-    .min(6, "A nova senha deve ter pelo menos 6 caracteres.")
-    .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/, 
-      "A senha deve conter pelo menos uma letra e um número"),
-  confirmPassword: z.string().min(6, "A confirmação da senha deve ter pelo menos 6 caracteres."),
+    .refine(
+      (password) => {
+        const hasMinLength = password.length >= 6;
+        const hasLetter = /[a-zA-Z]/.test(password);
+        const hasDigit = /\d/.test(password);
+        return hasMinLength && hasLetter && hasDigit;
+      },
+      { 
+        message: "A senha não atende aos requisitos" 
+      }
+    ),
+  confirmPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "As senhas não coincidem.",
   path: ["confirmPassword"],
@@ -33,6 +42,7 @@ const formSchema = z.object({
 
 const ResetPassword = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -43,16 +53,16 @@ const ResetPassword = () => {
     },
   });
 
+  const newPassword = form.watch("newPassword");
+
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
-      // Attempt to update the password
       const { error } = await supabase.auth.updateUser({
         password: data.newPassword,
       });
 
       if (error) {
-        // Log the error
         await supabase.from('logs').insert({
           level: 'error',
           context: 'reset-password',
@@ -63,26 +73,20 @@ const ResetPassword = () => {
           }
         });
 
-        // Show user-friendly error
         showError("Erro ao redefinir a senha: " + error.message);
         console.error("Reset password error:", error);
         return;
       }
 
-      // Log successful password reset
       await supabase.from('logs').insert({
         level: 'info',
         context: 'reset-password',
         message: 'Password successfully reset',
       });
 
-      // Show success message
       showSuccess("Senha redefinida com sucesso!");
-
-      // Redirect to login page
       navigate("/login");
     } catch (error: any) {
-      // Log unexpected errors
       await supabase.from('logs').insert({
         level: 'error',
         context: 'reset-password',
@@ -93,7 +97,6 @@ const ResetPassword = () => {
         }
       });
 
-      // Show user-friendly error
       showError("Erro inesperado: " + error.message);
       console.error("Unexpected error:", error);
     } finally {
@@ -121,32 +124,55 @@ const ResetPassword = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Nova Senha</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="Sua nova senha"
-                        {...field}
-                        className="focus:ring-orange-500 focus:border-orange-500"
-                      />
-                    </FormControl>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Sua nova senha"
+                          {...field}
+                          className="focus:ring-orange-500 focus:border-orange-500 pr-10"
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <PasswordRequirements password={newPassword} />
               <FormField
                 control={form.control}
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Confirmar Nova Senha</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="Confirme sua nova senha"
-                        {...field}
-                        className="focus:ring-orange-500 focus:border-orange-500"
-                      />
-                    </FormControl>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Confirme sua nova senha"
+                          {...field}
+                          className="focus:ring-orange-500 focus:border-orange-500 pr-10"
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
