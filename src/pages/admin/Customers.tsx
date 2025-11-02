@@ -38,11 +38,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import { showError, showSuccess } from "@/utils/toast";
+import { useNavigate } from "react-router-dom";
 
-// Tipos e constantes anteriores permanecem iguais
+// Definir tipos
+type CustomerRow = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  cpf?: string | null;
+  whatsapp?: string | null;
+  access?: string[];
+  lastOrder?: {
+    id: string;
+    status: string;
+    total_price: number;
+    created_at: string;
+  } | null;
+};
+
+type OrderSnapshot = NonNullable<CustomerRow['lastOrder']>;
+
+const ADMIN_EMAIL = "higor.torres8@gmail.com";
 
 const Customers = () => {
   const { user, isLoading: isSessionLoading } = useSession();
+  const navigate = useNavigate();
+
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -54,17 +75,25 @@ const Customers = () => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
 
+  // Verificação de admin
+  useEffect(() => {
+    if (!isSessionLoading && (!user || user.email !== ADMIN_EMAIL)) {
+      showError("Você não tem permissão para acessar esta página.");
+      navigate('/meus-produtos');
+    }
+  }, [user, isSessionLoading, navigate]);
+
   const fetchCustomers = useCallback(async () => {
+    if (!user || user.email !== ADMIN_EMAIL) return;
+
     setLoading(true);
     try {
-      // Log de depuração para rastrear o número de clientes
       console.log('Fetching customers - Start');
 
-      // Busca todos os perfis sem limite
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
         .select("id, name, email, cpf, whatsapp, access")
-        .order('created_at', { ascending: false }); // Ordenar por data de criação
+        .order('created_at', { ascending: false });
 
       console.log('Fetched profiles:', profiles?.length || 0);
 
@@ -75,8 +104,6 @@ const Customers = () => {
       }
 
       const profileIds = profiles.map((profile) => profile.id);
-
-      console.log('Profile IDs:', profileIds);
 
       const orderMap: Record<string, OrderSnapshot> = {};
 
@@ -125,10 +152,136 @@ const Customers = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  // Resto do código permanece igual
-  // ...
+  useEffect(() => {
+    if (user && user.email === ADMIN_EMAIL) {
+      fetchCustomers();
+    }
+  }, [user, fetchCustomers]);
+
+  // Renderização condicional para admin
+  if (isSessionLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user || user.email !== ADMIN_EMAIL) {
+    return null;
+  }
+
+  return (
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Gerenciar Clientes</h1>
+        <Button 
+          onClick={() => setIsCreateModalOpen(true)}
+          className="bg-green-600 hover:bg-green-700 text-white"
+        >
+          <Users className="mr-2 h-4 w-4" /> Novo Cliente
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : customers.length === 0 ? (
+        <div className="text-center text-gray-600 py-10">
+          Nenhum cliente encontrado.
+        </div>
+      ) : (
+        <div className="bg-white shadow rounded-lg overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>CPF</TableHead>
+                <TableHead>WhatsApp</TableHead>
+                <TableHead>Produtos</TableHead>
+                <TableHead>Último Pedido</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {customers.map((customer) => (
+                <TableRow key={customer.id}>
+                  <TableCell>{customer.name || 'N/A'}</TableCell>
+                  <TableCell>{customer.email || 'N/A'}</TableCell>
+                  <TableCell>{customer.cpf ? formatCPF(customer.cpf) : 'N/A'}</TableCell>
+                  <TableCell>{customer.whatsapp ? formatWhatsapp(customer.whatsapp) : 'N/A'}</TableCell>
+                  <TableCell>{customer.access?.length || 0} produtos</TableCell>
+                  <TableCell>
+                    {customer.lastOrder ? (
+                      <>
+                        {new Date(customer.lastOrder.created_at).toLocaleDateString()}
+                        <Badge variant={customer.lastOrder.status === 'paid' ? 'default' : 'destructive'} className="ml-2">
+                          {customer.lastOrder.status}
+                        </Badge>
+                      </>
+                    ) : (
+                      'Sem pedidos'
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => {
+                        setEditingCustomer(customer);
+                        setIsEditorOpen(true);
+                      }}
+                    >
+                      <PencilLine className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Modais de criação e edição de clientes */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Criar Novo Cliente</DialogTitle>
+          </DialogHeader>
+          <CreateCustomerForm 
+            onCreated={() => {
+              setIsCreateModalOpen(false);
+              fetchCustomers();
+            }} 
+          />
+        </DialogContent>
+      </Dialog>
+
+      {editingCustomer && (
+        <CustomerEditorModal
+          open={isEditorOpen}
+          onClose={() => {
+            setIsEditorOpen(false);
+            setEditingCustomer(null);
+          }}
+          customer={editingCustomer}
+          products={[]} // Você pode adicionar lógica para buscar produtos
+          onSave={() => {
+            setIsEditorOpen(false);
+            fetchCustomers();
+          }}
+          onPasswordReset={() => {
+            setIsEditorOpen(false);
+            fetchCustomers();
+          }}
+        />
+      )}
+    </div>
+  );
 };
 
 export default Customers;
