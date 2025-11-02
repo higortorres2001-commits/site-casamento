@@ -24,13 +24,6 @@ const formSchema = z.object({
   password: z.string().min(1, "A senha é obrigatória"),
 });
 
-// Função para gerar a senha padrão baseada no CPF (mesma lógica da edge function)
-const generateDefaultPassword = (cpf: string): string => {
-  const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
-  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
-};
-
 const LoginForm = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -69,7 +62,7 @@ const LoginForm = () => {
 
         // Mensagens de erro mais específicas
         if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos. Se é seu primeiro acesso, use a senha padrão informada no email de confirmação.");
+          showError("Email ou senha incorretos.");
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
@@ -81,7 +74,7 @@ const LoginForm = () => {
       // Verificar se o usuário existe no perfil
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, has_changed_password, cpf')
+        .select('id, has_changed_password, primeiro_acesso, cpf')
         .eq('id', sessionData.user.id)
         .single();
 
@@ -92,7 +85,7 @@ const LoginForm = () => {
       }
 
       // Se nunca trocou a senha, redirecionar para troca
-      if (!profile.has_changed_password) {
+      if (!profile.has_changed_password || profile.primeiro_acesso) {
         navigate("/primeira-senha");
         return;
       }
@@ -151,9 +144,7 @@ const LoginForm = () => {
         <div className="text-center">
           <p className="text-lg text-gray-700 mb-2">Bem-vindo! Use o e-mail da sua compra para entrar.</p>
           <p className="text-sm text-gray-600 mb-6">
-            <strong>Primeiro acesso?</strong> Sua senha padrão é <strong>Sem123</strong> seguido dos <strong>3 primeiros números do seu CPF</strong>.
-            <br />
-            <span className="text-xs text-gray-500">Exemplo: se seu CPF é 123.456.789-00, use Sem123123</span>
+            <strong>Primeiro acesso?</strong> Use a senha padrão informada no email de confirmação.
           </p>
         </div>
 

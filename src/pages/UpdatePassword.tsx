@@ -129,11 +129,7 @@ const UpdatePassword = () => {
       showSuccess("Senha atualizada com sucesso! Você será redirecionado.");
       
       // Redirecionar para a página apropriada
-      if (isPrimeiroAcesso) {
-        navigate("/meus-produtos");
-      } else {
-        navigate("/login");
-      }
+      navigate("/meus-produtos");
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
@@ -165,11 +161,11 @@ const UpdatePassword = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-gray-800 mb-2">
-            {isPrimeiroAcesso ? "Primeiro Acesso: Troque sua Senha" : "Redefinir Senha"}
+            {isPrimeiroAcesso ? "Primeiro Acesso: Defina sua Senha" : "Redefinir Senha"}
           </CardTitle>
           <p className="text-md text-gray-600">
             {isPrimeiroAcesso 
-              ? "Por segurança, por favor, defina uma nova senha."
+              ? "Por segurança, defina uma nova senha para sua conta."
               : "Digite sua nova senha abaixo"}
           </p>
         </CardHeader>
@@ -240,7 +236,7 @@ const UpdatePassword = () => {
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg"
                 disabled={isLoading}
               >
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Atualizar Senha"}
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Definir Senha"}
               </Button>
             </form>
           </Form>
