@@ -23,17 +23,25 @@ serve(async (req) => {
 
   try {
     requestBody = await req.json();
-    console.log('create-asaas-payment: Received request body:', requestBody);
+    console.log('create-asaas-payment: Received request body:', JSON.stringify(requestBody));
+    
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-start',
+      message: 'Edge function invoked',
+      metadata: { requestBody }
+    });
+
     const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = requestBody;
 
     if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Missing required fields (name, email, cpf, whatsapp, productIds) in request body.',
+        message: 'Missing required fields',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'Missing required fields (name, email, cpf, whatsapp, productIds) in request body.' }), {
+      return new Response(JSON.stringify({ error: 'Missing required fields (name, email, cpf, whatsapp, productIds)' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -43,10 +51,10 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Payment method is missing from the request body.',
+        message: 'Payment method is missing',
         metadata: { requestBody }
       });
-      return new Response(JSON.stringify({ error: 'Payment method is missing from the request body.' }), {
+      return new Response(JSON.stringify({ error: 'Payment method is missing' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -54,49 +62,32 @@ serve(async (req) => {
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
     const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
-    const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
-    const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
 
-    if (!ASAAS_API_KEY) {
+    if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'ASAAS_API_KEY not set in Supabase secrets.',
-        metadata: { requestBody }
+        message: 'ASAAS credentials not configured',
+        metadata: { hasApiKey: !!ASAAS_API_KEY, hasBaseUrl: !!ASAAS_BASE_URL }
       });
-      return new Response(JSON.stringify({ error: 'ASAAS_API_KEY not set in Supabase secrets.' }), {
+      return new Response(JSON.stringify({ error: 'ASAAS credentials not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (!ASAAS_BASE_URL) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-asaas-payment',
-        message: 'ASAAS_API_URL not set in Supabase secrets.',
-        metadata: { requestBody }
-      });
-      return new Response(JSON.stringify({ error: 'ASAAS_API_URL not set in Supabase secrets.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 1. Check if user exists by email and create if not
-    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({
-      email,
-    });
+    // Check if user exists
+    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ email });
 
     if (listUsersError) {
       console.error('Error listing users:', listUsersError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Failed to check for existing user.',
+        message: 'Failed to check for existing user',
         metadata: { email, error: listUsersError.message }
       });
-      return new Response(JSON.stringify({ error: 'Failed to check for existing user.' }), {
+      return new Response(JSON.stringify({ error: 'Failed to check for existing user' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -105,26 +96,14 @@ serve(async (req) => {
     if (existingUsers && existingUsers.users.length > 0) {
       userId = existingUsers.users[0].id;
       console.log(`Existing user found: ${userId}`);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'create-asaas-payment',
-        message: `Existing user found: ${userId}`,
-        metadata: { email, userId }
-      });
-
+      
       const { error: updateProfileError } = await supabase
         .from('profiles')
         .update({ name, cpf, email, whatsapp })
         .eq('id', userId);
 
       if (updateProfileError) {
-        console.error('Error updating existing user profile:', updateProfileError);
-        await supabase.from('logs').insert({
-          level: 'warning',
-          context: 'create-asaas-payment',
-          message: 'Error updating existing user profile.',
-          metadata: { userId, error: updateProfileError.message }
-        });
+        console.error('Error updating profile:', updateProfileError);
       }
     } else {
       const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
@@ -135,29 +114,23 @@ serve(async (req) => {
       });
 
       if (createUserError || !newUser?.user) {
-        console.error('Error creating new user:', createUserError);
+        console.error('Error creating user:', createUserError);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'Failed to create new user account.',
+          message: 'Failed to create user',
           metadata: { email, error: createUserError?.message }
         });
-        return new Response(JSON.stringify({ error: 'Failed to create new user account.' }), {
+        return new Response(JSON.stringify({ error: 'Failed to create user account' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       userId = newUser.user.id;
       console.log(`New user created: ${userId}`);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'create-asaas-payment',
-        message: `New user created: ${userId}`,
-        metadata: { email, userId }
-      });
     }
 
-    // 2. Fetch product prices
+    // Fetch products
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id, price')
@@ -168,19 +141,18 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'One or more products not found or an error occurred.',
+        message: 'Products not found',
         metadata: { productIds, error: productsError?.message }
       });
-      return new Response(JSON.stringify({ error: 'One or more products not found or an error occurred.' }), {
+      return new Response(JSON.stringify({ error: 'One or more products not found' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 3. Calculate initial total price
     let totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price), 0);
 
-    // 4. Apply coupon discount if coupon_code is provided
+    // Apply coupon
     if (coupon_code) {
       const { data: coupon, error: couponError } = await supabase
         .from('coupons')
@@ -190,14 +162,14 @@ serve(async (req) => {
         .single();
 
       if (couponError || !coupon) {
-        console.error('Error fetching coupon or coupon not found/active:', couponError);
+        console.error('Invalid coupon:', couponError);
         await supabase.from('logs').insert({
           level: 'warning',
           context: 'create-asaas-payment',
-          message: 'Invalid or inactive coupon code.',
+          message: 'Invalid coupon code',
           metadata: { coupon_code, error: couponError?.message }
         });
-        return new Response(JSON.stringify({ error: 'Invalid or inactive coupon code.' }), {
+        return new Response(JSON.stringify({ error: 'Invalid or inactive coupon code' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -208,13 +180,7 @@ serve(async (req) => {
       } else if (coupon.discount_type === 'fixed') {
         totalPrice = Math.max(0, totalPrice - parseFloat(coupon.value));
       }
-      console.log(`Coupon ${coupon_code} applied. New total price: ${totalPrice}`);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'create-asaas-payment',
-        message: `Coupon ${coupon_code} applied.`,
-        metadata: { coupon_code, originalPrice: products.reduce((sum, p) => sum + parseFloat(p.price), 0), newPrice: totalPrice }
-      });
+      console.log(`Coupon applied. New total: ${totalPrice}`);
     }
 
     const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
@@ -226,79 +192,7 @@ serve(async (req) => {
       client_user_agent: clientUserAgent,
     };
 
-    // Meta CAPI InitiateCheckout Event
-    if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN && process.env.NODE_ENV === 'production') {
-      const capiPayload = {
-        data: [
-          {
-            event_name: 'InitiateCheckout',
-            event_time: Math.floor(Date.now() / 1000),
-            event_source_url: fullMetaTrackingData.event_source_url,
-            user_data: {
-              em: email,
-              ph: whatsapp,
-              fbc: fullMetaTrackingData.fbc,
-              fbp: fullMetaTrackingData.fbp,
-              client_ip_address: fullMetaTrackingData.client_ip_address,
-              client_user_agent: fullMetaTrackingData.client_user_agent,
-            },
-            custom_data: {
-              value: totalPrice.toFixed(2),
-              currency: 'BRL',
-              content_ids: productIds,
-              num_items: productIds.length,
-            },
-            action_source: 'website',
-            event_id: `initiate_checkout_capi_${Date.now()}`,
-          },
-        ],
-      };
-
-      try {
-        const metaResponse = await fetch(`https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?access_token=${META_CAPI_ACCESS_TOKEN}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(capiPayload),
-        });
-
-        if (!metaResponse.ok) {
-          const errorData = await metaResponse.json();
-          console.error('Meta CAPI InitiateCheckout error:', errorData);
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'meta-capi-initiate-checkout',
-            message: 'Failed to send InitiateCheckout event to Meta CAPI.',
-            metadata: { orderId, userId, capiPayload, metaError: errorData, statusCode: metaResponse.status }
-          });
-        } else {
-          console.log('Meta CAPI InitiateCheckout event sent successfully.');
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'meta-capi-initiate-checkout',
-            message: 'InitiateCheckout event sent to Meta CAPI successfully.',
-            metadata: { orderId, userId, capiPayload }
-          });
-        }
-      } catch (metaError: any) {
-        console.error('Error sending Meta CAPI InitiateCheckout event:', metaError);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'meta-capi-initiate-checkout',
-          message: `Unhandled error sending InitiateCheckout event to Meta CAPI: ${metaError.message}`,
-          metadata: { orderId, userId, capiPayload, errorStack: metaError.stack }
-        });
-      }
-    } else {
-      console.warn('Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping InitiateCheckout CAPI event.');
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'meta-capi-initiate-checkout',
-        message: 'Meta Pixel ID or CAPI Access Token not set, or not in production. Skipping InitiateCheckout CAPI event.',
-        metadata: { userId, metaPixelIdSet: !!META_PIXEL_ID, capiAccessTokenSet: !!META_CAPI_ACCESS_TOKEN, isProduction: process.env.NODE_ENV === 'production' }
-      });
-    }
-
-    // 5. Insert new order with 'pending' status
+    // Create order
     const { data: order, error: orderInsertError } = await supabase
       .from('orders')
       .insert({
@@ -306,37 +200,30 @@ serve(async (req) => {
         ordered_product_ids: productIds,
         total_price: totalPrice,
         status: 'pending',
-        meta_tracking_data: fullMetaTrackingData, 
+        meta_tracking_data: fullMetaTrackingData,
       })
       .select()
       .single();
 
     if (orderInsertError || !order) {
-      console.error('Error inserting order:', orderInsertError);
+      console.error('Error creating order:', orderInsertError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Failed to create order.',
-        metadata: { userId, productIds, totalPrice, error: orderInsertError?.message }
+        message: 'Failed to create order',
+        metadata: { userId, productIds, error: orderInsertError?.message }
       });
-      return new Response(JSON.stringify({ error: 'Failed to create order.' }), {
+      return new Response(JSON.stringify({ error: 'Failed to create order' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    
     orderId = order.id;
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'create-asaas-payment',
-      message: `Order created successfully: ${orderId}`,
-      metadata: { orderId, userId, productIds, totalPrice, metaTrackingData: fullMetaTrackingData }
-    });
+    console.log(`Order created: ${orderId}`);
 
-    // 6. Make request to Asaas API to create payment
+    // Create Asaas payment
     const asaasPaymentsUrl = `${ASAAS_BASE_URL}/payments`;
-
-    console.log('Asaas Payments URL:', asaasPaymentsUrl);
-
     const asaasHeaders = {
       'Content-Type': 'application/json',
       'access_token': ASAAS_API_KEY,
@@ -362,79 +249,71 @@ serve(async (req) => {
 
     if (paymentMethod === 'PIX') {
       asaasPayload.billingType = 'PIX';
-      const asaasResponse = await fetch(asaasPaymentsUrl, { method: 'POST', headers: asaasHeaders, body: JSON.stringify(asaasPayload) });
+      
+      console.log('Creating PIX payment with Asaas:', asaasPayload);
+      
+      const asaasResponse = await fetch(asaasPaymentsUrl, {
+        method: 'POST',
+        headers: asaasHeaders,
+        body: JSON.stringify(asaasPayload)
+      });
+
       if (!asaasResponse.ok) {
-        const contentType = asaasResponse.headers.get('Content-Type');
-        let errorData: any;
-        if (contentType && contentType.includes('application/json')) {
-          errorData = await asaasResponse.json();
-        } else {
-          errorData = await asaasResponse.text();
-        }
-        console.error('Asaas PIX API error:', errorData);
+        const errorData = await asaasResponse.json();
+        console.error('Asaas PIX error:', errorData);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'Failed to create PIX payment with Asaas.',
-          metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasResponse.status }
+          message: 'Failed to create PIX payment',
+          metadata: { orderId, asaasPayload, asaasError: errorData }
         });
-        return new Response(JSON.stringify({ error: 'Failed to create PIX payment with Asaas.', details: errorData }), {
+        return new Response(JSON.stringify({ error: 'Failed to create PIX payment', details: errorData }), {
           status: asaasResponse.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
       finalAsaasResponseData = await asaasResponse.json();
       asaasPaymentId = finalAsaasResponseData.id;
 
       const pixQrCodeUrl = `${ASAAS_BASE_URL}/payments/${asaasPaymentId}/pixQrCode`;
-      const pixQrCodeResponse = await fetch(pixQrCodeUrl, { method: 'GET', headers: asaasHeaders });
+      const pixQrCodeResponse = await fetch(pixQrCodeUrl, {
+        method: 'GET',
+        headers: asaasHeaders
+      });
 
       if (!pixQrCodeResponse.ok) {
-        const contentType = pixQrCodeResponse.headers.get('Content-Type');
-        let errorData: any;
-        if (contentType && contentType.includes('application/json')) {
-          errorData = await pixQrCodeResponse.json();
-        } else {
-          errorData = await pixQrCodeResponse.text();
-        }
-        console.error('Asaas PIX QR Code API error:', errorData);
+        const errorData = await pixQrCodeResponse.json();
+        console.error('Asaas PIX QR Code error:', errorData);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'Failed to fetch PIX QR Code from Asaas.',
-          metadata: { orderId, userId, asaasPaymentId, asaasError: errorData, statusCode: pixQrCodeResponse.status }
+          message: 'Failed to fetch PIX QR Code',
+          metadata: { orderId, asaasPaymentId, asaasError: errorData }
         });
-        return new Response(JSON.stringify({ error: 'Failed to fetch PIX QR Code from Asaas.', details: errorData }), {
+        return new Response(JSON.stringify({ error: 'Failed to fetch PIX QR Code', details: errorData }), {
           status: pixQrCodeResponse.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       const pixQrCodeData = await pixQrCodeResponse.json();
-      
       clientResponseData = {
         id: asaasPaymentId,
         orderId: order.id,
         payload: pixQrCodeData.payload,
         encodedImage: pixQrCodeData.encodedImage,
       };
-      console.log('PIX QR Code fetched successfully, client response prepared:', clientResponseData);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'create-asaas-payment',
-        message: 'PIX QR Code fetched successfully, client response prepared.',
-        metadata: { orderId, userId, asaasPaymentId, clientResponse: clientResponseData }
-      });
 
     } else if (paymentMethod === 'CREDIT_CARD') {
       if (!creditCard) {
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'Credit card details are missing for CREDIT_CARD payment method.',
+          message: 'Credit card details missing',
           metadata: { requestBody }
         });
-        return new Response(JSON.stringify({ error: 'Credit card details are missing for CREDIT_CARD payment method.' }), {
+        return new Response(JSON.stringify({ error: 'Credit card details are missing' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -456,14 +335,15 @@ serve(async (req) => {
         postalCode: creditCard.postalCode.replace(/\D/g, ''),
         addressNumber: creditCard.addressNumber,
       };
-      
-      // NOVO: Adicionar número de parcelas
+
       if (creditCard.installmentCount && creditCard.installmentCount > 1) {
         asaasPayload.installmentCount = creditCard.installmentCount;
         asaasPayload.installmentValue = parseFloat((totalPrice / creditCard.installmentCount).toFixed(2));
       }
-      
+
       asaasPayload.remoteIp = clientIpAddress;
+
+      console.log('Creating credit card payment with Asaas');
 
       const asaasPaymentResponse = await fetch(asaasPaymentsUrl, {
         method: 'POST',
@@ -473,36 +353,29 @@ serve(async (req) => {
 
       if (!asaasPaymentResponse.ok) {
         const errorData = await asaasPaymentResponse.json();
-        console.error('Asaas Payment API error (Direct Charge):', errorData);
+        console.error('Asaas credit card error:', errorData);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'Failed to create credit card payment with Asaas (Direct Charge).',
-          metadata: { orderId, userId, asaasPayload, asaasError: errorData, statusCode: asaasPaymentResponse.status }
+          message: 'Failed to create credit card payment',
+          metadata: { orderId, asaasPayload, asaasError: errorData }
         });
-        return new Response(JSON.stringify({ error: 'Failed to create credit card payment with Asaas (Direct Charge).', details: errorData }), {
+        return new Response(JSON.stringify({ error: 'Failed to create credit card payment', details: errorData }), {
           status: asaasPaymentResponse.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
       finalAsaasResponseData = await asaasPaymentResponse.json();
       clientResponseData = { ...finalAsaasResponseData, orderId: order.id };
-      console.log('Credit card direct charge payment created successfully, client response prepared:', clientResponseData);
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'create-asaas-payment',
-        message: 'Credit card direct charge payment created successfully.',
-        metadata: { orderId, userId, asaasPaymentId: finalAsaasResponseData.id, clientResponse: clientResponseData }
-      });
-
     } else {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
-        message: 'Invalid payment method provided.',
-        metadata: { paymentMethod, requestBody }
+        message: 'Invalid payment method',
+        metadata: { paymentMethod }
       });
-      return new Response(JSON.stringify({ error: 'Invalid payment method provided.' }), {
+      return new Response(JSON.stringify({ error: 'Invalid payment method' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -512,27 +385,21 @@ serve(async (req) => {
       asaasPaymentId = finalAsaasResponseData.id;
     }
 
-    // 7. Update order with asaas_payment_id
+    // Update order with payment ID
     const { error: orderUpdateError } = await supabase
       .from('orders')
       .update({ asaas_payment_id: asaasPaymentId })
       .eq('id', order.id);
 
     if (orderUpdateError) {
-      console.error('Error updating order with Asaas payment ID:', orderUpdateError);
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'create-asaas-payment',
-        message: 'Error updating order with Asaas payment ID.',
-        metadata: { orderId, asaasPaymentId, error: orderUpdateError.message }
-      });
+      console.error('Error updating order:', orderUpdateError);
     }
 
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment',
-      message: `Asaas payment created successfully for order ${orderId}.`,
-      metadata: { orderId, userId, asaasPaymentId, asaasPaymentData: finalAsaasResponseData }
+      message: 'Payment created successfully',
+      metadata: { orderId, asaasPaymentId, paymentMethod }
     });
 
     return new Response(JSON.stringify(clientResponseData), {
@@ -540,12 +407,12 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
-    console.error('Edge Function error:', error);
+  } catch (error: any) {
+    console.error('Edge function error:', error);
     await supabase.from('logs').insert({
       level: 'error',
       context: 'create-asaas-payment',
-      message: `Unhandled error in Edge Function: ${error.message}`,
+      message: `Unhandled error: ${error.message}`,
       metadata: {
         errorStack: error.stack,
         userId,
