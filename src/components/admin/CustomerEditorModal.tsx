@@ -12,6 +12,34 @@ import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
+// Função para gerar uma senha forte e aleatória
+function generateStrongPassword(): string {
+  const length = 12;
+  const uppercaseChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercaseChars = 'abcdefghijklmnopqrstuvwxyz';
+  const numberChars = '0123456789';
+  const specialChars = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+
+  const getRandomChar = (chars: string) => 
+    chars[Math.floor(Math.random() * chars.length)];
+
+  // Garantir pelo menos um caractere de cada tipo
+  const password = [
+    getRandomChar(uppercaseChars),
+    getRandomChar(lowercaseChars),
+    getRandomChar(numberChars),
+    getRandomChar(specialChars),
+    ...Array.from({ length: length - 4 }, () => 
+      getRandomChar(uppercaseChars + lowercaseChars + numberChars + specialChars)
+    )
+  ];
+
+  // Embaralhar a senha
+  return password
+    .sort(() => Math.random() - 0.5)
+    .join('');
+}
+
 interface CustomerEditorModalProps {
   open: boolean;
   onClose: () => void;
@@ -49,34 +77,28 @@ const CustomerEditorModal = ({
   const handleResetPassword = async () => {
     if (!customer?.id) return;
 
-    if (!window.confirm("Tem certeza que deseja redefinir a senha para o CPF do usuário?")) return;
+    if (!window.confirm("Tem certeza que deseja redefinir a senha para este usuário? Ele será obrigado a trocar a senha no próximo login.")) return;
 
     setIsLoading(true);
     try {
-      // Fetch user's CPF
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('cpf')
-        .eq('id', customer.id)
-        .single();
+      // Gerar uma senha forte e aleatória
+      const newPassword = generateStrongPassword();
 
-      if (profileError || !profile?.cpf) {
-        showError("Não foi possível recuperar o CPF do usuário.");
-        return;
-      }
-
-      // Reset password using CPF
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: profile.cpf,
+      // Atualizar a senha do usuário
+      const { error: updatePasswordError } = await supabase.auth.updateUser({
+        password: newPassword,
+      }, { 
+        // Especificar o ID do usuário para garantir que estamos atualizando o usuário correto
+        userId: customer.id 
       });
 
-      if (updateError) {
-        showError("Erro ao redefinir senha: " + updateError.message);
-        console.error("Password reset error:", updateError);
+      if (updatePasswordError) {
+        showError("Erro ao redefinir senha: " + updatePasswordError.message);
+        console.error("Password reset error:", updatePasswordError);
         return;
       }
 
-      // Update profile to force password change
+      // Atualizar o perfil para forçar troca de senha
       const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({ 
@@ -91,7 +113,7 @@ const CustomerEditorModal = ({
         return;
       }
 
-      // Log the password reset
+      // Log da redefinição de senha
       await supabase.from('logs').insert({
         level: 'info',
         context: 'admin-reset-password',
@@ -102,7 +124,52 @@ const CustomerEditorModal = ({
         }
       });
 
-      showSuccess("Senha redefinida para o CPF do usuário!");
+      // Enviar email com instruções de redefinição de senha
+      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+      if (RESEND_API_KEY && customer.email) {
+        const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'YOUR_APP_URL';
+        const loginUrl = `${appUrl}/login`;
+        
+        const emailBody = `
+          Sua senha foi redefinida por um administrador. 
+          
+          Para acessar sua conta:
+          Login: ${loginUrl}
+          Email: ${customer.email}
+
+          Por segurança, você será solicitado a definir uma nova senha no primeiro login.
+        `;
+
+        const resendResponse = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
+          },
+          body: JSON.stringify({
+            from: 'onboarding@resend.dev',
+            to: customer.email,
+            subject: 'Sua senha foi redefinida',
+            html: emailBody.replace(/\n/g, '<br/>'),
+          }),
+        });
+
+        if (!resendResponse.ok) {
+          const errorData = await resendResponse.json();
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'admin-reset-password',
+            message: 'Error sending password reset email',
+            metadata: { 
+              userId: customer.id, 
+              email: customer.email, 
+              resendError: errorData 
+            }
+          });
+        }
+      }
+
+      showSuccess("Senha redefinida com sucesso! O usuário deverá trocar a senha no próximo login.");
       onRefresh();
     } catch (error: any) {
       showError("Erro inesperado: " + error.message);
@@ -238,7 +305,7 @@ const CustomerEditorModal = ({
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : (
-              "Redefinir Senha para CPF"
+              "Redefinir Senha"
             )}
           </Button>
           <div className="flex space-x-2">
