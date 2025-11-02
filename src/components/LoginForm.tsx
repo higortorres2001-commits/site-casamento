@@ -14,7 +14,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import { Link, useNavigate } from "react-router-dom";
@@ -24,8 +24,16 @@ const formSchema = z.object({
   password: z.string().min(1, "A senha é obrigatória"),
 });
 
+// Função para gerar a senha padrão baseada no CPF (mesma lógica da edge function)
+const generateDefaultPassword = (cpf: string): string => {
+  const cleanCpf = cpf.replace(/[^0-9]/g, '');
+  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
+  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
+};
+
 const LoginForm = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -39,12 +47,9 @@ const LoginForm = () => {
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
-      // Remove qualquer formatação da senha (caso o usuário digite o CPF formatado)
-      const cleanPassword = data.password.replace(/\D/g, '');
-      
       const { error, data: sessionData } = await supabase.auth.signInWithPassword({
         email: data.email,
-        password: cleanPassword, // Usa a senha limpa (apenas números)
+        password: data.password,
       });
 
       if (error) {
@@ -59,13 +64,12 @@ const LoginForm = () => {
             email: data.email, 
             errorType: error.name, 
             errorMessage: error.message,
-            passwordLength: cleanPassword.length
           }
         });
 
         // Mensagens de erro mais específicas
         if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos. Se é seu primeiro acesso, use apenas os números do seu CPF como senha (sem pontos ou traços).");
+          showError("Email ou senha incorretos. Se é seu primeiro acesso, use a senha padrão informada no email de confirmação.");
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
@@ -77,7 +81,7 @@ const LoginForm = () => {
       // Verificar se o usuário existe no perfil
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, has_changed_password')
+        .select('id, has_changed_password, cpf')
         .eq('id', sessionData.user.id)
         .single();
 
@@ -147,9 +151,9 @@ const LoginForm = () => {
         <div className="text-center">
           <p className="text-lg text-gray-700 mb-2">Bem-vindo! Use o e-mail da sua compra para entrar.</p>
           <p className="text-sm text-gray-600 mb-6">
-            <strong>Primeiro acesso?</strong> Sua senha são apenas os <strong>números do seu CPF</strong> (sem pontos ou traços).
+            <strong>Primeiro acesso?</strong> Sua senha padrão é <strong>Sem123</strong> seguido dos <strong>3 primeiros números do seu CPF</strong>.
             <br />
-            <span className="text-xs text-gray-500">Exemplo: se seu CPF é 123.456.789-00, use 12345678900</span>
+            <span className="text-xs text-gray-500">Exemplo: se seu CPF é 123.456.789-00, use Sem123123</span>
           </p>
         </div>
 
@@ -177,14 +181,25 @@ const LoginForm = () => {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Senha</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Apenas números do CPF no primeiro acesso"
-                  {...field}
-                  className="focus:ring-orange-500 focus:border-orange-500"
-                  type="password"
-                />
-              </FormControl>
+              <div className="relative">
+                <FormControl>
+                  <Input
+                    placeholder="Sua senha"
+                    {...field}
+                    className="focus:ring-orange-500 focus:border-orange-500 pr-10"
+                    type={showPassword ? "text" : "password"}
+                  />
+                </FormControl>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
               <FormMessage />
             </FormItem>
           )}
