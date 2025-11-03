@@ -6,14 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Função para gerar senha padrão baseada no CPF
-// Formato: Sem123CPF (onde CPF são os 3 primeiros dígitos do CPF)
-function generateDefaultPassword(cpf: string): string {
-  const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
-  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
-}
-
 serve(async (req) => {
   // Handle CORS OPTIONS request
   if (req.method === 'OPTIONS') {
@@ -228,9 +220,6 @@ serve(async (req) => {
     // 8. Send "Acesso Liberado" email with login details
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (RESEND_API_KEY && profile.email && profile.cpf) {
-      // Gerar a senha padrão para incluir no email
-      const defaultPassword = generateDefaultPassword(profile.cpf);
-      
       const emailSubject = "Seu acesso foi liberado!";
       // Assuming the client application URL is derived from SUPABASE_URL for now, 
       // but ideally this should be a separate environment variable (e.g., APP_URL)
@@ -242,9 +231,9 @@ serve(async (req) => {
 
         Login: ${loginUrl}
         Email: ${profile.email}
-        Senha: ${defaultPassword}
+        Senha: ${profile.cpf} (os números do seu CPF)
 
-        Por segurança, você será solicitado a trocar sua senha no primeiro acesso.
+        Recomendamos trocar sua senha no primeiro acesso.
       `;
 
       const resendResponse = await fetch('https://api.resend.com/emails', {

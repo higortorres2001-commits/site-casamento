@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
 import PasswordRequirements from "@/components/PasswordRequirements";
@@ -45,9 +45,7 @@ const UpdatePassword = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, isLoading: isSessionLoading } = useSession();
-  const isPrimeiroAcesso = location.pathname === "/primeira-senha";
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -60,13 +58,13 @@ const UpdatePassword = () => {
   const newPassword = form.watch("newPassword");
 
   useEffect(() => {
-    if (!isSessionLoading && !user && isPrimeiroAcesso) {
+    if (!isSessionLoading && !user) {
       navigate("/login");
     }
-  }, [user, isSessionLoading, navigate, isPrimeiroAcesso]);
+  }, [user, isSessionLoading, navigate]);
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
-    if (!user && isPrimeiroAcesso) {
+    if (!user) {
       showError("Você precisa estar logado para trocar a senha.");
       navigate("/login");
       return;
@@ -84,7 +82,7 @@ const UpdatePassword = () => {
           context: 'update-password',
           message: 'Failed to update password in auth',
           metadata: { 
-            userId: user?.id, 
+            userId: user.id, 
             errorType: updateAuthError.name, 
             errorMessage: updateAuthError.message 
           }
@@ -94,53 +92,45 @@ const UpdatePassword = () => {
         return;
       }
 
-      if (user) {
-        const { error: updateProfileError } = await supabase
-          .from('profiles')
-          .update({ 
-            has_changed_password: true,
-            primeiro_acesso: false 
-          })
-          .eq('id', user.id);
+      const { error: updateProfileError } = await supabase
+        .from('profiles')
+        .update({ 
+          has_changed_password: true,
+          primeiro_acesso: false 
+        })
+        .eq('id', user.id);
 
-        if (updateProfileError) {
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'update-password',
-            message: 'Failed to update profile after password change',
-            metadata: { 
-              userId: user.id, 
-              errorType: updateProfileError.name, 
-              errorMessage: updateProfileError.message 
-            }
-          });
-          showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
-          console.error("Update profile has_changed_password error:", updateProfileError);
-        }
-
+      if (updateProfileError) {
         await supabase.from('logs').insert({
-          level: 'info',
+          level: 'error',
           context: 'update-password',
-          message: 'User successfully updated password',
-          metadata: { userId: user.id }
+          message: 'Failed to update profile after password change',
+          metadata: { 
+            userId: user.id, 
+            errorType: updateProfileError.name, 
+            errorMessage: updateProfileError.message 
+          }
         });
+        showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
+        console.error("Update profile has_changed_password error:", updateProfileError);
       }
+
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'update-password',
+        message: 'User successfully updated password',
+        metadata: { userId: user.id }
+      });
 
       showSuccess("Senha atualizada com sucesso! Você será redirecionado.");
-      
-      // Redirecionar para a página apropriada
-      if (isPrimeiroAcesso) {
-        navigate("/meus-produtos");
-      } else {
-        navigate("/login");
-      }
+      navigate("/meus-produtos");
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'update-password',
         message: 'Unexpected error during password update',
         metadata: { 
-          userId: user?.id, 
+          userId: user.id, 
           errorMessage: error.message, 
           errorStack: error.stack 
         }
@@ -152,7 +142,7 @@ const UpdatePassword = () => {
     }
   };
 
-  if (isSessionLoading) {
+  if (isSessionLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -165,12 +155,10 @@ const UpdatePassword = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-gray-800 mb-2">
-            {isPrimeiroAcesso ? "Primeiro Acesso: Troque sua Senha" : "Redefinir Senha"}
+            Primeiro Acesso: Troque sua Senha
           </CardTitle>
           <p className="text-md text-gray-600">
-            {isPrimeiroAcesso 
-              ? "Por segurança, por favor, defina uma nova senha."
-              : "Digite sua nova senha abaixo"}
+            Por segurança, por favor, defina uma nova senha.
           </p>
         </CardHeader>
         <CardContent>

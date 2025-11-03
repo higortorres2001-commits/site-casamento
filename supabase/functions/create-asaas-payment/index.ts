@@ -6,15 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Função para gerar senha padrão baseada no CPF
-// Formato: Sem123CPF (onde CPF são os 3 primeiros dígitos do CPF)
-// Isso garante: 1 letra maiúscula, letras minúsculas, números, e mais de 6 caracteres
-function generateDefaultPassword(cpf: string): string {
-  const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
-  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -87,10 +78,7 @@ serve(async (req) => {
 
     // Limpar CPF - remover qualquer formatação
     const cleanCpf = cpf.replace(/[^0-9]/g, '');
-    
-    // Gerar senha padrão que atende aos requisitos do Supabase
-    const defaultPassword = generateDefaultPassword(cleanCpf);
-    console.log('Generated default password for new user');
+    console.log('Cleaned CPF for password:', cleanCpf);
 
     // Check if user exists
     const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ email });
@@ -122,10 +110,10 @@ serve(async (req) => {
         console.error('Error updating profile:', updateProfileError);
       }
     } else {
-      // Criar usuário com senha padrão que atende aos requisitos
+      // Criar usuário com CPF limpo (apenas números) como senha
       const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
         email,
-        password: defaultPassword,
+        password: cleanCpf, // Usar CPF limpo como senha
         email_confirm: true,
         user_metadata: { name, cpf: cleanCpf, whatsapp },
       });
@@ -136,7 +124,7 @@ serve(async (req) => {
           level: 'error',
           context: 'create-asaas-payment',
           message: 'Failed to create user',
-          metadata: { email, error: createUserError?.message }
+          metadata: { email, cpf: cleanCpf, error: createUserError?.message }
         });
         return new Response(JSON.stringify({ error: 'Failed to create user account' }), {
           status: 500,
@@ -144,14 +132,14 @@ serve(async (req) => {
         });
       }
       userId = newUser.user.id;
-      console.log(`New user created: ${userId}`);
+      console.log(`New user created: ${userId} with password length: ${cleanCpf.length}`);
       
       // Log para debug
       await supabase.from('logs').insert({
         level: 'info',
         context: 'create-asaas-payment',
-        message: 'New user created with standard password',
-        metadata: { userId, email }
+        message: 'New user created with CPF as password',
+        metadata: { userId, email, cpfLength: cleanCpf.length }
       });
     }
 
@@ -403,7 +391,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invalid payment method' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        
       });
     }
 
