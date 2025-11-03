@@ -99,25 +99,55 @@ const Customers = () => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
 
+  const fetchAllAuthUsers = async () => {
+    const allUsers: any[] = [];
+    let page = 1;
+    const perPage = 1000; // Maximum allowed by Supabase
+    
+    try {
+      while (true) {
+        const { data, error } = await supabase.auth.admin.listUsers({
+          page,
+          perPage,
+        });
+
+        if (error) {
+          console.error(`Error fetching users page ${page}:`, error);
+          throw error;
+        }
+
+        if (!data || !data.users || data.users.length === 0) {
+          break;
+        }
+
+        allUsers.push(...data.users);
+        
+        // If we got fewer users than perPage, we've reached the end
+        if (data.users.length < perPage) {
+          break;
+        }
+        
+        page++;
+      }
+      
+      console.log(`Successfully fetched ${allUsers.length} total users from auth`);
+      return allUsers;
+    } catch (error) {
+      console.error('Error in fetchAllAuthUsers:', error);
+      throw error;
+    }
+  };
+
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all users from auth.users
-      const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+      // Fetch all users from auth.users with pagination
+      const authUsers = await fetchAllAuthUsers();
 
-      if (authError) {
-        console.error("Error fetching auth users:", authError);
-        showError("Erro ao carregar usuários.");
-        setCustomers([]);
-        setLoading(false);
-        return;
-      }
-
-      // Log para debug
-      console.log(`Fetched ${authUsers.users.length} users from auth`);
+      console.log(`Fetched ${authUsers.length} users from auth`);
 
       // Fetch profiles for these users
-      const userIds = authUsers.users.map(user => user.id);
+      const userIds = authUsers.map(user => user.id);
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
         .select("id, name, email, cpf, whatsapp, access, is_admin")
@@ -131,7 +161,6 @@ const Customers = () => {
         return;
       }
 
-      // Log para debug
       console.log(`Fetched ${profiles?.length || 0} profiles from database`);
 
       // Create a map of profiles by user ID for quick lookup
@@ -167,7 +196,7 @@ const Customers = () => {
       }
 
       // Combine auth users with profiles and orders
-      const customersWithOrders: CustomerRow[] = authUsers.users.map(authUser => {
+      const customersWithOrders: CustomerRow[] = authUsers.map(authUser => {
         const profile = profileMap[authUser.id] || {};
         return {
           id: authUser.id,
@@ -182,6 +211,7 @@ const Customers = () => {
       });
 
       setCustomers(customersWithOrders);
+      showSuccess(`${customersWithOrders.length} clientes carregados com sucesso!`);
     } catch (error) {
       console.error("Unexpected error fetching customers:", error);
       showError("Erro inesperado ao carregar clientes.");
