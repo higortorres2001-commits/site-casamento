@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
+import { sendPasswordResetEmail } from "@/utils/email";
 import { Link, useNavigate } from "react-router-dom";
 
 const formSchema = z.object({
@@ -107,7 +108,18 @@ const LoginForm = () => {
         showError("Erro ao solicitar recuperação de senha: " + error.message);
         console.error("Forgot password error:", error);
       } else {
-        showSuccess("Um link de recuperação de senha foi enviado para o seu email.");
+        // Enviar e-mail de redefinição de senha
+        const resetLink = `${window.location.origin}/update-password`;
+        const emailResult = await sendPasswordResetEmail({ 
+          to: email, 
+          resetLink 
+        });
+
+        if (emailResult.success) {
+          showSuccess("Um link de recuperação de senha foi enviado para o seu email.");
+        } else {
+          showError("Erro ao enviar e-mail de recuperação de senha.");
+        }
       }
     } catch (err: any) {
       showError("Erro inesperado ao solicitar recuperação de senha.");
