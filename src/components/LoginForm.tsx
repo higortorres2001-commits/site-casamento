@@ -48,7 +48,6 @@ const LoginForm = () => {
       if (error) {
         console.error("Login error details:", error);
         
-        // Adicionar logs mais detalhados para diagnóstico
         await supabase.from('logs').insert({
           level: 'error',
           context: 'login-attempt',
@@ -60,33 +59,13 @@ const LoginForm = () => {
           }
         });
 
-        // Mensagens de erro mais específicas
         if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos.");
+          showError("Email ou senha incorretos. Se é seu primeiro acesso, use a senha padrão informada no email de confirmação.");
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
           showError("Erro ao fazer login. Tente novamente.");
         }
-        return;
-      }
-
-      // Verificar se o usuário existe no perfil
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, has_changed_password, primeiro_acesso, cpf')
-        .eq('id', sessionData.user.id)
-        .single();
-
-      if (profileError || !profile) {
-        showError("Perfil do usuário não encontrado.");
-        await supabase.auth.signOut();
-        return;
-      }
-
-      // Se nunca trocou a senha, redirecionar para troca
-      if (!profile.has_changed_password || profile.primeiro_acesso) {
-        navigate("/primeira-senha");
         return;
       }
 
@@ -144,7 +123,7 @@ const LoginForm = () => {
         <div className="text-center">
           <p className="text-lg text-gray-700 mb-2">Bem-vindo! Use o e-mail da sua compra para entrar.</p>
           <p className="text-sm text-gray-600 mb-6">
-            <strong>Primeiro acesso?</strong> Use a senha padrão informada no email de confirmação.
+            <strong>Primeiro acesso?</strong> Use a senha padrão: <strong>Sem@</strong> + 3 primeiros dígitos do seu CPF
           </p>
         </div>
 
@@ -212,6 +191,3 @@ const LoginForm = () => {
       </form>
     </Form>
   );
-};
-
-export default LoginForm;

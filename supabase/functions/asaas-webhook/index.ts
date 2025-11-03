@@ -7,11 +7,11 @@ const corsHeaders = {
 };
 
 // Função para gerar senha padrão baseada no CPF
-// Formato: Sem123CPF (onde CPF são os 3 primeiros dígitos do CPF)
+// Formato: Sem@ + 3 primeiros dígitos do CPF
 function generateDefaultPassword(cpf: string): string {
   const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
-  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
+  const cpfPrefix = cleanCpf.substring(0, 3);
+  return `Sem@${cpfPrefix}`;
 }
 
 serve(async (req) => {
@@ -79,7 +79,6 @@ serve(async (req) => {
         message: 'Order not found for the given asaas_payment_id.',
         metadata: { asaasPaymentId, error: orderError?.message }
       });
-      // Return 200 to prevent Asaas from retrying endlessly if the order is genuinely missing
       return new Response(JSON.stringify({ message: 'Order not found, but webhook acknowledged.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -135,10 +134,11 @@ serve(async (req) => {
     const existingAccess = profile.access || [];
     const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
 
-    // 7. Update the 'profiles' table with the new 'access' array and set has_changed_password to FALSE (to force password change on first login)
+    // 7. Update the 'profiles' table with the new 'access' array
+    // NÃO definir has_changed_password como false - o usuário já tem a senha padrão
     const { error: updateProfileError } = await supabase
       .from('profiles')
-      .update({ access: newAccess, has_changed_password: false }) // Set to false to force password change
+      .update({ access: newAccess })
       .eq('id', userId);
 
     if (updateProfileError) {
@@ -232,8 +232,6 @@ serve(async (req) => {
       const defaultPassword = generateDefaultPassword(profile.cpf);
       
       const emailSubject = "Seu acesso foi liberado!";
-      // Assuming the client application URL is derived from SUPABASE_URL for now, 
-      // but ideally this should be a separate environment variable (e.g., APP_URL)
       const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'YOUR_APP_URL';
       const loginUrl = `${appUrl}/login`;
       
@@ -244,7 +242,7 @@ serve(async (req) => {
         Email: ${profile.email}
         Senha: ${defaultPassword}
 
-        Por segurança, você será solicitado a trocar sua senha no primeiro acesso.
+        Guarde esta senha com segurança. Você pode alterá-la a qualquer momento nas configurações da sua conta.
       `;
 
       const resendResponse = await fetch('https://api.resend.com/emails', {

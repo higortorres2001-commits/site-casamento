@@ -12,38 +12,18 @@ import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
-// Função para gerar uma senha forte e aleatória
-function generateStrongPassword(): string {
-  const length = 12;
-  const uppercaseChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const lowercaseChars = 'abcdefghijklmnopqrstuvwxyz';
-  const numberChars = '0123456789';
-  const specialChars = '!@#$%^&*()_+-=[]{}|;:,.<>?';
-
-  const getRandomChar = (chars: string) => 
-    chars[Math.floor(Math.random() * chars.length)];
-
-  // Garantir pelo menos um caractere de cada tipo
-  const password = [
-    getRandomChar(uppercaseChars),
-    getRandomChar(lowercaseChars),
-    getRandomChar(numberChars),
-    getRandomChar(specialChars),
-    ...Array.from({ length: length - 4 }, () => 
-      getRandomChar(uppercaseChars + lowercaseChars + numberChars + specialChars)
-    )
-  ];
-
-  // Embaralhar a senha
-  return password
-    .sort(() => Math.random() - 0.5)
-    .join('');
+// Função para gerar senha padrão baseada no CPF
+// Formato: Sem@ + 3 primeiros dígitos do CPF
+function generateDefaultPassword(cpf: string): string {
+  const cleanCpf = cpf.replace(/[^0-9]/g, '');
+  const cpfPrefix = cleanCpf.substring(0, 3);
+  return `Sem@${cpfPrefix}`;
 }
 
 interface CustomerEditorModalProps {
   open: boolean;
   onClose: () => void;
-  customer: any; // Profile with id, name, email, access
+  customer: any;
   products: { id: string; name: string }[];
   onRefresh: () => void;
 }
@@ -75,22 +55,23 @@ const CustomerEditorModal = ({
   };
 
   const handleResetPassword = async () => {
-    if (!customer?.id) return;
+    if (!customer?.id || !customer?.cpf) {
+      showError("CPF do cliente não encontrado.");
+      return;
+    }
 
-    if (!window.confirm("Tem certeza que deseja redefinir a senha para este usuário? Ele será obrigado a trocar a senha no próximo login.")) return;
+    if (!window.confirm("Tem certeza que deseja redefinir a senha para a senha padrão (Sem@ + 3 primeiros dígitos do CPF)?")) return;
 
     setIsLoading(true);
     try {
-      // Gerar uma senha forte e aleatória
-      const newPassword = generateStrongPassword();
+      // Gerar senha padrão baseada no CPF
+      const defaultPassword = generateDefaultPassword(customer.cpf);
 
       // Atualizar a senha do usuário
-      const { error: updatePasswordError } = await supabase.auth.updateUser({
-        password: newPassword,
-      }, { 
-        // Especificar o ID do usuário para garantir que estamos atualizando o usuário correto
-        userId: customer.id 
-      });
+      const { error: updatePasswordError } = await supabase.auth.admin.updateUserById(
+        customer.id,
+        { password: defaultPassword }
+      );
 
       if (updatePasswordError) {
         showError("Erro ao redefinir senha: " + updatePasswordError.message);
@@ -98,79 +79,18 @@ const CustomerEditorModal = ({
         return;
       }
 
-      // Atualizar o perfil para forçar troca de senha
-      const { error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({ 
-          has_changed_password: false, 
-          primeiro_acesso: true 
-        })
-        .eq('id', customer.id);
-
-      if (profileUpdateError) {
-        showError("Erro ao atualizar perfil: " + profileUpdateError.message);
-        console.error("Profile update error:", profileUpdateError);
-        return;
-      }
-
       // Log da redefinição de senha
       await supabase.from('logs').insert({
         level: 'info',
         context: 'admin-reset-password',
-        message: 'Admin reset user password',
+        message: 'Admin reset user password to default',
         metadata: { 
           adminId: customer.id, 
           userId: customer.id 
         }
       });
 
-      // Enviar email com instruções de redefinição de senha
-      const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
-      const APP_URL = import.meta.env.VITE_APP_URL || 'https://seusite.com';
-      
-      if (RESEND_API_KEY && customer.email) {
-        const loginUrl = `${APP_URL}/login`;
-        
-        const emailBody = `
-          Sua senha foi redefinida por um administrador. 
-          
-          Para acessar sua conta:
-          Login: ${loginUrl}
-          Email: ${customer.email}
-
-          Por segurança, você será solicitado a definir uma nova senha no primeiro login.
-        `;
-
-        const resendResponse = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${RESEND_API_KEY}`,
-          },
-          body: JSON.stringify({
-            from: 'onboarding@resend.dev',
-            to: customer.email,
-            subject: 'Sua senha foi redefinida',
-            html: emailBody.replace(/\n/g, '<br/>'),
-          }),
-        });
-
-        if (!resendResponse.ok) {
-          const errorData = await resendResponse.json();
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'admin-reset-password',
-            message: 'Error sending password reset email',
-            metadata: { 
-              userId: customer.id, 
-              email: customer.email, 
-              resendError: errorData 
-            }
-          });
-        }
-      }
-
-      showSuccess("Senha redefinida com sucesso! O usuário deverá trocar a senha no próximo login.");
+      showSuccess(`Senha redefinida para: ${defaultPassword}`);
       onRefresh();
     } catch (error: any) {
       showError("Erro inesperado: " + error.message);
@@ -202,7 +122,10 @@ const CustomerEditorModal = ({
 
       // Update auth user email if changed
       if (email !== customer.email) {
-        const { error: emailError } = await supabase.auth.updateUser({ email });
+        const { error: emailError } = await supabase.auth.admin.updateUserById(
+          customer.id,
+          { email }
+        );
         if (emailError) {
           showError("Erro ao atualizar email: " + emailError.message);
           console.error("Email update error:", emailError);
@@ -241,7 +164,6 @@ const CustomerEditorModal = ({
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Informações Pessoais */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Informações Pessoais</h3>
             <div className="space-y-3">
@@ -272,7 +194,6 @@ const CustomerEditorModal = ({
             </div>
           </div>
 
-          {/* Acessos */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Acessos aos Produtos</h3>
             <div className="border rounded-md p-3 max-h-64 overflow-y-auto">
@@ -306,7 +227,7 @@ const CustomerEditorModal = ({
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : (
-              "Redefinir Senha"
+              "Redefinir Senha Padrão"
             )}
           </Button>
           <div className="flex space-x-2">
