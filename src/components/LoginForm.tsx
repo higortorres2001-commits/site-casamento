@@ -191,3 +191,6 @@ const LoginForm = () => {
       </form>
     </Form>
   );
+};
+
+export default LoginForm;
