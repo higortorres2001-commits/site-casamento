@@ -15,13 +15,10 @@ import {
   Loader2,
   Users,
   Clock,
-  CheckCircle2,
-  AlertCircle,
   Mail,
   Phone,
   Search,
   PencilLine,
-  Plus,
   UserPlus,
   Database,
 } from "lucide-react";
@@ -99,59 +96,13 @@ const Customers = () => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
 
-  const fetchAllAuthUsers = async () => {
-    const allUsers: any[] = [];
-    let page = 1;
-    const perPage = 1000; // Maximum allowed by Supabase
-    
-    try {
-      while (true) {
-        const { data, error } = await supabase.auth.admin.listUsers({
-          page,
-          perPage,
-        });
-
-        if (error) {
-          console.error(`Error fetching users page ${page}:`, error);
-          throw error;
-        }
-
-        if (!data || !data.users || data.users.length === 0) {
-          break;
-        }
-
-        allUsers.push(...data.users);
-        
-        // If we got fewer users than perPage, we've reached the end
-        if (data.users.length < perPage) {
-          break;
-        }
-        
-        page++;
-      }
-      
-      console.log(`Successfully fetched ${allUsers.length} total users from auth`);
-      return allUsers;
-    } catch (error) {
-      console.error('Error in fetchAllAuthUsers:', error);
-      throw error;
-    }
-  };
-
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all users from auth.users with pagination
-      const authUsers = await fetchAllAuthUsers();
-
-      console.log(`Fetched ${authUsers.length} users from auth`);
-
-      // Fetch profiles for these users
-      const userIds = authUsers.map(user => user.id);
+      // Fetch all profiles directly - this is the key change
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
-        .select("id, name, email, cpf, whatsapp, access, is_admin")
-        .in("id", userIds);
+        .select("id, name, email, cpf, whatsapp, access, is_admin");
 
       if (profileError) {
         console.error("Error fetching profiles:", profileError);
@@ -163,11 +114,14 @@ const Customers = () => {
 
       console.log(`Fetched ${profiles?.length || 0} profiles from database`);
 
-      // Create a map of profiles by user ID for quick lookup
-      const profileMap: Record<string, any> = {};
-      (profiles || []).forEach(profile => {
-        profileMap[profile.id] = profile;
-      });
+      if (!profiles || profiles.length === 0) {
+        setCustomers([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get all user IDs
+      const userIds = profiles.map(profile => profile.id);
 
       // Fetch last order for each user
       const orderMap: Record<string, OrderSnapshot> = {};
@@ -195,18 +149,17 @@ const Customers = () => {
         }
       }
 
-      // Combine auth users with profiles and orders
-      const customersWithOrders: CustomerRow[] = authUsers.map(authUser => {
-        const profile = profileMap[authUser.id] || {};
+      // Map profiles to customer rows
+      const customersWithOrders: CustomerRow[] = profiles.map(profile => {
         return {
-          id: authUser.id,
-          name: profile.name || authUser.user_metadata?.name || null,
-          email: profile.email || authUser.email || null,
-          cpf: profile.cpf || authUser.user_metadata?.cpf || null,
-          whatsapp: profile.whatsapp || authUser.user_metadata?.whatsapp || null,
+          id: profile.id,
+          name: profile.name || null,
+          email: profile.email || null,
+          cpf: profile.cpf || null,
+          whatsapp: profile.whatsapp || null,
           access: Array.isArray(profile.access) ? profile.access : [],
           is_admin: profile.is_admin || false,
-          lastOrder: orderMap[authUser.id],
+          lastOrder: orderMap[profile.id],
         };
       });
 
