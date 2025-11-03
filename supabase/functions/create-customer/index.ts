@@ -37,29 +37,32 @@ serve(async (req) => {
     // Sanitize CPF to use as initial password
     const sanitizedCpf = cpf.replace(/[^\d]+/g, '');
 
-    // Check if user already exists
-    const { data: existing, error: listError } = await supabase.auth.admin.listUsers({ email });
-    if (listError) {
+    // Check if user already exists by email
+    const { data: existingUsersByEmail, error: emailCheckError } = await supabase.auth.admin.listUsers({
+      email: email,
+    });
+
+    if (emailCheckError) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer',
-        message: 'Error listing users.',
-        metadata: { email, listError: listError.message }
+        message: 'Error checking existing users by email.',
+        metadata: { email, error: emailCheckError.message }
       });
-      return new Response(JSON.stringify({ error: 'Failed to check existing user.' }), {
+      return new Response(JSON.stringify({ error: 'Failed to check existing users by email.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (existing && existing.users && existing.users.length > 0) {
+    if (existingUsersByEmail && existingUsersByEmail.users && existingUsersByEmail.users.length > 0) {
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-customer',
-        message: 'User already exists.',
-        metadata: { email }
+        message: 'User with this email already exists.',
+        metadata: { email, existingUserId: existingUsersByEmail.users[0].id }
       });
-      return new Response(JSON.stringify({ error: 'Usuário já cadastrado.' }), {
+      return new Response(JSON.stringify({ error: 'Um usuário com este email já existe.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -95,23 +98,22 @@ serve(async (req) => {
     // Seed profile with additional checks
     const { error: insertProfileError } = await supabase
       .from('profiles')
-      .upsert({ 
+      .insert({ 
         id: userId, 
         name, 
         cpf: sanitizedCpf, 
         email, 
         whatsapp,
         primeiro_acesso: true,
-        has_changed_password: false
-      }, {
-        onConflict: 'id'
+        has_changed_password: false,
+        access: []
       });
 
     if (insertProfileError) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer',
-        message: 'Failed to insert/update profile for new user.',
+        message: 'Failed to insert profile for new user.',
         metadata: { userId, error: insertProfileError.message }
       });
       return new Response(JSON.stringify({ error: 'Falha ao criar perfil.' }), {
