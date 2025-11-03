@@ -17,8 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
-import { sendPasswordChangedEmail } from "@/utils/email";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
 import PasswordRequirements from "@/components/PasswordRequirements";
@@ -46,7 +45,9 @@ const UpdatePassword = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isLoading: isSessionLoading } = useSession();
+  const isPrimeiroAcesso = location.pathname === "/primeira-senha";
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -59,60 +60,80 @@ const UpdatePassword = () => {
   const newPassword = form.watch("newPassword");
 
   useEffect(() => {
-    // Verificar se o usuário está logado
-    if (!isSessionLoading && !user) {
-      showError("Você precisa estar logado para redefinir a senha.");
+    if (!isSessionLoading && !user && isPrimeiroAcesso) {
       navigate("/login");
     }
-  }, [user, isSessionLoading, navigate]);
+  }, [user, isSessionLoading, navigate, isPrimeiroAcesso]);
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
-    if (!user) {
-      showError("Você precisa estar logado para redefinir a senha.");
+    if (!user && isPrimeiroAcesso) {
+      showError("Você precisa estar logado para trocar a senha.");
       navigate("/login");
       return;
     }
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({
+      const { error: updateAuthError } = await supabase.auth.updateUser({
         password: data.newPassword,
       });
 
-      if (error) {
+      if (updateAuthError) {
         await supabase.from('logs').insert({
           level: 'error',
           context: 'update-password',
-          message: 'Failed to update password',
+          message: 'Failed to update password in auth',
           metadata: { 
             userId: user?.id, 
-            errorType: error.name, 
-            errorMessage: error.message 
+            errorType: updateAuthError.name, 
+            errorMessage: updateAuthError.message 
           }
         });
-        showError("Erro ao atualizar a senha: " + error.message);
-        console.error("Update password error:", error);
+        showError("Erro ao atualizar a senha: " + updateAuthError.message);
+        console.error("Update password error:", updateAuthError);
         return;
       }
 
-      // Log da troca de senha
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'update-password',
-        message: 'User successfully updated password',
-        metadata: { userId: user.id }
-      });
+      if (user) {
+        const { error: updateProfileError } = await supabase
+          .from('profiles')
+          .update({ 
+            has_changed_password: true,
+            primeiro_acesso: false 
+          })
+          .eq('id', user.id);
 
-      // Enviar e-mail de senha alterada
-      if (user.email) {
-        const emailResult = await sendPasswordChangedEmail({ to: user.email });
-        if (!emailResult.success) {
-          console.error('Falha ao enviar e-mail de senha alterada');
+        if (updateProfileError) {
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'update-password',
+            message: 'Failed to update profile after password change',
+            metadata: { 
+              userId: user.id, 
+              errorType: updateProfileError.name, 
+              errorMessage: updateProfileError.message 
+            }
+          });
+          showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
+          console.error("Update profile has_changed_password error:", updateProfileError);
         }
+
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'update-password',
+          message: 'User successfully updated password',
+          metadata: { userId: user.id }
+        });
       }
 
-      showSuccess("Senha atualizada com sucesso!");
-      navigate("/meus-produtos");
+      showSuccess("Senha atualizada com sucesso! Você será redirecionado.");
+      
+      // Redirecionar para a página apropriada
+      if (isPrimeiroAcesso) {
+        navigate("/meus-produtos");
+      } else {
+        navigate("/login");
+      }
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
@@ -131,8 +152,102 @@ const UpdatePassword = () => {
     }
   };
 
-  // Resto do código mantido igual
-  // ...
+  if (isSessionLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-3xl font-bold text-gray-800 mb-2">
+            {isPrimeiroAcesso ? "Primeiro Acesso: Troque sua Senha" : "Redefinir Senha"}
+          </CardTitle>
+          <p className="text-md text-gray-600">
+            {isPrimeiroAcesso 
+              ? "Por segurança, por favor, defina uma nova senha."
+              : "Digite sua nova senha abaixo"}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="newPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nova Senha</FormLabel>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Sua nova senha"
+                          {...field}
+                          className="focus:ring-orange-500 focus:border-orange-500 pr-10"
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <PasswordRequirements password={newPassword} />
+              <FormField
+                control={form.control}
+                name="confirmPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirmar Nova Senha</FormLabel>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Confirme sua nova senha"
+                          {...field}
+                          className="focus:ring-orange-500 focus:border-orange-500 pr-10"
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button
+                type="submit"
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Atualizar Senha"}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+    </div>
+  );
 };
 
 export default UpdatePassword;

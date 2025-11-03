@@ -7,27 +7,28 @@ import { Product } from "@/types";
 import { showError } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom"; // Import useNavigate
 
 const MyProducts = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // Initialize useNavigate
 
   useEffect(() => {
     const fetchMyProducts = async () => {
       if (!user) {
         setIsLoading(false);
+        // SessionContextProvider already handles redirection to /login if not logged in
         return;
       }
 
       setIsLoading(true);
       try {
-        // Fetch user profile to get 'access' array
+        // 1. Fetch user profile to get 'access' array and 'has_changed_password'
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('access')
+          .select('access, has_changed_password')
           .eq('id', user.id)
           .single();
 
@@ -39,6 +40,14 @@ const MyProducts = () => {
           return;
         }
 
+        // CRITICAL: Check if user has changed password
+        if (profile.has_changed_password === false) {
+          console.log("User has not changed password, redirecting to /primeira-senha");
+          navigate("/primeira-senha");
+          setIsLoading(false); // Stop loading state as we are redirecting
+          return;
+        }
+
         const productIds = profile.access || [];
 
         if (productIds.length === 0) {
@@ -47,7 +56,7 @@ const MyProducts = () => {
           return;
         }
 
-        // Fetch product details for the IDs in the 'access' array
+        // 2. Fetch product details for the IDs in the 'access' array
         const { data: productsData, error: productsError } = await supabase
           .from('products')
           .select('*')
@@ -71,7 +80,7 @@ const MyProducts = () => {
     if (!isSessionLoading) {
       fetchMyProducts();
     }
-  }, [user, isSessionLoading, navigate]);
+  }, [user, isSessionLoading, navigate]); // Add navigate to dependencies
 
   if (isLoading || isSessionLoading) {
     return (
@@ -89,6 +98,7 @@ const MyProducts = () => {
         <div className="text-center text-gray-600 text-lg mt-10">
           <p>Você ainda não possui nenhum produto em sua biblioteca.</p>
           <p>Explore nossos produtos para começar!</p>
+          {/* O link "Visite nossa loja" foi removido */}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

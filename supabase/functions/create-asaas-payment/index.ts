@@ -7,11 +7,12 @@ const corsHeaders = {
 };
 
 // Função para gerar senha padrão baseada no CPF
-// Formato: Sem@ + 3 primeiros dígitos do CPF
+// Formato: Sem123CPF (onde CPF são os 3 primeiros dígitos do CPF)
+// Isso garante: 1 letra maiúscula, letras minúsculas, números, e mais de 6 caracteres
 function generateDefaultPassword(cpf: string): string {
   const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3);
-  return `Sem@${cpfPrefix}`;
+  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
+  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
 }
 
 serve(async (req) => {
@@ -87,9 +88,9 @@ serve(async (req) => {
     // Limpar CPF - remover qualquer formatação
     const cleanCpf = cpf.replace(/[^0-9]/g, '');
     
-    // Gerar senha padrão: Sem@ + 3 primeiros dígitos do CPF
+    // Gerar senha padrão que atende aos requisitos do Supabase
     const defaultPassword = generateDefaultPassword(cleanCpf);
-    console.log('Generated default password for user');
+    console.log('Generated default password for new user');
 
     // Check if user exists
     const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ email });
@@ -121,7 +122,7 @@ serve(async (req) => {
         console.error('Error updating profile:', updateProfileError);
       }
     } else {
-      // Criar usuário com senha padrão
+      // Criar usuário com senha padrão que atende aos requisitos
       const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
         email,
         password: defaultPassword,
@@ -145,6 +146,7 @@ serve(async (req) => {
       userId = newUser.user.id;
       console.log(`New user created: ${userId}`);
       
+      // Log para debug
       await supabase.from('logs').insert({
         level: 'info',
         context: 'create-asaas-payment',
@@ -252,7 +254,7 @@ serve(async (req) => {
       'access_token': ASAAS_API_KEY,
     };
 
-    const customerCpfCnpj = cleanCpf;
+    const customerCpfCnpj = cleanCpf; // Usar CPF já limpo
     const formattedTotalPrice = totalPrice.toFixed(2);
 
     let asaasPayload: any = {

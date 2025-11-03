@@ -12,18 +12,10 @@ import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
-// Função para gerar senha padrão baseada no CPF
-// Formato: Sem@ + 3 primeiros dígitos do CPF
-function generateDefaultPassword(cpf: string): string {
-  const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3);
-  return `Sem@${cpfPrefix}`;
-}
-
 interface CustomerEditorModalProps {
   open: boolean;
   onClose: () => void;
-  customer: any;
+  customer: any; // Profile with id, name, email, access
   products: { id: string; name: string }[];
   onRefresh: () => void;
 }
@@ -55,42 +47,62 @@ const CustomerEditorModal = ({
   };
 
   const handleResetPassword = async () => {
-    if (!customer?.id || !customer?.cpf) {
-      showError("CPF do cliente não encontrado.");
-      return;
-    }
+    if (!customer?.id) return;
 
-    if (!window.confirm("Tem certeza que deseja redefinir a senha para a senha padrão (Sem@ + 3 primeiros dígitos do CPF)?")) return;
+    if (!window.confirm("Tem certeza que deseja redefinir a senha para o CPF do usuário?")) return;
 
     setIsLoading(true);
     try {
-      // Gerar senha padrão baseada no CPF
-      const defaultPassword = generateDefaultPassword(customer.cpf);
+      // Fetch user's CPF
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('cpf')
+        .eq('id', customer.id)
+        .single();
 
-      // Atualizar a senha do usuário
-      const { error: updatePasswordError } = await supabase.auth.admin.updateUserById(
-        customer.id,
-        { password: defaultPassword }
-      );
-
-      if (updatePasswordError) {
-        showError("Erro ao redefinir senha: " + updatePasswordError.message);
-        console.error("Password reset error:", updatePasswordError);
+      if (profileError || !profile?.cpf) {
+        showError("Não foi possível recuperar o CPF do usuário.");
         return;
       }
 
-      // Log da redefinição de senha
+      // Reset password using CPF
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: profile.cpf,
+      });
+
+      if (updateError) {
+        showError("Erro ao redefinir senha: " + updateError.message);
+        console.error("Password reset error:", updateError);
+        return;
+      }
+
+      // Update profile to force password change
+      const { error: profileUpdateError } = await supabase
+        .from('profiles')
+        .update({ 
+          has_changed_password: false, 
+          primeiro_acesso: true 
+        })
+        .eq('id', customer.id);
+
+      if (profileUpdateError) {
+        showError("Erro ao atualizar perfil: " + profileUpdateError.message);
+        console.error("Profile update error:", profileUpdateError);
+        return;
+      }
+
+      // Log the password reset
       await supabase.from('logs').insert({
         level: 'info',
         context: 'admin-reset-password',
-        message: 'Admin reset user password to default',
+        message: 'Admin reset user password',
         metadata: { 
           adminId: customer.id, 
           userId: customer.id 
         }
       });
 
-      showSuccess(`Senha redefinida para: ${defaultPassword}`);
+      showSuccess("Senha redefinida para o CPF do usuário!");
       onRefresh();
     } catch (error: any) {
       showError("Erro inesperado: " + error.message);
@@ -122,10 +134,7 @@ const CustomerEditorModal = ({
 
       // Update auth user email if changed
       if (email !== customer.email) {
-        const { error: emailError } = await supabase.auth.admin.updateUserById(
-          customer.id,
-          { email }
-        );
+        const { error: emailError } = await supabase.auth.updateUser({ email });
         if (emailError) {
           showError("Erro ao atualizar email: " + emailError.message);
           console.error("Email update error:", emailError);
@@ -164,6 +173,7 @@ const CustomerEditorModal = ({
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Informações Pessoais */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Informações Pessoais</h3>
             <div className="space-y-3">
@@ -194,6 +204,7 @@ const CustomerEditorModal = ({
             </div>
           </div>
 
+          {/* Acessos */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Acessos aos Produtos</h3>
             <div className="border rounded-md p-3 max-h-64 overflow-y-auto">
@@ -227,7 +238,7 @@ const CustomerEditorModal = ({
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : (
-              "Redefinir Senha Padrão"
+              "Redefinir Senha para CPF"
             )}
           </Button>
           <div className="flex space-x-2">

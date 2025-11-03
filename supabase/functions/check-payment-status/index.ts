@@ -7,11 +7,11 @@ const corsHeaders = {
 };
 
 // Função para gerar senha padrão baseada no CPF
-// Formato: Sem@ + 3 primeiros dígitos do CPF
+// Formato: Sem123CPF (onde CPF são os 3 primeiros dígitos do CPF)
 function generateDefaultPassword(cpf: string): string {
   const cleanCpf = cpf.replace(/[^0-9]/g, '');
-  const cpfPrefix = cleanCpf.substring(0, 3);
-  return `Sem@${cpfPrefix}`;
+  const cpfPrefix = cleanCpf.substring(0, 3); // Primeiros 3 dígitos do CPF
+  return `Sem123${cpfPrefix}`; // Ex: Sem123123 (para CPF começando com 123)
 }
 
 serve(async (req) => {
@@ -115,6 +115,7 @@ serve(async (req) => {
           message: 'Order not found for payment ID.',
           metadata: { paymentId, error: orderError?.message }
         });
+        // Retornar o status mesmo se não encontrar o pedido
         return new Response(JSON.stringify({ status: paymentStatus, accessGranted: false, reason: "Order not found" }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -138,6 +139,7 @@ serve(async (req) => {
             message: 'Failed to update order status.',
             metadata: { orderId, paymentId, error: updateOrderError.message }
           });
+          // Continuar mesmo com erro, para tentar liberar o acesso
         }
       }
 
@@ -167,10 +169,9 @@ serve(async (req) => {
       const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
 
       // 5. Atualizar o perfil do usuário com o novo array 'access'
-      // NÃO definir has_changed_password como false - o usuário já tem a senha padrão
       const { error: updateProfileError } = await supabase
         .from('profiles')
-        .update({ access: newAccess })
+        .update({ access: newAccess, has_changed_password: false }) // Forçar troca de senha no primeiro acesso
         .eq('id', userId);
 
       if (updateProfileError) {
@@ -189,6 +190,7 @@ serve(async (req) => {
       // 6. Enviar email com detalhes de acesso
       const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
       if (RESEND_API_KEY && profile.email && profile.cpf) {
+        // Gerar a senha padrão para incluir no email
         const defaultPassword = generateDefaultPassword(profile.cpf);
         
         const emailSubject = "Seu acesso foi liberado!";
@@ -202,7 +204,7 @@ serve(async (req) => {
           Email: ${profile.email}
           Senha: ${defaultPassword}
 
-          Guarde esta senha com segurança. Você pode alterá-la a qualquer momento nas configurações da sua conta.
+          Por segurança, você será solicitado a trocar sua senha no primeiro acesso.
         `;
 
         try {
