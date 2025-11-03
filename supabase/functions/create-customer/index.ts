@@ -125,7 +125,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-customer',
       message: 'New user and profile created successfully.',
-      metadata: { userId, email, name }
+      metadata: { userId, email, name, cpfLength: sanitizedCpf.length }
     });
 
     return new Response(JSON.stringify({ 

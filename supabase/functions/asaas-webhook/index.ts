@@ -127,10 +127,11 @@ serve(async (req) => {
     const existingAccess = profile.access || [];
     const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
 
-    // 7. Update the 'profiles' table with the new 'access' array and set has_changed_password to FALSE (to force password change on first login)
+    // 7. Update the 'profiles' table with the new 'access' array
+    // IMPORTANTE: Não forçar has_changed_password para false se o usuário já trocou a senha
     const { error: updateProfileError } = await supabase
       .from('profiles')
-      .update({ access: newAccess, has_changed_password: false }) // Set to false to force password change
+      .update({ access: newAccess })
       .eq('id', userId);
 
     if (updateProfileError) {

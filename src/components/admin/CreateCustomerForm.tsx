@@ -60,6 +60,23 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
 
     setIsSubmitting(true);
     try {
+      // Primeiro, verificar se o usuário já existe
+      const { data: existingUsers, error: checkError } = await supabase.auth.admin.listUsers({
+        email: data.email,
+      });
+
+      if (checkError) {
+        showError("Erro ao verificar usuário existente: " + checkError.message);
+        console.error("Check user error:", checkError);
+        return;
+      }
+
+      if (existingUsers && existingUsers.users && existingUsers.users.length > 0) {
+        showError("Um usuário com este email já existe. Por favor, use um email diferente.");
+        return;
+      }
+
+      // Se não existir, criar novo usuário
       const payload = {
         email: data.email,
         name: data.name,

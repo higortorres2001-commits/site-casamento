@@ -134,6 +134,30 @@ serve(async (req) => {
       userId = newUser.user.id;
       console.log(`New user created: ${userId} with password length: ${cleanCpf.length}`);
       
+      // Criar perfil para o novo usuário
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          name,
+          cpf: cleanCpf,
+          email,
+          whatsapp,
+          access: [],
+          primeiro_acesso: true,
+          has_changed_password: false
+        });
+      
+      if (profileError) {
+        console.error('Error creating profile:', profileError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'create-asaas-payment',
+          message: 'Failed to create profile',
+          metadata: { userId, email, error: profileError.message }
+        });
+      }
+      
       // Log para debug
       await supabase.from('logs').insert({
         level: 'info',
