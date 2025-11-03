@@ -167,25 +167,62 @@ serve(async (req) => {
       });
     }
 
+    // --- Product Validation with Detailed Logging ---
+    const uniqueProductIds = [...new Set(productIds)];
+    console.log('Unique product IDs to fetch:', uniqueProductIds);
+
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-product-fetch',
+      message: 'Attempting to fetch products',
+      metadata: { uniqueProductIds }
+    });
+
     // Fetch products
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, price')
-      .in('id', productIds);
+      .select('id, price, name, status') // Added name and status for debugging
+      .in('id', uniqueProductIds);
 
-    if (productsError || !products || products.length !== productIds.length) {
+    console.log('Supabase response for products:', { data: products, error: productsError });
+
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-product-fetch',
+      message: 'Supabase response for product fetch',
+      metadata: { 
+        requestedIds: uniqueProductIds,
+        foundProducts: products,
+        error: productsError?.message,
+        productsCount: products?.length || 0,
+        requestedCount: uniqueProductIds.length
+      }
+    });
+
+    if (productsError || !products || products.length !== uniqueProductIds.length) {
       console.error('Error fetching products:', productsError);
+      
+      // Determine which IDs were not found
+      const foundIds = new Set(products?.map(p => p.id) || []);
+      const missingIds = uniqueProductIds.filter(id => !foundIds.has(id));
+
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment',
         message: 'Products not found',
-        metadata: { productIds, error: productsError?.message }
+        metadata: { 
+          productIds: uniqueProductIds, 
+          missingIds, 
+          foundIds: Array.from(foundIds),
+          error: productsError?.message 
+        }
       });
-      return new Response(JSON.stringify({ error: 'One or more products not found' }), {
+      return new Response(JSON.stringify({ error: 'One or more products not found', details: { missingIds } }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    // --- End Product Validation Fix ---
 
     let totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price), 0);
 
@@ -234,7 +271,7 @@ serve(async (req) => {
       .from('orders')
       .insert({
         user_id: userId,
-        ordered_product_ids: productIds,
+        ordered_product_ids: productIds, // Keep original list including duplicates for order tracking
         total_price: totalPrice,
         status: 'pending',
         meta_tracking_data: fullMetaTrackingData,
