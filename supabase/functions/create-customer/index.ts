@@ -11,83 +11,87 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Service role client for admin operations
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
   try {
-    const payload = await req.json();
-    const { email, name, cpf, whatsapp } = payload;
+    const { email, name, cpf, whatsapp } = await req.json();
 
+    // Validate required fields
     if (!email || !name || !cpf || !whatsapp) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer',
-        message: 'Missing required fields (email, name, cpf, whatsapp) in request.',
-        metadata: { payload }
+        message: 'Missing required fields',
+        metadata: { email, name, cpf: cpf ? 'provided' : 'missing', whatsapp: whatsapp ? 'provided' : 'missing' }
       });
-      return new Response(JSON.stringify({ error: 'Missing required fields.' }), {
+      return new Response(JSON.stringify({ error: 'Todos os campos são obrigatórios' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Sanitize CPF to use as initial password
-    const sanitizedCpf = cpf.replace(/[^\d]+/g, '');
+    // Clean CPF
+    const cleanCpf = cpf.replace(/[^\d]+/g, '');
+    
+    if (cleanCpf.length !== 11) {
+      return new Response(JSON.stringify({ error: 'CPF inválido' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    // Check if user already exists by email
-    const { data: existingUsersByEmail, error: emailCheckError } = await supabase.auth.admin.listUsers({
-      email: email,
-    });
-
-    if (emailCheckError) {
+    // Check if user exists
+    const { data: authUsers, error: listError } = await supabase.auth.admin.listUsers();
+    
+    if (listError) {
+      console.error('Error listing users:', listError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer',
-        message: 'Error checking existing users by email.',
-        metadata: { email, error: emailCheckError.message }
+        message: 'Failed to list users',
+        metadata: { error: listError.message }
       });
-      return new Response(JSON.stringify({ error: 'Failed to check existing users by email.' }), {
+      return new Response(JSON.stringify({ error: 'Erro ao verificar usuários existentes' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    if (existingUsersByEmail && existingUsersByEmail.users && existingUsersByEmail.users.length > 0) {
+    const existingUser = authUsers.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+    
+    if (existingUser) {
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-customer',
-        message: 'User with this email already exists.',
-        metadata: { email, existingUserId: existingUsersByEmail.users[0].id }
+        message: 'User already exists',
+        metadata: { email, existingUserId: existingUser.id }
       });
-      return new Response(JSON.stringify({ error: 'Um usuário com este email já existe.' }), {
+      return new Response(JSON.stringify({ error: 'Usuário com este email já existe' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Create user with CPF as initial password
+    // Create user
     const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
       email,
-      password: sanitizedCpf,
+      password: cleanCpf,
       email_confirm: true,
-      user_metadata: { 
-        name, 
-        cpf: sanitizedCpf, 
-        whatsapp 
-      },
+      user_metadata: { name, cpf: cleanCpf, whatsapp }
     });
 
     if (createError || !newUser?.user) {
+      console.error('Error creating user:', createError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer',
-        message: 'Failed to create new user account.',
+        message: 'Failed to create user',
         metadata: { email, error: createError?.message }
       });
-      return new Response(JSON.stringify({ error: 'Falha ao criar usuário.' }), {
+      return new Response(JSON.stringify({ error: 'Erro ao criar usuário: ' + (createError?.message || 'Unknown error') }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -95,60 +99,58 @@ serve(async (req) => {
 
     const userId = newUser.user.id;
 
-    // Seed profile with additional checks
-    const { error: insertProfileError } = await supabase
+    // Create profile
+    const { error: profileError } = await supabase
       .from('profiles')
-      .insert({ 
-        id: userId, 
-        name, 
-        cpf: sanitizedCpf, 
-        email, 
+      .insert({
+        id: userId,
+        name,
+        cpf: cleanCpf,
+        email,
         whatsapp,
+        access: [],
         primeiro_acesso: true,
         has_changed_password: false,
-        access: []
+        is_admin: false
       });
 
-    if (insertProfileError) {
+    if (profileError) {
+      console.error('Error creating profile:', profileError);
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer',
-        message: 'Failed to insert profile for new user.',
-        metadata: { userId, error: insertProfileError.message }
+        message: 'Failed to create profile',
+        metadata: { userId, error: profileError.message }
       });
-      return new Response(JSON.stringify({ error: 'Falha ao criar perfil.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      // Don't fail the request, profile can be created later
     }
 
-    // Log successful user creation
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-customer',
-      message: 'New user and profile created successfully.',
-      metadata: { userId, email, name, cpfLength: sanitizedCpf.length }
+      message: 'User created successfully',
+      metadata: { userId, email, cpfLength: cleanCpf.length }
     });
 
     return new Response(JSON.stringify({ 
-      id: userId, 
-      email, 
-      name,
-      message: 'Usuário criado com sucesso. Use o CPF como senha inicial.' 
+      success: true,
+      userId,
+      email,
+      message: 'Usuário criado com sucesso'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    console.error('Create customer edge function error:', error);
+    console.error('Unexpected error:', error);
     await supabase.from('logs').insert({
       level: 'error',
       context: 'create-customer',
-      message: 'Unhandled error in edge function.',
+      message: 'Unexpected error',
       metadata: { error: error?.message, stack: error?.stack }
     });
-    return new Response(JSON.stringify({ error: error?.message ?? 'Unknown error' }), {
+    return new Response(JSON.stringify({ error: 'Erro inesperado: ' + error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -26,12 +26,12 @@ const formSchema = z.object({
   cpf: z
     .string()
     .min(14, "CPF obrigatório")
-    .max(14, "CPF inválido") // 000.000.000-00
+    .max(14, "CPF inválido")
     .regex(/^\d{3}\.\d{3}\.\d{3}-\d{2}$/, "CPF inválido"),
   whatsapp: z
     .string()
     .min(15, "WhatsApp obrigatório")
-    .max(15, "WhatsApp inválido") // (00) 00000-0000
+    .max(15, "WhatsApp inválido")
     .regex(/^\(\d{2}\) \d{4,5}-\d{4}$/, "WhatsApp inválido"),
 });
 
@@ -60,44 +60,31 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
 
     setIsSubmitting(true);
     try {
-      // Primeiro, verificar se o usuário já existe
-      const { data: existingUsers, error: checkError } = await supabase.auth.admin.listUsers({
-        email: data.email,
-      });
-
-      if (checkError) {
-        showError("Erro ao verificar usuário existente: " + checkError.message);
-        console.error("Check user error:", checkError);
-        return;
-      }
-
-      if (existingUsers && existingUsers.users && existingUsers.users.length > 0) {
-        showError("Um usuário com este email já existe. Por favor, use um email diferente.");
-        return;
-      }
-
-      // Se não existir, criar novo usuário
-      const payload = {
-        email: data.email,
-        name: data.name,
-        cpf: cpfClean,
-        whatsapp: whatsappClean,
-      };
-
-      const { error } = await supabase.functions.invoke("create-customer", {
-        body: payload,
+      const { data: result, error } = await supabase.functions.invoke("create-customer", {
+        body: {
+          email: data.email,
+          name: data.name,
+          cpf: cpfClean,
+          whatsapp: whatsappClean,
+        },
       });
 
       if (error) {
         showError("Erro ao criar cliente: " + error.message);
         console.error("Create customer error:", error);
-      } else {
-        showSuccess("Cliente criado com sucesso!");
-        form.reset();
-        if (onCreated) onCreated();
+        return;
       }
+
+      if (result?.error) {
+        showError(result.error);
+        return;
+      }
+
+      showSuccess("Cliente criado com sucesso!");
+      form.reset();
+      if (onCreated) onCreated();
     } catch (err: any) {
-      showError("Erro ao criar cliente.");
+      showError("Erro ao criar cliente: " + err.message);
       console.error("Create customer exception:", err);
     } finally {
       setIsSubmitting(false);
@@ -188,7 +175,7 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
         </div>
 
         <p className="text-xs text-slate-500">
-          Após criado, o cliente recebe acesso com a senha padrão (CPF) e pode ser atualizado a qualquer momento.
+          Após criado, o cliente recebe acesso com a senha padrão (CPF sem formatação) e pode ser atualizado a qualquer momento.
         </p>
 
         <div className="flex justify-end">

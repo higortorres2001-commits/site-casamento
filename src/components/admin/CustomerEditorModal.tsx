@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 interface CustomerEditorModalProps {
   open: boolean;
   onClose: () => void;
-  customer: any; // Profile with id, name, email, access
+  customer: any;
   products: { id: string; name: string }[];
   onRefresh: () => void;
 }
@@ -53,54 +53,20 @@ const CustomerEditorModal = ({
 
     setIsLoading(true);
     try {
-      // Fetch user's CPF
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('cpf')
-        .eq('id', customer.id)
-        .single();
-
-      if (profileError || !profile?.cpf) {
-        showError("Não foi possível recuperar o CPF do usuário.");
-        return;
-      }
-
-      // Reset password using CPF
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: profile.cpf,
+      const { data, error } = await supabase.functions.invoke("reset-user-password", {
+        body: { userId: customer.id },
       });
 
-      if (updateError) {
-        showError("Erro ao redefinir senha: " + updateError.message);
-        console.error("Password reset error:", updateError);
+      if (error) {
+        showError("Erro ao redefinir senha: " + error.message);
+        console.error("Password reset error:", error);
         return;
       }
 
-      // Update profile to force password change
-      const { error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({ 
-          has_changed_password: false, 
-          primeiro_acesso: true 
-        })
-        .eq('id', customer.id);
-
-      if (profileUpdateError) {
-        showError("Erro ao atualizar perfil: " + profileUpdateError.message);
-        console.error("Profile update error:", profileUpdateError);
+      if (data?.error) {
+        showError(data.error);
         return;
       }
-
-      // Log the password reset
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'admin-reset-password',
-        message: 'Admin reset user password',
-        metadata: { 
-          adminId: customer.id, 
-          userId: customer.id 
-        }
-      });
 
       showSuccess("Senha redefinida para o CPF do usuário!");
       onRefresh();
@@ -134,7 +100,11 @@ const CustomerEditorModal = ({
 
       // Update auth user email if changed
       if (email !== customer.email) {
-        const { error: emailError } = await supabase.auth.updateUser({ email });
+        const { error: emailError } = await supabase.auth.admin.updateUserById(
+          customer.id,
+          { email }
+        );
+        
         if (emailError) {
           showError("Erro ao atualizar email: " + emailError.message);
           console.error("Email update error:", emailError);
