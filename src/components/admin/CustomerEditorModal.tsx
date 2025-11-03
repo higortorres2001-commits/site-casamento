@@ -37,7 +37,8 @@ const CustomerEditorModal = ({
     if (customer) {
       setName(customer.name ?? "");
       setEmail(customer.email ?? "");
-      setSelected(customer.access ?? []);
+      // Ensure access is always an array
+      setSelected(Array.isArray(customer.access) ? customer.access : []);
       setIsAdmin(customer.is_admin ?? false);
     }
   }, [customer, open]);
@@ -81,13 +82,22 @@ const CustomerEditorModal = ({
   const handleSave = async () => {
     setIsLoading(true);
     try {
+      // Log the data being saved for debugging
+      console.log("Saving customer data:", {
+        id: customer.id,
+        name,
+        email,
+        access: selected,
+        is_admin: isAdmin
+      });
+
       // Update profile
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
           name, 
           email, 
-          access: selected.length ? selected : [], 
+          access: selected, 
           is_admin: isAdmin 
         })
         .eq('id', customer.id);
@@ -108,7 +118,7 @@ const CustomerEditorModal = ({
         if (emailError) {
           showError("Erro ao atualizar email: " + emailError.message);
           console.error("Email update error:", emailError);
-          return;
+          // Continue anyway since the profile was updated
         }
       }
 
@@ -136,7 +146,7 @@ const CustomerEditorModal = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(_open) => _open ? null : onClose()}>
+    <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? null : onClose()}>
       <DialogContent className="sm:max-w-2xl p-6">
         <DialogHeader>
           <DialogTitle>Editar Usuário</DialogTitle>

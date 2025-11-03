@@ -174,23 +174,34 @@ const Customers = () => {
   }, []);
 
   const fetchProducts = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("products")
-      .select("id, name")
-      .order("name", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name")
+        .order("name", { ascending: true });
 
-    if (error) {
-      console.error("Error fetching products:", error);
+      if (error) {
+        console.error("Error fetching products:", error);
+        showError("Erro ao carregar produtos.");
+        return [];
+      }
+      
+      console.log(`Fetched ${data?.length || 0} products`);
+      return data || [];
+    } catch (error) {
+      console.error("Unexpected error fetching products:", error);
+      showError("Erro inesperado ao carregar produtos.");
       return [];
     }
-    return data || [];
   }, []);
 
   useEffect(() => {
     if (!isSessionLoading && user) {
       fetchCustomers();
+      // Pre-fetch products for faster modal opening
+      fetchProducts().then(products => setMassProducts(products));
     }
-  }, [isSessionLoading, user, fetchCustomers]);
+  }, [isSessionLoading, user, fetchCustomers, fetchProducts]);
 
   const handleCreateCustomer = () => {
     setIsCreateModalOpen(true);
@@ -202,6 +213,7 @@ const Customers = () => {
   };
 
   const handleOpenMassAccess = async () => {
+    // Refresh products list before opening modal
     const products = await fetchProducts();
     setMassProducts(products);
     setIsMassModalOpen(true);
@@ -252,7 +264,10 @@ const Customers = () => {
     }
   };
 
-  const handleEditCustomer = (customer: CustomerRow) => {
+  const handleEditCustomer = async (customer: CustomerRow) => {
+    // Refresh products list before opening modal
+    const products = await fetchProducts();
+    setMassProducts(products);
     setEditingCustomer(customer);
     setIsEditorOpen(true);
   };
