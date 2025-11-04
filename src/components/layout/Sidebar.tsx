@@ -2,22 +2,22 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, RefreshCw, Search, UserCheck, Bug, Users as UsersIcon, PackageSearch } from 'lucide-react';
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users } from 'lucide-react'; // Added Users icon
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
-import { useSession } from '@/components/SessionContextProvider';
+import { useSession } from '@/components/SessionContextProvider'; // Import useSession
 
 interface SidebarProps {
   isMobile: boolean;
   onCloseMobileMenu?: () => void;
 }
 
-const ADMIN_EMAIL = "higor.torres8@gmail.com";
+const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
 
 const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
-  const { user } = useSession();
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const { user } = useSession(); // Obter o usuário da sessão
+  const isAdmin = user?.email === ADMIN_EMAIL; // Verificar se é administrador
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -33,11 +33,11 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border p-4">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-sidebar-primary-foreground">
-          {isAdmin ? "Admin" : "Minha Conta"}
+          {isAdmin ? "Admin" : "Minha Conta"} {/* Título dinâmico */}
         </h2>
         {isMobile && (
           <Button variant="ghost" size="icon" onClick={onCloseMobileMenu}>
-            <Home className="h-5 w-5" />
+            <Home className="h-5 w-5" /> {/* Using Home icon as a close button for simplicity */}
           </Button>
         )}
       </div>
@@ -50,7 +50,7 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
           <BookOpen className="h-4 w-4" />
           Meus Produtos
         </Link>
-        {isAdmin && (
+        {isAdmin && ( // Admin links
           <>
             <Link to="/admin/products" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Package className="h-4 w-4" />
@@ -67,30 +67,6 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
             <Link to="/admin/logs" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <ScrollText className="h-4 w-4" />
               Logs
-            </Link>
-            <Link to="/admin/sync-payment" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
-              <RefreshCw className="h-4 w-4" />
-              Sincronizar Pagamento
-            </Link>
-            <Link to="/admin/sync-specific-payment" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
-              <Search className="h-4 w-4" />
-              Buscar Pagamento
-            </Link>
-            <Link to="/admin/fix-missing-auth" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
-              <UserCheck className="h-4 w-4" />
-              Corrigir Auth
-            </Link>
-            <Link to="/admin/auth-debug" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
-              <Bug className="h-4 w-4" />
-              Debug Auth
-            </Link>
-            <Link to="/admin/duplicate-users" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
-              <UsersIcon className="h-4 w-4" />
-              Usuários Duplicados
-            </Link>
-            <Link to="/admin/order-auth-debug" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
-              <PackageSearch className="h-4 w-4" />
-              Debug Pedidos
             </Link>
           </>
         )}

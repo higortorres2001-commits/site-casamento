@@ -16,18 +16,12 @@ import Confirmation from "./pages/Confirmation";
 import ProcessingPayment from "./pages/ProcessingPayment";
 import Logs from "./pages/admin/Logs";
 import UpdatePassword from "./pages/UpdatePassword";
-import ResetPassword from "./pages/ResetPassword";
+import ResetPassword from "./pages/ResetPassword"; // Importar a nova página
 import AdminLayout from "./components/layout/AdminLayout";
 import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import WhatsAppButton from "./components/WhatsAppButton";
 import ProductTags from "./pages/admin/ProductTags";
-import UserAuthDebug from "./pages/admin/UserAuthDebug";
-import SyncPayment from "./pages/admin/SyncPayment";
-import SyncSpecificPayment from "./pages/admin/SyncSpecificPayment";
-import FixMissingAuth from "./pages/admin/FixMissingAuth";
-import DuplicateUsers from "./pages/admin/DuplicateUsers";
-import OrderAuthDebug from "./pages/admin/OrderAuthDebug";
 
 const queryClient = new QueryClient();
 
@@ -42,7 +36,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/checkout/:productId" element={<Checkout />} />
             <Route path="/primeira-senha" element={<UpdatePassword />} />
-            <Route path="/update-password" element={<ResetPassword />} />
+            <Route path="/update-password" element={<ResetPassword />} /> {/* Nova rota */}
 
             <Route element={<AdminLayout />}>
               <Route path="/admin/products" element={<Products />} />
@@ -50,12 +44,6 @@ const App = () => (
               <Route path="/admin/customers" element={<Customers />} />
               <Route path="/admin/logs" element={<Logs />} />
               <Route path="/admin/product-tags" element={<ProductTags />} />
-              <Route path="/admin/auth-debug" element={<UserAuthDebug />} />
-              <Route path="/admin/sync-payment" element={<SyncPayment />} />
-              <Route path="/admin/sync-specific-payment" element={<SyncSpecificPayment />} />
-              <Route path="/admin/fix-missing-auth" element={<FixMissingAuth />} />
-              <Route path="/admin/duplicate-users" element={<DuplicateUsers />} />
-              <Route path="/admin/order-auth-debug" element={<OrderAuthDebug />} />
             </Route>
 
             <Route element={<PublicLayout />}>
