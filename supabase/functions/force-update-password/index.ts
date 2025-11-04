@@ -26,6 +26,8 @@ serve(async (req) => {
       });
     }
 
+    console.log(`Attempting to force update password for email: ${email}`);
+
     // 1. Encontrar o usuário pelo email
     const { data: users, error: listError } = await supabase.auth.admin.listUsers();
     
@@ -40,6 +42,7 @@ serve(async (req) => {
     const targetUser = users.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     
     if (!targetUser) {
+      console.error('User not found:', email);
       return new Response(JSON.stringify({ error: 'Usuário não encontrado' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -71,6 +74,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log(`Password successfully updated for user: ${targetUser.id}`);
 
     // 3. Atualizar perfil para indicar que a senha foi alterada
     const { error: profileError } = await supabase
@@ -104,8 +109,6 @@ serve(async (req) => {
         newPasswordLength: newPassword.length 
       }
     });
-
-    console.log(`Password successfully updated for user: ${targetUser.id}`);
 
     return new Response(JSON.stringify({ 
       success: true,

@@ -39,24 +39,16 @@ const LoginForm = () => {
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
-      // Limpa a senha completamente - remove qualquer formatação
-      let cleanPassword = data.password.replace(/[^\d]/g, '');
-      
-      // Se a senha limpa tiver 11 dígitos (CPF), usa ela
-      // Senão, usa a senha original digitada
-      const finalPassword = cleanPassword.length === 11 ? cleanPassword : data.password;
-      
-      console.log('Tentativa de login:', {
+      console.log('Iniciando login com:', {
         email: data.email,
-        originalPassword: data.password,
-        cleanPassword: cleanPassword,
-        finalPassword: finalPassword,
-        passwordLength: finalPassword.length
+        password: data.password,
+        passwordLength: data.password.length
       });
 
+      // Tenta fazer login diretamente sem modificar a senha
       const { error, data: sessionData } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: finalPassword,
+        email: data.email.trim().toLowerCase(), // Normaliza o email
+        password: data.password, // Usa a senha exata como digitada
       });
 
       if (error) {
@@ -68,21 +60,21 @@ const LoginForm = () => {
           context: 'login-attempt',
           message: 'Login failed',
           metadata: { 
-            email: data.email,
-            originalPassword: data.password,
-            cleanPassword: cleanPassword,
-            finalPassword: finalPassword,
-            passwordLength: finalPassword.length,
+            email: data.email.trim().toLowerCase(),
+            password: data.password,
+            passwordLength: data.password.length,
             errorType: error.name, 
             errorMessage: error.message
           }
         });
 
-        // Se for erro de credenciais e a senha tem 11 dígitos, dá mensagem específica
-        if (error.message.includes('Invalid login credentials') && finalPassword.length === 11) {
-          showError("CPF incorreto ou usuário não encontrado. Verifique o email e o CPF utilizados na compra.");
-        } else if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos. Para primeiro acesso, use apenas os números do seu CPF.");
+        // Mensagens de erro específicas
+        if (error.message.includes('Invalid login credentials')) {
+          if (data.password.length === 11 && /^\d+$/.test(data.password)) {
+            showError("CPF incorreto ou usuário não encontrado. Tente usar a senha que você criou ou solicite redefinição.");
+          } else {
+            showError("Email ou senha incorretos. Para primeiro acesso, use apenas os números do seu CPF.");
+          }
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
@@ -101,7 +93,7 @@ const LoginForm = () => {
         metadata: { 
           userId: sessionData.user.id, 
           email: sessionData.user.email,
-          passwordType: finalPassword.length === 11 ? 'cpf' : 'password'
+          passwordLength: data.password.length
         }
       });
 
@@ -114,7 +106,6 @@ const LoginForm = () => {
 
       if (profileError || !profile) {
         console.error("Profile error:", profileError);
-        // Continua mesmo se não encontrar perfil
       }
 
       // Se nunca trocou a senha, redirecionar
@@ -195,6 +186,7 @@ const LoginForm = () => {
                   {...field}
                   className="focus:ring-orange-500 focus:border-orange-500"
                   type="email"
+                  autoComplete="email"
                 />
               </FormControl>
               <FormMessage />
@@ -213,6 +205,7 @@ const LoginForm = () => {
                   {...field}
                   className="focus:ring-orange-500 focus:border-orange-500"
                   type="password"
+                  autoComplete="current-password"
                 />
               </FormControl>
               <FormMessage />
