@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Products from "./pages/admin/Products";
 import Coupons from "./pages/admin/Coupons";
 import Customers from "./pages/admin/Customers";
+import Sales from "./pages/admin/Sales"; // Importar página de vendas
 import Checkout from "./pages/Checkout";
 import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/cupons" element={<Coupons />} />
               <Route path="/admin/customers" element={<Customers />} />
+              <Route path="/admin/sales" element={<Sales />} /> {/* Nova rota de vendas */}
               <Route path="/admin/logs" element={<Logs />} />
               <Route path="/admin/product-tags" element={<ProductTags />} />
             </Route>
