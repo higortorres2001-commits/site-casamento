@@ -32,7 +32,8 @@ import {
   Calendar,
   Search,
   Download,
-  Eye
+  Eye,
+  X
 } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import { formatCPF } from "@/utils/cpfValidation";
@@ -254,6 +255,11 @@ const Sales = () => {
   const openOrderDetails = (order: Order) => {
     setSelectedOrder(order);
     setIsModalOpen(true);
+  };
+
+  const closeOrderDetails = () => {
+    setIsModalOpen(false);
+    setSelectedOrder(null);
   };
 
   const exportSales = () => {
@@ -540,13 +546,13 @@ const Sales = () => {
 
       {/* Modal de Detalhes do Pedido */}
       {selectedOrder && (
-        <Card className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">Detalhes do Pedido</h3>
-                <Button variant="ghost" onClick={() => setIsModalOpen(false)}>
-                  ×
+                <Button variant="ghost" onClick={closeOrderDetails}>
+                  <X className="h-5 w-5" />
                 </Button>
               </div>
 
@@ -643,7 +649,7 @@ const Sales = () => {
               </div>
             </div>
           </div>
-        </Card>
+        </div>
       )}
     </div>
   );
