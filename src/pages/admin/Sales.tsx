@@ -78,23 +78,15 @@ const Sales = () => {
     
     setLoading(true);
     try {
-      let query = supabase
+      // Primeiro, buscar todos os pedidos
+      let ordersQuery = supabase
         .from("orders")
-        .select(`
-          *,
-          profiles!inner(
-            id,
-            name,
-            email,
-            cpf,
-            whatsapp
-          )
-        `)
+        .select("*")
         .order("created_at", { ascending: false });
 
       // Aplicar filtros
       if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
+        ordersQuery = ordersQuery.eq("status", statusFilter);
       }
 
       if (dateFilter !== "all") {
@@ -114,20 +106,55 @@ const Sales = () => {
         }
         
         if (dateFilter !== "all") {
-          query = query.gte("created_at", cutoff.toISOString());
+          ordersQuery = ordersQuery.gte("created_at", cutoff.toISOString());
         }
       }
 
-      const { data, error } = await query.limit(1000);
+      const { data: ordersData, error: ordersError } = await ordersQuery.limit(1000);
 
-      if (error) {
-        showError("Erro ao carregar vendas: " + error.message);
-        console.error("Error fetching orders:", error);
+      if (ordersError) {
+        showError("Erro ao carregar vendas: " + ordersError.message);
+        console.error("Error fetching orders:", ordersError);
         setOrders([]);
-      } else {
+        return;
+      }
+
+      // Se não houver pedidos, retornar array vazio
+      if (!ordersData || ordersData.length === 0) {
+        setOrders([]);
+        return;
+      }
+
+      // Buscar perfis separadamente para cada pedido
+      const userIds = [...new Set(ordersData.map(order => order.user_id))];
+      
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, name, email, cpf, whatsapp")
+          .in("id", userIds);
+
+        if (profilesError) {
+          console.error("Error fetching profiles:", profilesError);
+        }
+
+        // Criar mapa de perfis para acesso rápido
+        const profilesMap = new Map();
+        if (profilesData) {
+          profilesData.forEach(profile => {
+            profilesMap.set(profile.id, profile);
+          });
+        }
+
+        // Combinar pedidos com perfis
+        const ordersWithProfiles = ordersData.map(order => ({
+          ...order,
+          profiles: profilesMap.get(order.user_id) || null
+        }));
+
         // Buscar detalhes dos produtos para cada pedido
         const ordersWithProducts = await Promise.all(
-          (data || []).map(async (order: Order) => {
+          ordersWithProfiles.map(async (order: Order) => {
             if (order.ordered_product_ids && order.ordered_product_ids.length > 0) {
               const { data: products, error: productsError } = await supabase
                 .from("products")
@@ -143,6 +170,8 @@ const Sales = () => {
         );
 
         setOrders(ordersWithProducts);
+      } else {
+        setOrders(ordersData);
       }
     } catch (error: any) {
       showError("Erro inesperado ao carregar vendas: " + error.message);
