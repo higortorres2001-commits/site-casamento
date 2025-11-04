@@ -216,7 +216,7 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
             </div>
           </div>
 
-        {/* Ações rápidas para erros */}
+          {/* Ações rápidas para erros */}
           {log.level === "error" && (
             <div className="border-t pt-4">
               <h4 className="text-sm font-semibold text-gray-700 mb-3">Ações Recomendadas</h4>
