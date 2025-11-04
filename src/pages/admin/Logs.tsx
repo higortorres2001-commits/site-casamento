@@ -21,18 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Trash2, Search, Download, Eye, AlertTriangle, CheckCircle, Info, XCircle } from "lucide-react";
+import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import { useSession } from "@/components/SessionContextProvider";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type Log = {
   id: string;
@@ -52,7 +43,7 @@ const Logs = () => {
   const [searchFilter, setSearchFilter] = useState<string>("");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [availableContexts, setAvailableContexts] = useState<string[]>([]);
-  const [viewingLog, setViewingLog] = useState<Log | null>(null);
+  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
 
   const isAdmin = user?.email === "higor.torres8@gmail.com";
 
@@ -200,6 +191,18 @@ const Logs = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const toggleLogExpansion = (logId: string) => {
+    setExpandedLogs(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(logId)) {
+        newSet.delete(logId);
+      } else {
+        newSet.add(logId);
+      }
+      return newSet;
+    });
+  };
+
   const getLevelIcon = (level: string) => {
     switch (level) {
       case "error":
@@ -233,13 +236,17 @@ const Logs = () => {
   };
 
   const renderMetadata = (metadata: any) => {
-    if (!metadata) return "N/A";
+    if (!metadata) return <span className="text-gray-400 text-xs">N/A</span>;
     try {
       const serialized = typeof metadata === "string" ? metadata : JSON.stringify(metadata);
       const clean = serialized?.replace(/"internal_tag\\":\\s*"[^"]*",?/, "");
-      return clean.length > 200 ? `${clean.slice(0, 200)}…` : clean;
+      return (
+        <pre className="text-xs bg-gray-900 text-green-400 p-2 rounded overflow-x-auto max-h-40">
+          {clean}
+        </pre>
+      );
     } catch {
-      return "Metadados não legíveis";
+      return <span className="text-red-400 text-xs">Metadados não legíveis</span>;
     }
   };
 
@@ -358,7 +365,7 @@ const Logs = () => {
         </CardContent>
       </Card>
 
-      {/* Tabela de Logs */}
+      {/* Tabela de Logs com Metadados Expandidos */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -368,14 +375,13 @@ const Logs = () => {
           ) : (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader className="bg-gray-50 sticky top-0">
+                <TableHeader className="bg-gray-50 sticky top-0 z-10">
                   <TableRow>
                     <TableHead className="w-24">Data/Hora</TableHead>
                     <TableHead className="w-20">Nível</TableHead>
                     <TableHead className="w-32">Contexto</TableHead>
-                    <TableHead>Mensagem</TableHead>
-                    <TableHead className="w-48">Metadados</TableHead>
-                    <TableHead className="w-20">Ações</TableHead>
+                    <TableHead className="min-w-[300px]">Mensagem</TableHead>
+                    <TableHead className="min-w-[400px]">Metadados</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -387,64 +393,64 @@ const Logs = () => {
                     </TableRow>
                   ) : (
                     logs.map((log) => (
-                      <TableRow key={log.id} className="hover:bg-gray-50">
-                        <TableCell className="text-xs">
-                          {new Date(log.created_at).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getLevelIcon(log.level)}
-                            {getLevelBadge(log.level)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            className={`text-xs ${getContextColor(log.context)}`}
-                            variant="outline"
-                          >
-                            {log.context}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm max-w-xs break-words">
-                          <Collapsible>
-                            <CollapsibleTrigger asChild>
-                              <span className="cursor-pointer hover:text-blue-600">
-                                {log.message.length > 100 ? `${log.message.slice(0, 100)}...` : log.message}
+                      <React.Fragment key={log.id}>
+                        <TableRow className="hover:bg-gray-50">
+                          <TableCell className="text-xs">
+                            {new Date(log.created_at).toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {getLevelIcon(log.level)}
+                              {getLevelBadge(log.level)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              className={`text-xs ${getContextColor(log.context)}`}
+                              variant="outline"
+                            >
+                              {log.context}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm max-w-xs">
+                            <div className="truncate" title={log.message}>
+                              {log.message}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleLogExpansion(log.id)}
+                              className="flex items-center gap-1 h-6 px-2"
+                            >
+                              {expandedLogs.has(log.id) ? (
+                                <ChevronDown className="h-3 w-3" />
+                              ) : (
+                                <ChevronRight className="h-3 w-3" />
+                              )}
+                              <span className="text-xs">
+                                {expandedLogs.has(log.id) ? 'Ocultar' : 'Ver'} Metadados
                               </span>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                              <p className="text-xs text-gray-600 mt-1">{log.message}</p>
-                            </CollapsibleContent>
-                          </Collapsible>
-                        </TableCell>
-                        <TableCell className="text-xs max-w-[250px]">
-                          <Collapsible>
-                            <CollapsibleTrigger asChild>
-                              <div className="cursor-pointer hover:text-blue-600 font-mono bg-gray-50 p-1 rounded">
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        {expandedLogs.has(log.id) && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="p-0 bg-gray-50">
+                              <div className="p-4">
+                                <div className="flex items-start gap-2 mb-2">
+                                  <span className="text-sm font-medium text-gray-700">Metadados do Log:</span>
+                                  <Badge variant="outline" className="text-xs">
+                                    ID: {log.id}
+                                  </Badge>
+                                </div>
                                 {renderMetadata(log.metadata)}
                               </div>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                              <Textarea 
-                                value={JSON.stringify(log.metadata, null, 2)} 
-                                readOnly 
-                                className="text-xs mt-2 font-mono"
-                                rows={5}
-                              />
-                            </CollapsibleContent>
-                          </Collapsible>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setViewingLog(log)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
                     ))
                   )}
                 </TableBody>
@@ -453,64 +459,6 @@ const Logs = () => {
           )}
         </CardContent>
       </Card>
-
-      {/* Modal de Visualização Detalhada */}
-      <Dialog open={!!viewingLog} onOpenChange={() => setViewingLog(null)}>
-        <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {viewingLog && getLevelIcon(viewingLog.level)}
-              Detalhes do Log
-            </DialogTitle>
-            <DialogDescription>
-              Visualização completa do registro de log
-            </DialogDescription>
-          </DialogHeader>
-          
-          {viewingLog && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Data/Hora</label>
-                  <p className="text-sm">{new Date(viewingLog.created_at).toLocaleString()}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Nível</label>
-                  <div className="flex items-center gap-2">
-                    {getLevelIcon(viewingLog.level)}
-                    {getLevelBadge(viewingLog.level)}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Contexto</label>
-                  <Badge className={getContextColor(viewingLog.context)} variant="outline">
-                    {viewingLog.context}
-                  </Badge>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">ID</label>
-                  <p className="text-xs font-mono">{viewingLog.id}</p>
-                </div>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium text-gray-700">Mensagem</label>
-                <p className="text-sm bg-gray-50 p-3 rounded">{viewingLog.message}</p>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium text-gray-700">Metadados (JSON)</label>
-                <Textarea 
-                  value={JSON.stringify(viewingLog.metadata, null, 2)} 
-                  readOnly 
-                  className="text-xs font-mono bg-gray-50"
-                  rows={10}
-                />
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
