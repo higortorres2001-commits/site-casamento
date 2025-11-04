@@ -35,11 +35,24 @@ const CustomerEditorModal = ({
 
   useEffect(() => {
     if (customer) {
-      setName(customer.name ?? "");
-      setEmail(customer.email ?? "");
-      // Ensure access is always an array
-      setSelected(Array.isArray(customer.access) ? customer.access : []);
-      setIsAdmin(customer.is_admin ?? false);
+      const originalName = customer.name ?? "";
+      const originalEmail = customer.email ?? "";
+      const originalAccess = Array.isArray(customer.access) ? customer.access : [];
+      const originalIsAdmin = customer.is_admin ?? false;
+
+      setName(originalName);
+      setEmail(originalEmail);
+      setSelected(originalAccess);
+      setIsAdmin(originalIsAdmin);
+
+      // Log inicial do estado
+      console.log('CustomerEditorModal - Initial state loaded:', {
+        customerId: customer.id,
+        originalName,
+        originalEmail,
+        originalAccessCount: originalAccess.length,
+        originalIsAdmin
+      });
     }
   }, [customer, open]);
 
@@ -53,25 +66,77 @@ const CustomerEditorModal = ({
     if (!window.confirm("Tem certeza que deseja redefinir a senha para o CPF do usuário?")) return;
 
     setIsLoading(true);
+    
     try {
+      // Log da tentativa de reset
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-password-reset-start',
+        message: 'Admin initiated password reset',
+        metadata: { 
+          targetUserId: customer.id,
+          targetEmail: customer.email,
+          adminEmail: (await supabase.auth.getUser()).data.user?.email
+        }
+      });
+
       const { data, error } = await supabase.functions.invoke("reset-user-password", {
         body: { userId: customer.id },
       });
 
       if (error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-password-reset-error',
+          message: 'Failed to reset password via edge function',
+          metadata: { 
+            targetUserId: customer.id,
+            error: error.message,
+            errorType: error.name
+          }
+        });
         showError("Erro ao redefinir senha: " + error.message);
         console.error("Password reset error:", error);
         return;
       }
 
       if (data?.error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-password-reset-error',
+          message: 'Edge function returned error for password reset',
+          metadata: { 
+            targetUserId: customer.id,
+            edgeFunctionError: data.error
+          }
+        });
         showError(data.error);
         return;
       }
 
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-password-reset-success',
+        message: 'Password reset completed successfully',
+        metadata: { 
+          targetUserId: customer.id,
+          targetEmail: customer.email
+        }
+      });
+
       showSuccess("Senha redefinida para o CPF do usuário!");
       onRefresh();
     } catch (error: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'admin-password-reset-unhandled',
+        message: 'Unhandled error during password reset',
+        metadata: { 
+          targetUserId: customer.id,
+          error: error.message,
+          errorStack: error.stack
+        }
+      });
       showError("Erro inesperado: " + error.message);
       console.error("Unexpected error:", error);
     } finally {
@@ -81,56 +146,136 @@ const CustomerEditorModal = ({
 
   const handleSave = async () => {
     setIsLoading(true);
+    
     try {
-      // Log the data being saved for debugging
-      console.log("Saving customer data:", {
-        id: customer.id,
-        name,
-        email,
-        access: selected,
-        is_admin: isAdmin
+      // Log do início da atualização
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-user-update-start',
+        message: 'Admin started user profile update',
+        metadata: { 
+          targetUserId: customer.id,
+          changes: {
+            name: { from: customer.name, to: name },
+            email: { from: customer.email, to: email },
+            access: { 
+              from: Array.isArray(customer.access) ? customer.access.length : 0, 
+              to: selected.length 
+            },
+            is_admin: { from: customer.is_admin, to: isAdmin }
+          },
+          adminEmail: (await supabase.auth.getUser()).data.user?.email
+        }
       });
 
-      // Update profile
+      // ETAPA 1: Atualizar perfil
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
           name, 
-          email, 
+          email: email.toLowerCase().trim(), 
           access: selected, 
-          is_admin: isAdmin 
+          is_admin: isAdmin,
+          updated_at: new Date().toISOString()
         })
-        .eq('id', customer.id);
+        .eq('id', customer.id)
+        .select()
+        .single();
 
       if (profileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-user-profile-update-error',
+          message: 'Failed to update user profile',
+          metadata: { 
+            targetUserId: customer.id,
+            error: profileError.message,
+            errorType: profileError.name,
+            errorCode: profileError.code,
+            attemptedChanges: {
+              name, 
+              email: email.toLowerCase().trim(), 
+              access: selected, 
+              is_admin: isAdmin
+            }
+          }
+        });
         showError("Erro ao salvar perfil: " + profileError.message);
         console.error("Profile update error:", profileError);
         return;
       }
 
-      // Update auth user email if changed
-      if (email !== customer.email) {
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-user-profile-update-success',
+        message: 'User profile updated successfully',
+        metadata: { 
+          targetUserId: customer.id,
+          updatedProfile: profileError ? null : {
+            name, 
+            email: email.toLowerCase().trim(), 
+            accessCount: selected.length, 
+            is_admin: isAdmin
+          }
+        }
+      });
+
+      // ETAPA 2: Atualizar email no auth se mudou
+      if (email.toLowerCase().trim() !== customer.email?.toLowerCase().trim()) {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'admin-user-auth-update-start',
+          message: 'Starting auth email update',
+          metadata: { 
+            targetUserId: customer.id,
+            oldEmail: customer.email,
+            newEmail: email.toLowerCase().trim()
+          }
+        });
+
         const { error: emailError } = await supabase.auth.admin.updateUserById(
           customer.id,
-          { email }
+          { email: email.toLowerCase().trim() }
         );
         
         if (emailError) {
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'admin-user-auth-update-error',
+            message: 'Failed to update auth email',
+            metadata: { 
+              targetUserId: customer.id,
+              oldEmail: customer.email,
+              newEmail: email.toLowerCase().trim(),
+              error: emailError.message,
+              errorType: emailError.name
+            }
+          });
           showError("Erro ao atualizar email: " + emailError.message);
           console.error("Email update error:", emailError);
-          // Continue anyway since the profile was updated
+          // Continuar mesmo assim - o perfil foi atualizado
+        } else {
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'admin-user-auth-update-success',
+            message: 'Auth email updated successfully',
+            metadata: { 
+              targetUserId: customer.id,
+              newEmail: email.toLowerCase().trim()
+            }
+          });
         }
       }
 
-      // Log the update
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'admin-update-user',
-        message: 'Admin updated user profile',
+        context: 'admin-user-update-complete',
+        message: 'User update process completed successfully',
         metadata: { 
-          adminId: customer.id, 
-          userId: customer.id, 
-          changes: { name, email, access: selected, isAdmin } 
+          targetUserId: customer.id,
+          finalEmail: email.toLowerCase().trim(),
+          finalAccessCount: selected.length,
+          finalIsAdmin: isAdmin
         }
       });
 
@@ -138,6 +283,16 @@ const CustomerEditorModal = ({
       onRefresh();
       onClose();
     } catch (error: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'admin-user-update-unhandled',
+        message: 'Unhandled error during user update',
+        metadata: { 
+          targetUserId: customer.id,
+          error: error.message,
+          errorStack: error.stack
+        }
+      });
       showError("Erro inesperado: " + error.message);
       console.error("Unexpected error:", error);
     } finally {

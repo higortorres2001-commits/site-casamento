@@ -38,36 +38,62 @@ const LoginForm = () => {
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setIsLoading(true);
+    
     try {
+      // ETAPA 1: Log do início da tentativa de login
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'login-attempt-start',
+        message: 'User attempting to login',
+        metadata: { 
+          email: data.email.toLowerCase().trim(),
+          passwordLength: data.password.length,
+          passwordContainsDots: data.password.includes('.'),
+          passwordContainsDash: data.password.includes('-'),
+          passwordIsNumeric: /^\d+$/.test(data.password.replace(/[^\d]/g, ''))
+        }
+      });
+
       // Remove qualquer formatação da senha (caso o usuário digite o CPF formatado)
       let cleanPassword = data.password;
+      let passwordType = 'as_typed';
       
       // Verifica se parece ser um CPF formatado e remove a formatação
       if (data.password.includes('.') || data.password.includes('-')) {
         cleanPassword = data.password.replace(/[^\d]/g, '');
+        passwordType = 'formatted_cpf';
         console.log('CPF formatado detectado, removendo formatação:', data.password, '->', cleanPassword);
+      } else if (/^\d+$
+<dyad-write path="src/components/LoginForm.tsx" description="Continuação do formulário com logging detalhado">
+/.test(data.password)) {
+        passwordType = 'numeric_cpf';
       }
-      
+
+      // ETAPA 2: Tentativa de login
       const { error, data: sessionData } = await supabase.auth.signInWithPassword({
-        email: data.email,
+        email: data.email.toLowerCase().trim(),
         password: cleanPassword, // Usa a senha limpa (apenas números se for CPF)
       });
 
       if (error) {
-        console.error("Login error details:", error);
-        
-        // Adicionar logs mais detalhados para diagnóstico
+        // ETAPA 3: Log de erro de login
         await supabase.from('logs').insert({
           level: 'error',
-          context: 'login-attempt',
-          message: 'Login failed',
+          context: 'login-attempt-failed',
+          message: 'Login authentication failed',
           metadata: { 
-            email: data.email, 
+            email: data.email.toLowerCase().trim(), 
             originalPassword: data.password,
             cleanPassword: cleanPassword,
             passwordLength: cleanPassword.length,
+            passwordType: passwordType,
             errorType: error.name, 
-            errorMessage: error.message
+            errorMessage: error.message,
+            errorDetails: {
+              hasInvalidCredentials: error.message.includes('Invalid login credentials'),
+              hasEmailNotConfirmed: error.message.includes('Email not confirmed'),
+              hasOtherError: !error.message.includes('Invalid login credentials') && !error.message.includes('Email not confirmed')
+            }
           }
         });
 
@@ -82,41 +108,88 @@ const LoginForm = () => {
         return;
       }
 
-      // Verificar se o usuário existe no perfil
+      // ETAPA 4: Login bem-sucedido - verificar perfil
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'login-auth-success',
+        message: 'User authenticated successfully',
+        metadata: { 
+          userId: sessionData.user.id, 
+          email: sessionData.user.email,
+          passwordType: passwordType,
+          authProvider: 'email'
+        }
+      });
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, has_changed_password')
+        .select('id, has_changed_password, primeiro_acesso, is_admin')
         .eq('id', sessionData.user.id)
         .single();
 
       if (profileError || !profile) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'login-profile-error',
+          message: 'User profile not found after successful auth',
+          metadata: { 
+            userId: sessionData.user.id,
+            email: sessionData.user.email,
+            profileError: profileError?.message,
+            errorType: profileError?.name
+          }
+        });
         showError("Perfil do usuário não encontrado.");
         await supabase.auth.signOut();
         return;
       }
 
-      // Se nunca trocou a senha, redirecionar para troca
+      // ETAPA 5: Verificar se precisa trocar senha
       if (!profile.has_changed_password) {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'login-redirect-password-change',
+          message: 'Redirecting user to first password change',
+          metadata: { 
+            userId: sessionData.user.id,
+            email: sessionData.user.email,
+            primeiro_acesso: profile.primeiro_acesso,
+            is_admin: profile.is_admin
+          }
+        });
         navigate("/primeira-senha");
         return;
       }
 
-      // Log de login bem-sucedido
+      // ETAPA 6: Login completo com sucesso
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'login-success',
-        message: 'User logged in successfully',
+        context: 'login-success-complete',
+        message: 'User login process completed successfully',
         metadata: { 
           userId: sessionData.user.id, 
           email: sessionData.user.email,
-          passwordUsed: data.password.includes('.') || data.password.includes('-') ? 'formatted_cpf' : 'clean_password'
+          passwordType: passwordType,
+          has_changed_password: profile.has_changed_password,
+          is_admin: profile.is_admin
         }
       });
 
       showSuccess("Login realizado com sucesso!");
       navigate("/meus-produtos");
     } catch (err: any) {
-      console.error("Unexpected login error:", err);
+      // ETAPA 7: Log de erro não tratado
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'login-unhandled-error',
+        message: 'Unhandled error during login process',
+        metadata: { 
+          email: data.email.toLowerCase().trim(),
+          error: err.message,
+          errorStack: err.stack,
+          errorType: err.name
+        }
+      });
       showError("Erro inesperado. Tente novamente.");
     } finally {
       setIsLoading(false);
@@ -131,18 +204,56 @@ const LoginForm = () => {
     }
 
     setIsLoading(true);
+    
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'forgot-password-start',
+        message: 'User requested password reset',
+        metadata: { 
+          email: email.toLowerCase().trim()
+        }
+      });
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim(), {
         redirectTo: `${window.location.origin}/update-password`,
       });
 
       if (error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'forgot-password-error',
+          message: 'Failed to send password reset email',
+          metadata: { 
+            email: email.toLowerCase().trim(),
+            error: error.message,
+            errorType: error.name
+          }
+        });
         showError("Erro ao solicitar recuperação de senha: " + error.message);
         console.error("Forgot password error:", error);
       } else {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'forgot-password-success',
+          message: 'Password reset email sent successfully',
+          metadata: { 
+            email: email.toLowerCase().trim()
+          }
+        });
         showSuccess("Um link de recuperação de senha foi enviado para o seu email.");
       }
     } catch (err: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'forgot-password-unhandled',
+        message: 'Unhandled error during password reset request',
+        metadata: { 
+          email: email.toLowerCase().trim(),
+          error: err.message,
+          errorStack: err.stack
+        }
+      });
       showError("Erro inesperado ao solicitar recuperação de senha.");
       console.error("Unexpected forgot password error:", err);
     } finally {

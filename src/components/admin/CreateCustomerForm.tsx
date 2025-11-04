@@ -55,14 +55,29 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
   });
 
   const onSubmit = async (data: FormData) => {
-    const cpfClean = data.cpf.replace(/[^\d]+/g, "");
-    const whatsappClean = data.whatsapp.replace(/\D/g, "");
+    const cpfClean = data.cpf.replace(/[^\d]+/g, '');
+    const whatsappClean = data.whatsapp.replace(/\D/g, '');
 
     setIsSubmitting(true);
+    
     try {
+      // ETAPA 1: Log do início da criação
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-create-customer-start',
+        message: 'Admin started manual customer creation',
+        metadata: { 
+          email: data.email.toLowerCase().trim(),
+          name: data.name,
+          cpfLength: cpfClean.length,
+          whatsappLength: whatsappClean.length,
+          adminEmail: (await supabase.auth.getUser()).data.user?.email
+        }
+      });
+
       const { data: result, error } = await supabase.functions.invoke("create-customer", {
         body: {
-          email: data.email,
+          email: data.email.toLowerCase().trim(),
           name: data.name,
           cpf: cpfClean,
           whatsapp: whatsappClean,
@@ -70,20 +85,62 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
       });
 
       if (error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-create-customer-edge-error',
+          message: 'Edge function error during customer creation',
+          metadata: { 
+            email: data.email.toLowerCase().trim(),
+            error: error.message,
+            errorType: error.name
+          }
+        });
         showError("Erro ao criar cliente: " + error.message);
         console.error("Create customer error:", error);
         return;
       }
 
       if (result?.error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-create-customer-business-error',
+          message: 'Business logic error during customer creation',
+          metadata: { 
+            email: data.email.toLowerCase().trim(),
+            businessError: result.error,
+            errorType: 'business_validation'
+          }
+        });
         showError(result.error);
         return;
       }
+
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-create-customer-success',
+        message: 'Manual customer creation completed successfully',
+        metadata: { 
+          userId: result.userId,
+          email: data.email.toLowerCase().trim(),
+          name: data.name,
+          adminEmail: (await supabase.auth.getUser()).data.user?.email
+        }
+      });
 
       showSuccess("Cliente criado com sucesso!");
       form.reset();
       if (onCreated) onCreated();
     } catch (err: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'admin-create-customer-unhandled',
+        message: 'Unhandled error during customer creation',
+        metadata: { 
+          email: data.email.toLowerCase().trim(),
+          error: err.message,
+          errorStack: err.stack
+        }
+      });
       showError("Erro ao criar cliente: " + err.message);
       console.error("Create customer exception:", err);
     } finally {
