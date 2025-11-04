@@ -213,30 +213,29 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
                 ))}
               </div>
             )}
-            </div>
           </div>
+        </div>
 
-          {/* Ações rápidas para erros */}
-          {log.level === "error" && (
-            <div className="border-t pt-4">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Ações Recomendadas</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <h5 className="text-sm font-medium text-red-800 mb-1">🔍 Investigar Erro</h5>
-                  <p className="text-xs text-red-700">
-                    Verifique os logs relacionados para identificar a causa raiz deste erro.
-                  </p>
-                </div>
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                  <h5 className="text-sm font-medium text-orange-800 mb-1">📊 Monitorar Frequência</h5>
-                  <p className="text-xs text-orange-700">
-                    Filtre por este contexto para ver se o erro está ocorrendo repetidamente.
-                  </p>
-                </div>
+        {/* Ações rápidas para erros */}
+        {log.level === "error" && (
+          <div className="border-t pt-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-3">Ações Recomendadas</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <h5 className="text-sm font-medium text-red-800 mb-1">🔍 Investigar Erro</h5>
+                <p className="text-xs text-red-700">
+                  Verifique os logs relacionados para identificar a causa raiz deste erro.
+                </p>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <h5 className="text-sm font-medium text-orange-800 mb-1">📊 Monitorar Frequência</h5>
+                <p className="text-xs text-orange-700">
+                  Filtre por este contexto para ver se o erro está ocorrendo repetidamente.
+                </p>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
