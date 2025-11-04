@@ -21,9 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XCircle, Eye } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import { useSession } from "@/components/SessionContextProvider";
+import LogMetadataModal from "@/components/admin/LogMetadataModal";
 
 type Log = {
   id: string;
@@ -43,7 +44,8 @@ const Logs = () => {
   const [searchFilter, setSearchFilter] = useState<string>("");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [availableContexts, setAvailableContexts] = useState<string[]>([]);
-  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
+  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const isAdmin = user?.email === "higor.torres8@gmail.com";
 
@@ -191,16 +193,14 @@ const Logs = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const toggleLogExpansion = (logId: string) => {
-    setExpandedLogs(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(logId)) {
-        newSet.delete(logId);
-      } else {
-        newSet.add(logId);
-      }
-      return newSet;
-    });
+  const openLogModal = (log: Log) => {
+    setSelectedLog(log);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedLog(null);
   };
 
   const getLevelIcon = (level: string) => {
@@ -233,21 +233,6 @@ const Logs = () => {
     if (context.includes("user") || context.includes("customer")) return "text-blue-700 bg-blue-50";
     if (context.includes("checkout")) return "text-orange-700 bg-orange-50";
     return "text-gray-700 bg-gray-50";
-  };
-
-  const renderMetadata = (metadata: any) => {
-    if (!metadata) return <span className="text-gray-400 text-xs">N/A</span>;
-    try {
-      const serialized = typeof metadata === "string" ? metadata : JSON.stringify(metadata);
-      const clean = serialized?.replace(/"internal_tag\\":\\s*"[^"]*",?/, "");
-      return (
-        <pre className="text-xs bg-gray-900 text-green-400 p-2 rounded overflow-x-auto max-h-40">
-          {clean}
-        </pre>
-      );
-    } catch {
-      return <span className="text-red-400 text-xs">Metadados não legíveis</span>;
-    }
   };
 
   if (isSessionLoading) {
@@ -365,7 +350,7 @@ const Logs = () => {
         </CardContent>
       </Card>
 
-      {/* Tabela de Logs com Metadados Expandidos */}
+      {/* Tabela de Logs */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -381,76 +366,53 @@ const Logs = () => {
                     <TableHead className="w-20">Nível</TableHead>
                     <TableHead className="w-32">Contexto</TableHead>
                     <TableHead className="min-w-[300px]">Mensagem</TableHead>
-                    <TableHead className="min-w-[400px]">Metadados</TableHead>
+                    <TableHead className="w-24 text-center">Metadados</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {logs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center text-gray-500">
+                      <TableCell colSpan={5} className="h-24 text-center text-gray-500">
                         Nenhum log encontrado com os filtros aplicados.
                       </TableCell>
                     </TableRow>
                   ) : (
                     logs.map((log) => (
-                      <React.Fragment key={log.id}>
-                        <TableRow className="hover:bg-gray-50">
-                          <TableCell className="text-xs">
-                            {new Date(log.created_at).toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {getLevelIcon(log.level)}
-                              {getLevelBadge(log.level)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              className={`text-xs ${getContextColor(log.context)}`}
-                              variant="outline"
-                            >
-                              {log.context}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm max-w-xs">
-                            <div className="truncate" title={log.message}>
-                              {log.message}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleLogExpansion(log.id)}
-                              className="flex items-center gap-1 h-6 px-2"
-                            >
-                              {expandedLogs.has(log.id) ? (
-                                <ChevronDown className="h-3 w-3" />
-                              ) : (
-                                <ChevronRight className="h-3 w-3" />
-                              )}
-                              <span className="text-xs">
-                                {expandedLogs.has(log.id) ? 'Ocultar' : 'Ver'} Metadados
-                              </span>
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                        {expandedLogs.has(log.id) && (
-                          <TableRow>
-                            <TableCell colSpan={6} className="p-0 bg-gray-50">
-                              <div className="p-4">
-                                <div className="flex items-start gap-2 mb-2">
-                                  <span className="text-sm font-medium text-gray-700">Metadados do Log:</span>
-                                  <Badge variant="outline" className="text-xs">
-                                    ID: {log.id}
-                                  </Badge>
-                                </div>
-                                {renderMetadata(log.metadata)}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </React.Fragment>
+                      <TableRow key={log.id} className="hover:bg-gray-50">
+                        <TableCell className="text-xs">
+                          {new Date(log.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getLevelIcon(log.level)}
+                            {getLevelBadge(log.level)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            className={`text-xs ${getContextColor(log.context)}`}
+                            variant="outline"
+                          >
+                            {log.context}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm max-w-xs">
+                          <div className="truncate" title={log.message}>
+                            {log.message}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openLogModal(log)}
+                            className="text-blue-600 hover:text-blue-800"
+                            title="Ver metadados"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     ))
                   )}
                 </TableBody>
@@ -459,6 +421,13 @@ const Logs = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de Metadados */}
+      <LogMetadataModal
+        open={isModalOpen}
+        onClose={closeModal}
+        log={selectedLog}
+      />
     </div>
   );
 };
