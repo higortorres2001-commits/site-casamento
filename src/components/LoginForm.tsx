@@ -48,6 +48,57 @@ const LoginForm = () => {
         console.log('CPF formatado detectado, removendo formatação:', data.password, '->', cleanPassword);
       }
       
+      // Adicionar log detalhado ANTES da tentativa de login
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'login-diagnosis',
+        message: 'Tentativa de login - dados recebidos',
+        metadata: { 
+          email: data.email, 
+          originalPassword: data.password,
+          cleanPassword: cleanPassword,
+          passwordLength: cleanPassword.length,
+          isFormattedCPF: data.password.includes('.') || data.password.includes('-')
+        }
+      });
+
+      // Verificar se o usuário existe antes de tentar login
+      const { data: existingUsers, error: listError } = await supabase.auth.admin.listUsers();
+      
+      if (listError) {
+        console.error('Erro ao listar usuários:', listError);
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'login-diagnosis',
+          message: 'Erro ao listar usuários para diagnóstico',
+          metadata: { error: listError.message }
+        });
+      } else {
+        const existingUser = existingUsers.users.find(u => u.email?.toLowerCase() === data.email.toLowerCase());
+        
+        if (existingUser) {
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'login-diagnosis',
+            message: 'Usuário encontrado no sistema',
+            metadata: { 
+              userId: existingUser.id,
+              email: existingUser.email,
+              emailConfirmed: existingUser.email_confirmed,
+              createdAt: existingUser.created_at,
+              lastSignInAt: existingUser.last_sign_in_at
+            }
+          });
+        } else {
+          await supabase.from('logs').insert({
+            level: 'warning',
+            context: 'login-diagnosis',
+            message: 'Usuário NÃO encontrado no sistema',
+            metadata: { email: data.email }
+          });
+        }
+      }
+
       const { error, data: sessionData } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: cleanPassword, // Usa a senha limpa (apenas números se for CPF)
@@ -60,20 +111,79 @@ const LoginForm = () => {
         await supabase.from('logs').insert({
           level: 'error',
           context: 'login-attempt',
-          message: 'Login failed',
+          message: 'Login failed - detalhes completos',
           metadata: { 
             email: data.email, 
             originalPassword: data.password,
             cleanPassword: cleanPassword,
             passwordLength: cleanPassword.length,
             errorType: error.name, 
-            errorMessage: error.message
+            errorMessage: error.message,
+            errorStatus: error.status,
+            errorStack: error.stack
           }
         });
 
+        // Tentativa de reset de senha automático se for primeiro acesso
+        if (error.message.includes('Invalid login credentials') && cleanPassword.length === 11) {
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'login-diagnosis',
+            message: 'Tentando reset automático de senha para CPF',
+            metadata: { email: data.email, cpf: cleanPassword }
+          });
+
+          // Tentar encontrar o usuário e resetar a senha
+          const { data: users } = await supabase.auth.admin.listUsers();
+          const user = users.users.find(u => u.email?.toLowerCase() === data.email.toLowerCase());
+          
+          if (user) {
+            const { error: resetError } = await supabase.auth.admin.updateUserById(
+              user.id,
+              { password: cleanPassword }
+            );
+
+            if (resetError) {
+              await supabase.from('logs').insert({
+                level: 'error',
+                context: 'login-diagnosis',
+                message: 'Falha no reset automático de senha',
+                metadata: { userId: user.id, error: resetError.message }
+              });
+            } else {
+              await supabase.from('logs').insert({
+                level: 'info',
+                context: 'login-diagnosis',
+                message: 'Reset automático de senha realizado com sucesso',
+                metadata: { userId: user.id, email: data.email }
+              });
+
+              // Tentar login novamente após reset
+              const { error: retryError, data: retryData } = await supabase.auth.signInWithPassword({
+                email: data.email,
+                password: cleanPassword,
+              });
+
+              if (!retryError && retryData) {
+                await supabase.from('logs').insert({
+                  level: 'info',
+                  context: 'login-diagnosis',
+                  message: 'Login bem-sucedido após reset automático',
+                  metadata: { userId: retryData.user.id, email: data.email }
+                });
+
+                showSuccess("Login realizado com sucesso!");
+                navigate("/meus-produtos");
+                setIsLoading(false);
+                return;
+              }
+            }
+          }
+        }
+
         // Mensagens de erro mais específicas
         if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos. Se é seu primeiro acesso, use apenas os números do seu CPF (sem pontos ou traços).");
+          showError("Email ou senha incorretos. Verifique seus dados e tente novamente.");
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
@@ -117,6 +227,15 @@ const LoginForm = () => {
       navigate("/meus-produtos");
     } catch (err: any) {
       console.error("Unexpected login error:", err);
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'login-diagnosis',
+        message: 'Erro inesperado no login',
+        metadata: { 
+          errorMessage: err.message, 
+          errorStack: err.stack 
+        }
+      });
       showError("Erro inesperado. Tente novamente.");
     } finally {
       setIsLoading(false);
