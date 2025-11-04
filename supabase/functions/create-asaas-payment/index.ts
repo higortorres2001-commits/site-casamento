@@ -506,10 +506,7 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'asaas-payment-start',
-      message: 'Starting As
-<think></think>
-<dyad-write path="supabase/functions/create-asaas-payment/index.ts" description="Continuação do arquivo com logging detalhado">
-as payment processing',
+      message: 'Starting Asaas payment processing',
       metadata: { 
         paymentMethod,
         asaasPayload: {
