@@ -26,6 +26,7 @@ import UserAuthDebug from "./pages/admin/UserAuthDebug";
 import SyncPayment from "./pages/admin/SyncPayment";
 import SyncSpecificPayment from "./pages/admin/SyncSpecificPayment";
 import FixMissingAuth from "./pages/admin/FixMissingAuth";
+import DuplicateUsers from "./pages/admin/DuplicateUsers";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +53,7 @@ const App = () => (
               <Route path="/admin/sync-payment" element={<SyncPayment />} />
               <Route path="/admin/sync-specific-payment" element={<SyncSpecificPayment />} />
               <Route path="/admin/fix-missing-auth" element={<FixMissingAuth />} />
+              <Route path="/admin/duplicate-users" element={<DuplicateUsers />} />
             </Route>
 
             <Route element={<PublicLayout />}>

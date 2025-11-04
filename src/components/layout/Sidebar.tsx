@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, RefreshCw, Search, UserCheck, Bug } from 'lucide-react';
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, RefreshCw, Search, UserCheck, Bug, Users as UsersIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
@@ -83,6 +83,10 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
             <Link to="/admin/auth-debug" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Bug className="h-4 w-4" />
               Debug Auth
+            </Link>
+            <Link to="/admin/duplicate-users" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
+              <UsersIcon className="h-4 w-4" />
+              Usuários Duplicados
             </Link>
           </>
         )}
