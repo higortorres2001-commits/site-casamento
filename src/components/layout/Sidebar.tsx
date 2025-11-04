@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users } from 'lucide-react'; // Added Users icon
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, Sync } from 'lucide-react'; // Added Sync icon
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
@@ -67,6 +67,10 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
             <Link to="/admin/logs" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <ScrollText className="h-4 w-4" />
               Logs
+            </Link>
+            <Link to="/admin/sync-payment" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
+              <Sync className="h-4 w-4" />
+              Sincronizar Pagamento
             </Link>
           </>
         )}
