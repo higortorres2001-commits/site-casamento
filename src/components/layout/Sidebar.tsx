@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, RefreshCw, Search } from 'lucide-react';
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, RefreshCw, Search, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
@@ -75,6 +75,10 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
             <Link to="/admin/sync-specific-payment" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Search className="h-4 w-4" />
               Buscar Pagamento
+            </Link>
+            <Link to="/admin/fix-missing-auth" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
+              <UserCheck className="h-4 w-4" />
+              Corrigir Auth
             </Link>
           </>
         )}
