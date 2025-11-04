@@ -29,8 +29,8 @@ interface ProfileInfo {
 }
 
 const UserAuthDebug = () => {
-  const [email, setEmail] = useState("nat.vmachado@gmail.com");
-  const [cpf, setCpf] = useState("");
+  const [email, setEmail] = useState("beranrdo.bohrer.bohnen@gmail.com");
+  const [cpf, setCpf] = useState("05507462003");
   const [isLoading, setIsLoading] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [profileInfo, setProfileInfo] = useState<ProfileInfo | null>(null);
@@ -123,30 +123,31 @@ const UserAuthDebug = () => {
     }
   };
 
-  const resetPasswordToCPF = async () => {
-    if (!userInfo || !profileInfo?.cpf) {
+  const forceUpdatePassword = async () => {
+    if (!userInfo || !cpf) {
       showError("CPF não encontrado no perfil");
       return;
     }
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.admin.updateUserById(
-        userInfo.id,
-        { password: profileInfo.cpf.replace(/[^\d]/g, '') }
-      );
+      const { data, error } = await supabase.functions.invoke("force-update-password", {
+        body: {
+          email: email,
+          newPassword: cpf.replace(/[^\d]/g, '')
+        }
+      });
 
       if (error) {
-        addTestResult("Resetar senha para CPF", false, error);
-        showError("Erro ao resetar senha: " + error.message);
+        addTestResult("Forçar atualização de senha", false, error);
+        showError("Erro ao forçar atualização: " + error.message);
       } else {
-        addTestResult("Resetar senha para CPF", true, { 
-          newPassword: profileInfo.cpf.replace(/[^\d]/g, '')
-        });
-        showSuccess("Senha resetada para o CPF com sucesso!");
+        addTestResult("Forçar atualização de senha", true, data);
+        showSuccess("Senha atualizada com sucesso! Tente fazer login novamente.");
       }
     } catch (error: any) {
-      addTestResult("Resetar senha para CPF", false, error.message);
+      addTestResult("Forçar atualização de senha", false, error.message);
+      showError("Erro inesperado: " + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -169,14 +170,34 @@ const UserAuthDebug = () => {
               placeholder="email@exemplo.com"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">CPF para teste</label>
+            <Input
+              value={cpf}
+              onChange={(e) => setCpf(e.target.value)}
+              placeholder="00000000000"
+            />
+          </div>
           
-          <Button 
-            onClick={fetchUserInfo}
-            disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Buscar Informações"}
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={fetchUserInfo}
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Buscar Informações"}
+            </Button>
+            
+            {userInfo && (
+              <Button 
+                onClick={forceUpdatePassword}
+                disabled={isLoading}
+                variant="destructive"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Forçar Atualização de Senha"}
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -243,13 +264,6 @@ const UserAuthDebug = () => {
                 disabled={!profileInfo.cpf}
               >
                 Testar com CPF Limpo
-              </Button>
-              <Button 
-                onClick={resetPasswordToCPF}
-                variant="destructive"
-                disabled={!profileInfo.cpf}
-              >
-                Resetar Senha para CPF
               </Button>
             </div>
           </CardContent>
