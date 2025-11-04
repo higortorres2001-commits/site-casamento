@@ -123,31 +123,43 @@ const UserAuthDebug = () => {
     }
   };
 
-  const forceUpdatePassword = async () => {
-    if (!userInfo || !cpf) {
-      showError("CPF não encontrado no perfil");
+  const fixProfileId = async () => {
+    if (!profileInfo || !userInfo) {
+      showError("Busque informações primeiro");
       return;
     }
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("force-update-password", {
-        body: {
-          email: email,
-          newPassword: cpf.replace(/[^\d]/g, '')
-        }
-      });
+      // Verificar se há IDs conflitantes
+      if (profileInfo.id !== userInfo.id) {
+        addTestResult("Verificar conflito de IDs", false, {
+          profileId: profileInfo.id,
+          authId: userInfo.id,
+          message: "Profile ID e Auth ID são diferentes!"
+        });
+        
+        // Corrigir: atualizar profile para usar o ID correto do auth
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ 
+            id: userInfo.id // Usar o ID do auth como correto
+          })
+          .eq('id', profileInfo.id);
 
-      if (error) {
-        addTestResult("Forçar atualização de senha", false, error);
-        showError("Erro ao forçar atualização: " + error.message);
+        if (updateError) {
+          addTestResult("Corrigir ID do profile", false, updateError);
+        } else {
+          addTestResult("Corrigir ID do profile", true, "Profile atualizado para usar ID do auth");
+          
+          // Buscar novamente para confirmar
+          await fetchUserInfo();
+        }
       } else {
-        addTestResult("Forçar atualização de senha", true, data);
-        showSuccess("Senha atualizada com sucesso! Tente fazer login novamente.");
+        addTestResult("Verificar conflito de IDs", true, "IDs estão alinhados");
       }
     } catch (error: any) {
-      addTestResult("Forçar atualização de senha", false, error.message);
-      showError("Erro inesperado: " + error.message);
+      addTestResult("Erro ao corrigir", false, error.message);
     } finally {
       setIsLoading(false);
     }
@@ -188,13 +200,13 @@ const UserAuthDebug = () => {
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Buscar Informações"}
             </Button>
             
-            {userInfo && (
+            {userInfo && profileInfo && (
               <Button 
-                onClick={forceUpdatePassword}
+                onClick={fixProfileId}
                 disabled={isLoading}
                 variant="destructive"
               >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Forçar Atualização de Senha"}
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Corrigir ID do Profile"}
               </Button>
             )}
           </div>
@@ -225,6 +237,7 @@ const UserAuthDebug = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4 text-sm">
+              <div><strong>ID:</strong> {profileInfo.id}</div>
               <div><strong>Nome:</strong> {profileInfo.name || "—"}</div>
               <div><strong>CPF:</strong> {profileInfo.cpf || "—"}</div>
               <div><strong>WhatsApp:</strong> {profileInfo.whatsapp || "—"}</div>
