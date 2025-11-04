@@ -80,123 +80,129 @@ serve(async (req) => {
     const cleanCpf = cpf.replace(/[^0-9]/g, '');
     console.log('Cleaned CPF for password:', cleanCpf);
 
-    // Check if user exists
-    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ email });
-
-    if (listUsersError) {
-      console.error('Error listing users:', listUsersError);
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-asaas-payment',
-        message: 'Failed to check for existing user',
-        metadata: { email, error: listUsersError.message }
-      });
-      return new Response(JSON.stringify({ error: 'Failed to check for existing user' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (existingUsers && existingUsers.users.length > 0) {
-      userId = existingUsers.users[0].id;
-      console.log(`Existing user found: ${userId}`);
+    // CRÍTICO: Para pagamentos com cartão, criar usuário ANTES de enviar para Asaas
+    // Para PIX, podemos manter a lógica atual (criar após confirmação)
+    if (paymentMethod === 'CREDIT_CARD') {
+      console.log('CREDIT_CARD payment - creating user BEFORE Asaas payment');
       
-      // ATUALIZAR PERFIL SEMPRE - garantir que CPF esteja correto
-      const { error: updateProfileError } = await supabase
-        .from('profiles')
-        .update({ name, cpf: cleanCpf, email, whatsapp })
-        .eq('id', userId);
+      // Check if user exists
+      const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ email });
 
-      if (updateProfileError) {
-        console.error('Error updating profile:', updateProfileError);
+      if (listUsersError) {
+        console.error('Error listing users:', listUsersError);
         await supabase.from('logs').insert({
           level: 'error',
           context: 'create-asaas-payment',
-          message: 'Failed to update profile',
-          metadata: { userId, error: updateProfileError.message }
+          message: 'Failed to check for existing user',
+          metadata: { email, error: listUsersError.message }
         });
-      }
-
-      // IMPORTANTE: Resetar senha para o CPF limpo sempre que encontrar usuário existente
-      console.log('Resetting password for existing user to CPF:', cleanCpf);
-      const { error: resetPasswordError } = await supabase.auth.admin.updateUserById(
-        userId,
-        { password: cleanCpf }
-      );
-
-      if (resetPasswordError) {
-        console.error('Error resetting password:', resetPasswordError);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'create-asaas-payment',
-          message: 'Failed to reset password for existing user',
-          metadata: { userId, error: resetPasswordError.message }
-        });
-      } else {
-        console.log('Password reset successfully for existing user');
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'create-asaas-payment',
-          message: 'Password reset for existing user',
-          metadata: { userId, email, cpfLength: cleanCpf.length }
-        });
-      }
-    } else {
-      // Criar usuário com CPF limpo (apenas números) como senha
-      const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-        email,
-        password: cleanCpf, // Usar CPF limpo como senha
-        email_confirm: true,
-        user_metadata: { name, cpf: cleanCpf, whatsapp },
-      });
-
-      if (createUserError || !newUser?.user) {
-        console.error('Error creating user:', createUserError);
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'create-asaas-payment',
-          message: 'Failed to create user',
-          metadata: { email, cpf: cleanCpf, error: createUserError?.message }
-        });
-        return new Response(JSON.stringify({ error: 'Failed to create user account' }), {
+        return new Response(JSON.stringify({ error: 'Failed to check for existing user' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      userId = newUser.user.id;
-      console.log(`New user created: ${userId} with password: ${cleanCpf}`);
-      
-      // Criar perfil para o novo usuário
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          name,
-          cpf: cleanCpf,
+
+      if (existingUsers && existingUsers.users.length > 0) {
+        userId = existingUsers.users[0].id;
+        console.log(`Existing user found: ${userId}`);
+        
+        // ATUALIZAR PERFIL SEMPRE - garantir que CPF esteja correto
+        const { error: updateProfileError } = await supabase
+          .from('profiles')
+          .update({ name, cpf: cleanCpf, email, whatsapp })
+          .eq('id', userId);
+
+        if (updateProfileError) {
+          console.error('Error updating profile:', updateProfileError);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'create-asaas-payment',
+            message: 'Failed to update profile',
+            metadata: { userId, error: updateProfileError.message }
+          });
+        }
+
+        // IMPORTANTE: Resetar senha para o CPF limpo sempre que encontrar usuário existente
+        console.log('Resetting password for existing user to CPF:', cleanCpf);
+        const { error: resetPasswordError } = await supabase.auth.admin.updateUserById(
+          userId,
+          { password: cleanCpf }
+        );
+
+        if (resetPasswordError) {
+          console.error('Error resetting password:', resetPasswordError);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'create-asaas-payment',
+            message: 'Failed to reset password for existing user',
+            metadata: { userId, error: resetPasswordError.message }
+          });
+        } else {
+          console.log('Password reset successfully for existing user');
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'create-asaas-payment',
+            message: 'Password reset for existing user',
+            metadata: { userId, email, cpfLength: cleanCpf.length }
+          });
+        }
+      } else {
+        // Criar usuário com CPF limpo (apenas números) como senha
+        const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
           email,
-          whatsapp,
-          access: [],
-          primeiro_acesso: true,
-          has_changed_password: false
+          password: cleanCpf, // Usar CPF limpo como senha
+          email_confirm: true,
+          user_metadata: { name, cpf: cleanCpf, whatsapp },
         });
-      
-      if (profileError) {
-        console.error('Error creating profile:', profileError);
+
+        if (createUserError || !newUser?.user) {
+          console.error('Error creating user:', createUserError);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'create-asaas-payment',
+            message: 'Failed to create user',
+            metadata: { email, cpf: cleanCpf, error: createUserError?.message }
+          });
+          return new Response(JSON.stringify({ error: 'Failed to create user account' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        userId = newUser.user.id;
+        console.log(`New user created: ${userId} with password: ${cleanCpf}`);
+        
+        // Criar perfil para o novo usuário
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: userId,
+            name,
+            cpf: cleanCpf,
+            email,
+            whatsapp,
+            access: [],
+            primeiro_acesso: true,
+            has_changed_password: false
+          });
+        
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+          await supabase.from('logs').insert({
+            level: 'error',
+            context: 'create-asaas-payment',
+            message: 'Failed to create profile',
+            metadata: { userId, error: profileError.message }
+          });
+        }
+        
+        // Log para debug
         await supabase.from('logs').insert({
-          level: 'error',
+          level: 'info',
           context: 'create-asaas-payment',
-          message: 'Failed to create profile',
-          metadata: { userId, error: profileError.message }
+          message: 'New user created with CPF as password (CREDIT_CARD)',
+          metadata: { userId, email, cpfLength: cleanCpf.length, passwordSet: cleanCpf }
         });
       }
-      
-      // Log para debug
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'create-asaas-payment',
-        message: 'New user created with CPF as password',
-        metadata: { userId, email, cpfLength: cleanCpf.length, passwordSet: cleanCpf }
-      });
     }
 
     // --- Product Validation with Detailed Logging ---
@@ -521,10 +527,10 @@ serve(async (req) => {
       message: `Unhandled error: ${error.message}`,
       metadata: {
         errorStack: error.stack,
+        asaasNotification: requestBody,
         userId,
         orderId,
         asaasPaymentId,
-        requestBody,
       }
     });
     return new Response(JSON.stringify({ error: error.message }), {
