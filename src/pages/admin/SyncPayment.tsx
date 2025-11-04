@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Sync } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react"; // Usando RefreshCw em vez de Sync
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -57,7 +57,7 @@ const SyncPayment = () => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Sync className="h-5 w-5" />
+            <RefreshCw className="h-5 w-5" />
             Sincronizar Pagamento Externo
           </CardTitle>
         </CardHeader>
@@ -145,7 +145,7 @@ const SyncPayment = () => {
                 </>
               ) : (
                 <>
-                  <Sync className="h-4 w-4 mr-2" />
+                  <RefreshCw className="h-4 w-4 mr-2" />
                   Sincronizar Pagamento
                 </>
               )}
