@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, UserCheck, AlertTriangle } from "lucide-react";
+import { Loader2, UserCheck, AlertTriangle, CheckCircle } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -13,6 +13,7 @@ const FixMissingAuth = () => {
   const [profileId, setProfileId] = useState("");
   const [profileData, setProfileData] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
 
   const searchProfile = async () => {
     if (!profileId.trim()) {
@@ -21,6 +22,7 @@ const FixMissingAuth = () => {
     }
 
     setIsSearching(true);
+    setResultMessage(null);
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -29,7 +31,7 @@ const FixMissingAuth = () => {
         .single();
 
       if (error || !data) {
-        showError("Profile não encontrado");
+        showError("Profile não encontrado: " + (error?.message || "Erro desconhecido"));
         setProfileData(null);
       } else {
         setProfileData(data);
@@ -49,24 +51,36 @@ const FixMissingAuth = () => {
     }
 
     setIsLoading(true);
+    setResultMessage(null);
     try {
+      console.log("Enviando requisição para fix-missing-auth com profileId:", profileId.trim());
+      
       const { data, error } = await supabase.functions.invoke("fix-missing-auth", {
         body: { profileId: profileId.trim() }
       });
 
+      console.log("Resposta da função:", { data, error });
+
       if (error) {
+        console.error("Erro retornado pela função:", error);
+        setResultMessage(`Erro: ${error.message}`);
         showError("Erro ao corrigir auth: " + error.message);
-        console.error("Fix auth error:", error);
+      } else if (data && data.error) {
+        console.error("Erro nos dados retornados:", data.error);
+        setResultMessage(`Erro: ${data.error}`);
+        showError(data.error);
+      } else if (data && data.success) {
+        showSuccess("Usuário auth criado com sucesso!");
+        setResultMessage("Sucesso: Usuário auth criado");
+        setProfileData(null);
+        setProfileId("");
       } else {
-        if (data.error) {
-          showError(data.error);
-        } else {
-          showSuccess("Usuário auth criado com sucesso!");
-          setProfileData(null);
-          setProfileId("");
-        }
+        setResultMessage("Resposta inesperada do servidor");
+        showError("Resposta inesperada do servidor");
       }
     } catch (err: any) {
+      console.error("Erro na chamada:", err);
+      setResultMessage(`Erro: ${err.message}`);
       showError("Erro inesperado: " + err.message);
     } finally {
       setIsLoading(false);
@@ -122,7 +136,10 @@ const FixMissingAuth = () => {
 
             {profileData && (
               <div className="bg-green-50 border border-green-200 rounded-md p-4">
-                <h4 className="font-semibold text-green-800 mb-2">Profile Encontrado:</h4>
+                <h4 className="font-semibold text-green-800 mb-2 flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5" />
+                  Profile Encontrado:
+                </h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><strong>ID:</strong> {profileData.id}</div>
                   <div><strong>Nome:</strong> {profileData.name || "—"}</div>
@@ -131,6 +148,22 @@ const FixMissingAuth = () => {
                   <div><strong>WhatsApp:</strong> {profileData.whatsapp || "—"}</div>
                   <div><strong>Acessos:</strong> {profileData.access?.length || 0} produtos</div>
                 </div>
+              </div>
+            )}
+
+            {resultMessage && (
+              <div className={`p-4 rounded-md ${
+                resultMessage.includes("Erro") 
+                  ? "bg-red-50 border border-red-200" 
+                  : "bg-green-50 border border-green-200"
+              }`}>
+                <p className={`text-sm ${
+                  resultMessage.includes("Erro") 
+                    ? "text-red-800" 
+                    : "text-green-800"
+                }`}>
+                  {resultMessage}
+                </p>
               </div>
             )}
 

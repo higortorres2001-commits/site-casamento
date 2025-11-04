@@ -102,7 +102,7 @@ serve(async (req) => {
           error: createError?.message 
         }
       });
-      return new Response(JSON.stringify({ error: 'Erro ao criar usuário auth: ' + createError.message }), {
+      return new Response(JSON.stringify({ error: 'Erro ao criar usuário auth: ' + (createError?.message || 'Unknown error') }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
