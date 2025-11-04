@@ -33,7 +33,8 @@ import {
   Search,
   Download,
   Eye,
-  X
+  X,
+  Edit
 } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import { formatCPF } from "@/utils/cpfValidation";
@@ -71,6 +72,7 @@ const Sales = () => {
   const [dateFilter, setDateFilter] = useState<string>("30d");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
   const isAdmin = user?.email === "higor.torres8@gmail.com";
 
@@ -187,6 +189,39 @@ const Sales = () => {
       fetchOrders();
     }
   }, [isSessionLoading, isAdmin, fetchOrders]);
+
+  // Função para atualizar status do pedido
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    setUpdatingOrderId(orderId);
+    
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: newStatus })
+        .eq("id", orderId);
+
+      if (error) {
+        showError("Erro ao atualizar status: " + error.message);
+        console.error("Error updating order status:", error);
+      } else {
+        showSuccess("Status atualizado com sucesso!");
+        
+        // Atualizar o pedido localmente para evitar recarregar
+        setOrders(prevOrders => 
+          prevOrders.map(order => 
+            order.id === orderId 
+              ? { ...order, status: newStatus as Order['status'] }
+              : order
+          )
+        );
+      }
+    } catch (error: any) {
+      showError("Erro inesperado ao atualizar status: " + error.message);
+      console.error("Unexpected error updating status:", error);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
 
   // Calcular estatísticas
   const statistics = useMemo(() => {
@@ -514,7 +549,27 @@ const Sales = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {getStatusBadge(order.status)}
+                          <div className="flex items-center gap-2">
+                            {getStatusBadge(order.status)}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const newStatus = order.status === 'pending' ? 'paid' : 
+                                                 order.status === 'paid' ? 'cancelled' : 'pending';
+                                updateOrderStatus(order.id, newStatus);
+                              }}
+                              disabled={updatingOrderId === order.id}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="Mudar status"
+                            >
+                              {updatingOrderId === order.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Edit className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
                         </TableCell>
                         <TableCell className="max-w-xs">
                           <div className="text-sm truncate" title={order.products?.map(p => p.name).join(", ")}>
