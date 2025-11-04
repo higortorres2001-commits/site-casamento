@@ -24,6 +24,7 @@ import WhatsAppButton from "./components/WhatsAppButton";
 import ProductTags from "./pages/admin/ProductTags";
 import UserAuthDebug from "./pages/admin/UserAuthDebug";
 import SyncPayment from "./pages/admin/SyncPayment";
+import SyncSpecificPayment from "./pages/admin/SyncSpecificPayment";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/admin/product-tags" element={<ProductTags />} />
               <Route path="/admin/auth-debug" element={<UserAuthDebug />} />
               <Route path="/admin/sync-payment" element={<SyncPayment />} />
+              <Route path="/admin/sync-specific-payment" element={<SyncSpecificPayment />} />
             </Route>
 
             <Route element={<PublicLayout />}>
