@@ -21,6 +21,7 @@ import {
   PencilLine,
   UserPlus,
   Database,
+  Trash2,
 } from "lucide-react";
 import CreateCustomerForm from "@/components/admin/CreateCustomerForm";
 import MassAccessModal from "@/components/admin/MassAccessModal";
@@ -99,7 +100,7 @@ const Customers = () => {
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all profiles directly - this is the key change
+      // Fetch all profiles directly - this is key change
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
         .select("id, name, email, cpf, whatsapp, access, is_admin");
@@ -272,6 +273,67 @@ const Customers = () => {
     setIsEditorOpen(true);
   };
 
+  const handleDeleteCustomer = async (customer: CustomerRow) => {
+    if (!window.confirm(
+      `Tem certeza que deseja apagar o usuário "${customer.name || customer.email}"? Esta ação é irreversível e removerá:\n\n• A conta de autenticação\n• O perfil do usuário\n• Todos os dados associados`
+    )) {
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      console.log(`Starting deletion process for user: ${customer.id}`);
+      
+      // Step 1: Delete user's orders first (to avoid foreign key constraints)
+      const { error: ordersError } = await supabase
+        .from("orders")
+        .delete()
+        .eq("user_id", customer.id);
+
+      if (ordersError) {
+        console.error("Error deleting user orders:", ordersError);
+        showError("Erro ao apagar pedidos do usuário: " + ordersError.message);
+        return;
+      }
+      
+      console.log("User orders deleted successfully");
+
+      // Step 2: Delete user's profile
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", customer.id);
+
+      if (profileError) {
+        console.error("Error deleting user profile:", profileError);
+        showError("Erro ao apagar perfil do usuário: " + profileError.message);
+        return;
+      }
+      
+      console.log("User profile deleted successfully");
+
+      // Step 3: Delete user from auth system
+      const { error: authError } = await supabase.auth.admin.deleteUser(customer.id);
+
+      if (authError) {
+        console.error("Error deleting user from auth:", authError);
+        showError("Erro ao apagar conta de autenticação: " + authError.message);
+        return;
+      }
+      
+      console.log("User deleted from auth system successfully");
+
+      showSuccess(`Usuário "${customer.name || customer.email}" apagado com sucesso!`);
+      fetchCustomers();
+    } catch (error: any) {
+      console.error("Unexpected error deleting user:", error);
+      showError("Erro inesperado ao apagar usuário: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredCustomers = useMemo(() => {
     if (!searchTerm.trim()) return customers;
 
@@ -426,14 +488,25 @@ const Customers = () => {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditCustomer(customer)}
-                          className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                        >
-                          <PencilLine className="h-4 w-4 mr-1" /> Editar
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditCustomer(customer)}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          >
+                            <PencilLine className="h-4 w-4 mr-1" /> Editar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteCustomer(customer)}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                            disabled={loading}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" /> Apagar
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
