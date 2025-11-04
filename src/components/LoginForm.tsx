@@ -40,11 +40,17 @@ const LoginForm = () => {
     setIsLoading(true);
     try {
       // Remove qualquer formatação da senha (caso o usuário digite o CPF formatado)
-      const cleanPassword = data.password.replace(/\D/g, '');
+      let cleanPassword = data.password;
+      
+      // Verifica se parece ser um CPF formatado e remove a formatação
+      if (data.password.includes('.') || data.password.includes('-')) {
+        cleanPassword = data.password.replace(/[^\d]/g, '');
+        console.log('CPF formatado detectado, removendo formatação:', data.password, '->', cleanPassword);
+      }
       
       const { error, data: sessionData } = await supabase.auth.signInWithPassword({
         email: data.email,
-        password: cleanPassword, // Usa a senha limpa (apenas números)
+        password: cleanPassword, // Usa a senha limpa (apenas números se for CPF)
       });
 
       if (error) {
@@ -57,15 +63,17 @@ const LoginForm = () => {
           message: 'Login failed',
           metadata: { 
             email: data.email, 
+            originalPassword: data.password,
+            cleanPassword: cleanPassword,
+            passwordLength: cleanPassword.length,
             errorType: error.name, 
-            errorMessage: error.message,
-            passwordLength: cleanPassword.length
+            errorMessage: error.message
           }
         });
 
         // Mensagens de erro mais específicas
         if (error.message.includes('Invalid login credentials')) {
-          showError("Email ou senha incorretos. Se é seu primeiro acesso, use apenas os números do seu CPF como senha (sem pontos ou traços).");
+          showError("Email ou senha incorretos. Se é seu primeiro acesso, use apenas os números do seu CPF (sem pontos ou traços).");
         } else if (error.message.includes('Email not confirmed')) {
           showError("Por favor, confirme seu email antes de fazer login.");
         } else {
@@ -100,7 +108,8 @@ const LoginForm = () => {
         message: 'User logged in successfully',
         metadata: { 
           userId: sessionData.user.id, 
-          email: sessionData.user.email 
+          email: sessionData.user.email,
+          passwordUsed: data.password.includes('.') || data.password.includes('-') ? 'formatted_cpf' : 'clean_password'
         }
       });
 
@@ -179,7 +188,7 @@ const LoginForm = () => {
               <FormLabel>Senha</FormLabel>
               <FormControl>
                 <Input
-                  placeholder="Apenas números do CPF no primeiro acesso"
+                  placeholder="Digite sua senha (CPF sem formatação no primeiro acesso)"
                   {...field}
                   className="focus:ring-orange-500 focus:border-orange-500"
                   type="password"
