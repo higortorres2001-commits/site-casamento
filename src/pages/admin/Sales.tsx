@@ -48,6 +48,7 @@ type Order = {
   asaas_payment_id: string | null;
   meta_tracking_data: any;
   profiles?: {
+    id: string;
     name: string | null;
     email: string | null;
     cpf: string | null;
@@ -82,6 +83,7 @@ const Sales = () => {
         .select(`
           *,
           profiles!inner(
+            id,
             name,
             email,
             cpf,
@@ -227,10 +229,11 @@ const Sales = () => {
 
   const exportSales = () => {
     const csvContent = [
-      ["Data", "ID do Pedido", "Cliente", "Email", "Status", "Produtos", "Total"].join(","),
+      ["Data", "ID do Pedido", "ID do Cliente", "Cliente", "Email", "Status", "Produtos", "Total"].join(","),
       ...filteredOrders.map(order => [
         new Date(order.created_at).toLocaleString(),
         order.id,
+        order.profiles?.id || "",
         `"${order.profiles?.name || ''}"`,
         `"${order.profiles?.email || ''}"`,
         order.status,
@@ -438,6 +441,7 @@ const Sales = () => {
                   <TableRow>
                     <TableHead>Data</TableHead>
                     <TableHead>ID do Pedido</TableHead>
+                    <TableHead>ID do Cliente</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Produtos</TableHead>
@@ -448,7 +452,7 @@ const Sales = () => {
                 <TableBody>
                   {filteredOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center text-gray-500">
+                      <TableCell colSpan={8} className="h-24 text-center text-gray-500">
                         Nenhuma venda encontrada com os filtros aplicados.
                       </TableCell>
                     </TableRow>
@@ -460,6 +464,9 @@ const Sales = () => {
                         </TableCell>
                         <TableCell className="text-sm font-mono">
                           {order.id.substring(0, 8)}
+                        </TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {order.profiles?.id?.substring(0, 8) || "N/A"}
                         </TableCell>
                         <TableCell>
                           <div>
@@ -519,6 +526,10 @@ const Sales = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Informações do Cliente</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">ID:</span>
+                      <p className="font-medium font-mono">{selectedOrder.profiles?.id || "N/A"}</p>
+                    </div>
                     <div>
                       <span className="text-gray-600">Nome:</span>
                       <p className="font-medium">{selectedOrder.profiles?.name || "N/A"}</p>
