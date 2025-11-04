@@ -63,9 +63,7 @@ const LoginForm = () => {
         cleanPassword = data.password.replace(/[^\d]/g, '');
         passwordType = 'formatted_cpf';
         console.log('CPF formatado detectado, removendo formatação:', data.password, '->', cleanPassword);
-      } else if (/^\d+$
-<dyad-write path="src/components/LoginForm.tsx" description="Continuação do formulário com logging detalhado">
-/.test(data.password)) {
+      } else if (/^\d+$/.test(data.password)) {
         passwordType = 'numeric_cpf';
       }
 
