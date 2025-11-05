@@ -243,7 +243,7 @@ serve(async (req) => {
           errorCode: updateProfileError.code
         }
       });
-      // Continue even with error - the payment can still be processed
+      // Continue even with error - payment can still be processed
     } else {
       await supabase.from('logs').insert({
         level: 'info',
@@ -759,178 +759,24 @@ serve(async (req) => {
       }
     });
 
-
-Agora vou atualizar o componente `CheckoutForm` para usar a nova função interna:
-
-<dyad-write path="src/components/checkout/CheckoutForm.tsx" description="Updated checkout form to use dedicated user creation service">
-import React, { useImperativeHandle, forwardRef } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Loader2 } from "lucide-react";
-import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
-import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
-import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
-
-export interface CheckoutFormRef {
-  submitForm: () => Promise<boolean>;
-  getValues: () => z.infer<typeof formSchema>;
-}
-
-const formSchema = z.object({
-  name: z.string().min(1, "O nome é obrigatório"),
-  cpf: z.string()
-    .transform(val => val.replace(/[^\d]+/g, '')) // Limpa o CPF, deixando apenas dígitos
-    .refine(val => val.length === 11 && isValidCPF(val), { // Valida o comprimento e a lógica do CPF
-      message: "CPF inválido",
-    }),
-  email: z.string().email("Email inválido").min(1, "O email é obrigatório"),
-  whatsapp: z.string()
-    .transform(val => val.replace(/\D/g, '')) // Limpa o WhatsApp, deixando apenas dígitos
-    .refine(val => isValidWhatsapp(val), { // Valida o comprimento (10 ou 11 dígitos)
-      message: "Número de WhatsApp inválido",
-    }),
-});
-
-interface CheckoutFormProps {
-  onSubmit: (data: z.infer<typeof formSchema>) => void;
-  isLoading: boolean;
-  initialData?: {
-    name?: string | null;
-    cpf?: string | null;
-    email?: string | null;
-    whatsapp?: string | null;
-  };
-}
-
-const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
-  ({ onSubmit, isLoading, initialData }, ref) => {
-    const form = useForm<z.infer<typeof formSchema>>({
-      resolver: zodResolver(formSchema),
-      defaultValues: initialData || {
-        name: "",
-        cpf: "",
-        email: "",
-        whatsapp: "",
-      },
+    return new Response(JSON.stringify(clientResponseData), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-    useImperativeHandle(ref, () => ({
-      submitForm: () => {
-        return form.trigger(); // Apenas dispara a validação e retorna o resultado
-      },
-      getValues: () => form.getValues(),
-    }));
-
-    return (
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Nome Completo</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Seu nome completo"
-                    {...field}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="cpf"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>CPF</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="000.000.000-00"
-                    {...field}
-                    onChange={(e) => {
-                      const formatted = formatCPF(e.target.value);
-                      field.onChange(formatted);
-                    }}
-                    onBlur={(e) => {
-                      // Garante que o campo seja formatado corretamente ao perder o foco
-                      const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
-                      if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
-                        field.onChange(formatCPF(cleanedCpf));
-                      } else {
-                        field.onChange(e.target.value); // Mantém o valor digitado se for inválido para o usuário corrigir
-                      }
-                    }}
-                    maxLength={14}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="email"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Email</FormLabel>
-                <FormControl>
-                  <Input
-                    type="email"
-                    placeholder="seu@email.com"
-                    {...field}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="whatsapp"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>WhatsApp</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="(XX) XXXXX-XXXX"
-                    {...field}
-                    onChange={(e) => {
-                      const formatted = formatWhatsapp(e.target.value);
-                      field.onChange(formatted);
-                    }}
-                    maxLength={15}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          {/* O botão de submit foi movido para FixedBottomBar */}
-        </form>
-      </Form>
-    );
+  } catch (error: any) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'create-asaas-payment-unhandled-error',
+      message: 'Unhandled error in payment processing',
+      metadata: { 
+        error: error.message,
+        errorStack: error.stack
+      }
+    });
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
-);
-
-CheckoutForm.displayName = "CheckoutForm";
-
-export default CheckoutForm;
+});
