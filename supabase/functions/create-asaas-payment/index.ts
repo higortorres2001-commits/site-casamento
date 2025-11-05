@@ -32,6 +32,7 @@ serve(async (req) => {
       metadata: { 
         requestBody: {
           ...requestBody,
+          // Remover dados sensíveis do log
           creditCard: requestBody.creditCard ? 'PRESENT' : 'NOT_PRESENT',
           password: 'REDACTED'
         }
@@ -89,171 +90,214 @@ serve(async (req) => {
       });
     }
 
-    // Clean CPF - remove any formatting
+    // Limpar CPF - remover qualquer formatação
     const cleanCpf = cpf.replace(/[^0-9]/g, '');
     console.log('Cleaned CPF for password:', cleanCpf);
 
-    // ETAPA 1: Verificar existência de usuário usando a função dedicada
+    // ETAPA 1: Verificar existência de usuário com logging detalhado
     await supabase.from('logs').insert({
       level: 'info',
       context: 'user-lookup-start',
       message: 'Starting user lookup process',
-      metadata: { email: email.toLowerCase().trim(), cleanCpfLength: cleanCpf.length }
+      metadata: { email, cleanCpfLength: cleanCpf.length }
     });
 
-    // Call the dedicated user creation function
-    const userCreationPayload = {
-      name,
-      email: email.toLowerCase().trim(),
-      cpf: cleanCpf,
-      whatsapp: whatsapp.replace(/\D/g, ''),
-      password: cleanCpf, // Use CPF as password for new users
-      userMetadata: { 
-        created_via: 'checkout'
-      }
-    };
-
-    const userCreationResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/handle-user-creation`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
-      },
-      body: JSON.stringify(userCreationPayload)
+    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ 
+      email: email.toLowerCase().trim() 
     });
 
-    let userCreationResult;
-    if (userCreationResponse.ok) {
-      userCreationResult = await userCreationResponse.json();
-    } else {
-      const errorText = await userCreationResponse.text();
+    if (listUsersError) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'user-creation-service-error',
-        message: 'Failed to call user creation service',
+        context: 'user-lookup-error',
+        message: 'Failed to check for existing user',
         metadata: { 
-          email: email.toLowerCase().trim(),
-          statusCode: userCreationResponse.status,
-          errorText: errorText
+          email: email.toLowerCase().trim(), 
+          error: listUsersError.message,
+          errorType: listUsersError.name
         }
       });
-      return new Response(JSON.stringify({ 
-        error: 'Failed to create user account',
-        details: `User creation service returned ${userCreationResponse.status}`
-      }), {
-        status: userCreationResponse.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Handle user creation conflicts
-    if (userCreationResult.exists) {
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'user-creation-conflict',
-        message: 'User already exists, proceeding with existing user',
-        metadata: { 
-          email: email.toLowerCase().trim(),
-          userId: userCreationResult.userId,
-          conflictType: userCreationResult.error?.includes('email') ? 'email' : 'cpf'
-        }
-      });
-
-      // For existing users, we need to get their ID
-      if (userCreationResult.userId) {
-        userId = userCreationResult.userId;
-      } else {
-        // Fallback: try to get user by email
-        const { data: authUsers } = await supabase.auth.admin.listUsers({ 
-          email: email.toLowerCase().trim() 
-        });
-        const existingUser = authUsers.users && authUsers.users.length > 0 ? authUsers.users[0] : null;
-        if (existingUser) {
-          userId = existingUser.id;
-        }
-      }
-    } else if (userCreationResult.success) {
-      userId = userCreationResult.userId;
-    } else {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-creation-failed',
-        message: 'User creation service returned error',
-        metadata: { 
-          email: email.toLowerCase().trim(),
-          error: userCreationResult.error
-        }
-      });
-      return new Response(JSON.stringify({ 
-        error: 'Failed to create user account',
-        details: userCreationResult.error 
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!userId) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-id-missing',
-        message: 'Could not determine user ID after user creation process',
-        metadata: { 
-          email: email.toLowerCase().trim(),
-          userCreationResult
-        }
-      });
-      return new Response(JSON.stringify({ error: 'Could not determine user ID' }), {
+      return new Response(JSON.stringify({ error: 'Failed to check for existing user' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // ETAPA 2: Atualizar perfil do usuário existente
+    const existingUser = existingUsers.users && existingUsers.users.length > 0 ? existingUsers.users[0] : null;
+    
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'profile-update-start',
-      message: 'Updating existing user profile',
-      metadata: { userId, email, name }
+      context: 'user-lookup-result',
+      message: existingUser ? 'Existing user found' : 'No existing user found',
+      metadata: { 
+        email: email.toLowerCase().trim(),
+        existingUserId: existingUser?.id || null,
+        existingUserEmail: existingUser?.email || null,
+        totalUsersFound: existingUsers.users?.length || 0
+      }
     });
 
-    const { error: updateProfileError } = await supabase
-      .from('profiles')
-      .update({ 
-        name, 
-        cpf: cleanCpf, 
-        email: email.toLowerCase().trim(), 
-        whatsapp: whatsapp.replace(/\D/g, ''),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (updateProfileError) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'profile-update-error',
-        message: 'Failed to update existing user profile',
-        metadata: { 
-          userId, 
-          email, 
-          error: updateProfileError.message,
-          errorType: updateProfileError.name,
-          errorCode: updateProfileError.code
-        }
-      });
-      // Continue even with error - the payment can still be processed
-    } else {
+    if (existingUser) {
+      userId = existingUser.id;
+      console.log(`Existing user found: ${userId}`);
+      
+      // ETAPA 2: Atualizar perfil do usuário existente
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'profile-update-success',
-        message: 'Existing user profile updated successfully',
+        context: 'profile-update-start',
+        message: 'Updating existing user profile',
         metadata: { userId, email, name }
       });
+
+      const { error: updateProfileError } = await supabase
+        .from('profiles')
+        .update({ 
+          name, 
+          cpf: cleanCpf, 
+          email: email.toLowerCase().trim(), 
+          whatsapp: whatsapp.replace(/\D/g, ''),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (updateProfileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'profile-update-error',
+          message: 'Failed to update existing user profile',
+          metadata: { 
+            userId, 
+            email, 
+            error: updateProfileError.message,
+            errorType: updateProfileError.name,
+            errorCode: updateProfileError.code
+          }
+        });
+        // Continuar mesmo com erro de update - o pagamento ainda pode ser processado
+      } else {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'profile-update-success',
+          message: 'Existing user profile updated successfully',
+          metadata: { userId, email, name }
+        });
+      }
+    } else {
+      // ETAPA 3: Criar novo usuário
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'user-creation-start',
+        message: 'Starting new user creation',
+        metadata: { 
+          email: email.toLowerCase().trim(), 
+          name,
+          cleanCpfLength: cleanCpf.length,
+          passwordLength: cleanCpf.length
+        }
+      });
+
+      const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+        email: email.toLowerCase().trim(),
+        password: cleanCpf, // Usar CPF limpo como senha
+        email_confirm: true,
+        user_metadata: { 
+          name, 
+          cpf: cleanCpf, 
+          whatsapp: whatsapp.replace(/\D/g, ''),
+          created_via: 'checkout'
+        },
+      });
+
+      if (createUserError || !newUser?.user) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'user-creation-error',
+          message: 'Failed to create new user',
+          metadata: { 
+            email: email.toLowerCase().trim(), 
+            cpfLength: cleanCpf.length,
+            error: createUserError?.message,
+            errorType: createUserError?.name,
+            errorCode: createUserError?.code,
+            errorDetails: createUserError
+          }
+        });
+        return new Response(JSON.stringify({ 
+          error: 'Failed to create user account',
+          details: createUserError?.message 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      userId = newUser.user.id;
+      console.log(`New user created: ${userId} with password length: ${cleanCpf.length}`);
+      
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'user-creation-success',
+        message: 'New user created successfully',
+        metadata: { 
+          userId, 
+          email: email.toLowerCase().trim(), 
+          name,
+          passwordLength: cleanCpf.length
+        }
+      });
+      
+      // ETAPA 4: Criar perfil para o novo usuário
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'profile-creation-start',
+        message: 'Creating profile for new user',
+        metadata: { userId, email, name }
+      });
+
+      const { error: profileError, data: profileData } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          name,
+          cpf: cleanCpf,
+          email: email.toLowerCase().trim(),
+          whatsapp: whatsapp.replace(/\D/g, ''),
+          access: [],
+          primeiro_acesso: true,
+          has_changed_password: false,
+          is_admin: false,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (profileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'profile-creation-error',
+          message: 'Failed to create profile for new user',
+          metadata: { 
+            userId, 
+            email, 
+            error: profileError.message,
+            errorType: profileError.name,
+            errorCode: profileError.code
+          }
+        });
+        // Não falhar completamente - o usuário foi criado no auth
+      } else {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'profile-creation-success',
+          message: 'Profile created successfully for new user',
+          metadata: { userId, profileId: profileData?.id }
+        });
+      }
     }
 
-    // ETAPA 3: Validação de produtos com logging detalhado
+    // ETAPA 5: Validação de produtos com logging detalhado
     const uniqueProductIds = [...new Set(productIds)];
     console.log('Unique product IDs to fetch:', uniqueProductIds);
 
@@ -309,7 +353,7 @@ serve(async (req) => {
       }
     });
 
-    // ETAPA 4: Cálculo do preço com cupom
+    // ETAPA 6: Cálculo do preço com cupom
     let totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price), 0);
 
     if (coupon_code) {
@@ -364,7 +408,7 @@ serve(async (req) => {
       });
     }
 
-    // ETAPA 5: Criação do pedido
+    // ETAPA 7: Criação do pedido
     const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
     const clientUserAgent = req.headers.get('user-agent') || '';
 
@@ -434,7 +478,7 @@ serve(async (req) => {
       }
     });
 
-    // ETAPA 6: Processamento do pagamento com Asaas
+    // ETAPA 8: Processamento do pagamento com Asaas
     const asaasPaymentsUrl = `${ASAAS_BASE_URL}/payments`;
     const asaasHeaders = {
       'Content-Type': 'application/json',
@@ -467,6 +511,7 @@ serve(async (req) => {
         paymentMethod,
         asaasPayload: {
           ...asaasPayload,
+          // Remover dados sensíveis
           customer: {
             name: asaasPayload.customer.name,
             email: asaasPayload.customer.email,
@@ -708,7 +753,7 @@ serve(async (req) => {
       asaasPaymentId = finalAsaasResponseData.id;
     }
 
-    // ETAPA 7: Atualizar pedido com ID do pagamento
+    // ETAPA 9: Atualizar pedido com ID do pagamento
     await supabase.from('logs').insert({
       level: 'info',
       context: 'order-update-start',
@@ -733,7 +778,7 @@ serve(async (req) => {
           errorType: orderUpdateError.name
         }
       });
-      // Don't fail completely - the payment was created
+      // Não falhar completamente - o pagamento foi criado
     } else {
       await supabase.from('logs').insert({
         level: 'info',
@@ -743,7 +788,7 @@ serve(async (req) => {
       });
     }
 
-    // ETAPA 8: Log final de sucesso
+    // ETAPA 10: Log final de sucesso
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-success',
@@ -754,183 +799,38 @@ serve(async (req) => {
         asaasPaymentId, 
         paymentMethod,
         totalPrice,
-        wasExistingUser: !!userCreationResult.exists,
+        wasExistingUser: !!existingUser,
         productCount: uniqueProductIds.length
       }
     });
 
-
-Agora vou atualizar o componente `CheckoutForm` para usar a nova função interna:
-
-<dyad-write path="src/components/checkout/CheckoutForm.tsx" description="Updated checkout form to use dedicated user creation service">
-import React, { useImperativeHandle, forwardRef } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Loader2 } from "lucide-react";
-import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
-import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
-import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
-
-export interface CheckoutFormRef {
-  submitForm: () => Promise<boolean>;
-  getValues: () => z.infer<typeof formSchema>;
-}
-
-const formSchema = z.object({
-  name: z.string().min(1, "O nome é obrigatório"),
-  cpf: z.string()
-    .transform(val => val.replace(/[^\d]+/g, '')) // Limpa o CPF, deixando apenas dígitos
-    .refine(val => val.length === 11 && isValidCPF(val), { // Valida o comprimento e a lógica do CPF
-      message: "CPF inválido",
-    }),
-  email: z.string().email("Email inválido").min(1, "O email é obrigatório"),
-  whatsapp: z.string()
-    .transform(val => val.replace(/\D/g, '')) // Limpa o WhatsApp, deixando apenas dígitos
-    .refine(val => isValidWhatsapp(val), { // Valida o comprimento (10 ou 11 dígitos)
-      message: "Número de WhatsApp inválido",
-    }),
-});
-
-interface CheckoutFormProps {
-  onSubmit: (data: z.infer<typeof formSchema>) => void;
-  isLoading: boolean;
-  initialData?: {
-    name?: string | null;
-    cpf?: string | null;
-    email?: string | null;
-    whatsapp?: string | null;
-  };
-}
-
-const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
-  ({ onSubmit, isLoading, initialData }, ref) => {
-    const form = useForm<z.infer<typeof formSchema>>({
-      resolver: zodResolver(formSchema),
-      defaultValues: initialData || {
-        name: "",
-        cpf: "",
-        email: "",
-        whatsapp: "",
-      },
+    return new Response(JSON.stringify(clientResponseData), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-    useImperativeHandle(ref, () => ({
-      submitForm: () => {
-        return form.trigger(); // Apenas dispara a validação e retorna o resultado
-      },
-      getValues: () => form.getValues(),
-    }));
-
-    return (
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Nome Completo</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Seu nome completo"
-                    {...field}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="cpf"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>CPF</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="000.000.000-00"
-                    {...field}
-                    onChange={(e) => {
-                      const formatted = formatCPF(e.target.value);
-                      field.onChange(formatted);
-                    }}
-                    onBlur={(e) => {
-                      // Garante que o campo seja formatado corretamente ao perder o foco
-                      const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
-                      if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
-                        field.onChange(formatCPF(cleanedCpf));
-                      } else {
-                        field.onChange(e.target.value); // Mantém o valor digitado se for inválido para o usuário corrigir
-                      }
-                    }}
-                    maxLength={14}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="email"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Email</FormLabel>
-                <FormControl>
-                  <Input
-                    type="email"
-                    placeholder="seu@email.com"
-                    {...field}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="whatsapp"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>WhatsApp</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="(XX) XXXXX-XXXX"
-                    {...field}
-                    onChange={(e) => {
-                      const formatted = formatWhatsapp(e.target.value);
-                      field.onChange(formatted);
-                    }}
-                    maxLength={15}
-                    className="focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          {/* O botão de submit foi movido para FixedBottomBar */}
-        </form>
-      </Form>
-    );
+  } catch (error: any) {
+    console.error('Edge function error:', error);
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'create-asaas-payment-unhandled-error',
+      message: `Unhandled error in Edge Function: ${error.message}`,
+      metadata: {
+        errorStack: error.stack,
+        userId,
+        orderId,
+        asaasPaymentId,
+        requestBody: {
+          ...requestBody,
+          // Remover dados sensíveis
+          creditCard: requestBody.creditCard ? 'PRESENT' : 'NOT_PRESENT',
+          password: 'REDACTED'
+        }
+      }
+    });
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
-);
-
-CheckoutForm.displayName = "CheckoutForm";
-
-export default CheckoutForm;
+});
