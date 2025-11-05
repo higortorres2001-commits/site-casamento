@@ -34,8 +34,8 @@ serve(async (req) => {
       metadata: { asaasNotification: requestBody }
     });
 
-    // 2. Check for relevant event (PAYMENT_CONFIRMED)
-    if (requestBody.event !== 'PAYMENT_CONFIRMED') {
+    // 2. Check for relevant events (PAYMENT_CONFIRMED or PAYMENT_RECEIVED)
+    if (requestBody.event !== 'PAYMENT_CONFIRMED' && requestBody.event !== 'PAYMENT_RECEIVED') {
       return new Response(JSON.stringify({ message: 'Event not relevant, ignored.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -68,7 +68,7 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'asaas-webhook',
-        message: 'Order not found for the given asaas_payment_id.',
+        message: 'Order not found for given asaas_payment_id.',
         metadata: { asaasPaymentId, error: orderError?.message }
       });
       // Return 200 to prevent Asaas from retrying endlessly if the order is genuinely missing
@@ -81,18 +81,20 @@ serve(async (req) => {
     orderId = order.id;
     userId = order.user_id;
 
-    // 4. If the order status is not 'paid', update it to 'paid'
+    // 4. Update order status to 'paid' if it's not already paid
+    const newStatus = requestBody.event === 'PAYMENT_RECEIVED' ? 'paid' : 'paid';
+    
     if (order.status !== 'paid') {
       const { error: updateOrderError } = await supabase
         .from('orders')
-        .update({ status: 'paid' })
+        .update({ status: newStatus })
         .eq('id', order.id);
 
       if (updateOrderError) {
         await supabase.from('logs').insert({
           level: 'error',
           context: 'asaas-webhook',
-          message: 'Failed to update order status.',
+          message: 'Failed to update order status',
           metadata: { orderId, asaasPaymentId, error: updateOrderError.message }
         });
         return new Response(JSON.stringify({ error: 'Failed to update order status.' }), {
@@ -100,9 +102,34 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'asaas-webhook',
+        message: `Order status updated to ${newStatus}`,
+        metadata: { 
+          orderId, 
+          asaasPaymentId, 
+          oldStatus: order.status,
+          newStatus,
+          eventType: requestBody.event
+        }
+      });
+    } else {
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'asaas-webhook',
+        message: 'Order already has paid status',
+        metadata: { 
+          orderId, 
+          asaasPaymentId, 
+          currentStatus: order.status,
+          eventType: requestBody.event
+        }
+      });
     }
 
-    // 5. Fetch the user profile to get current access and contact info
+    // 5. Fetch user profile to get current access and contact info
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id, access, name, email, cpf, whatsapp')
@@ -122,13 +149,13 @@ serve(async (req) => {
       });
     }
 
-    // 6. Merge ordered_product_ids with the existing 'access' array without duplicates
+    // 6. Merge ordered_product_ids with existing 'access' array without duplicates
     const orderedProductIds = order.ordered_product_ids;
     const existingAccess = profile.access || [];
     const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
 
-    // 7. Update the 'profiles' table with the new 'access' array
-    // IMPORTANTE: Não forçar has_changed_password para false se o usuário já trocou a senha
+    // 7. Update 'profiles' table with new 'access' array
+    // IMPORTANT: Don't force has_changed_password to false if user has already changed password
     const { error: updateProfileError } = await supabase
       .from('profiles')
       .update({ access: newAccess })
@@ -138,8 +165,14 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'asaas-webhook',
-        message: 'Failed to update user profile access.',
-        metadata: { userId, orderId, asaasPaymentId, orderedProductIds, error: updateProfileError.message }
+        message: 'Failed to update user profile access',
+        metadata: { 
+          userId, 
+          orderId, 
+          asaasPaymentId, 
+          orderedProductIds, 
+          error: updateProfileError.message 
+        }
       });
       return new Response(JSON.stringify({ error: 'Failed to update user profile access.' }), {
         status: 500,
@@ -151,7 +184,14 @@ serve(async (req) => {
       level: 'info',
       context: 'asaas-webhook',
       message: `Profile ${userId} access updated successfully.`,
-      metadata: { userId, orderId, asaasPaymentId, newAccess }
+      metadata: { 
+        userId, 
+        orderId, 
+        asaasPaymentId, 
+        newAccess,
+        previousAccessCount: existingAccess.length,
+        newAccessCount: newAccess.length
+      }
     });
 
     // --- Meta CAPI Purchase Event ---
@@ -222,7 +262,7 @@ serve(async (req) => {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (RESEND_API_KEY && profile.email && profile.cpf) {
       const emailSubject = "Seu acesso foi liberado!";
-      // Assuming the client application URL is derived from SUPABASE_URL for now, 
+      // Assuming client application URL is derived from SUPABASE_URL for now, 
       // but ideally this should be a separate environment variable (e.g., APP_URL)
       const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'YOUR_APP_URL';
       const loginUrl = `${appUrl}/login`;
@@ -257,14 +297,25 @@ serve(async (req) => {
           level: 'error',
           context: 'asaas-webhook',
           message: 'Error sending access liberation email via Resend.',
-          metadata: { userId, orderId, asaasPaymentId, email: profile.email, resendError: errorData }
+          metadata: { 
+            userId, 
+            orderId, 
+            asaasPaymentId, 
+            email: profile.email, 
+            resendError: errorData 
+          }
         });
       } else {
         await supabase.from('logs').insert({
           level: 'info',
           context: 'asaas-webhook',
           message: `Access liberation email sent to ${profile.email}.`,
-          metadata: { userId, orderId, asaasPaymentId, email: profile.email }
+          metadata: { 
+            userId, 
+            orderId, 
+            asaasPaymentId, 
+            email: profile.email 
+          }
         });
       }
     }
