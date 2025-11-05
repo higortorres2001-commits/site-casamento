@@ -49,11 +49,11 @@ const ProductsAlsoBuy = ({ products }: ProductsAlsoBuyProps) => {
                 </p>
               )}
               
-              {/* Badge de preço melhorado */}
+              {/* Badge de preço com tons suaves de verde e fonte menor */}
               <div className="flex items-center justify-between">
                 <div className="flex items-baseline gap-1">
-                  <span className="text-sm text-gray-500">R$</span>
-                  <span className="text-2xl font-bold text-gray-900">
+                  <span className="text-sm text-green-600 font-medium">R$</span>
+                  <span className="text-lg font-semibold text-green-700">
                     {product.price.toFixed(2).replace('.', ',')}
                   </span>
                 </div>
