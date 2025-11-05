@@ -130,7 +130,7 @@ serve(async (req) => {
     // Check for duplicate CPF in profiles
     const { data: existingProfile, error: profileCheckError } = await supabase
       .from('profiles')
-      .select('id, email, name, created_at')
+      .select('id, email, name, created_at, whatsapp')
       .eq('cpf', cleanCpf)
       .single();
 
@@ -156,7 +156,8 @@ serve(async (req) => {
           cleanCpf,
           existingProfileId: existingProfile.id,
           existingProfileEmail: existingProfile.email,
-          existingProfileName: existingProfile.name
+          existingProfileName: existingProfile.name,
+          existingProfileWhatsapp: existingProfile.whatsapp
         }
       });
       return new Response(JSON.stringify({ 
@@ -297,7 +298,7 @@ serve(async (req) => {
       email: email.toLowerCase().trim(),
       message: 'User created successfully'
     }), {
-      status: 200,
+      status: 201,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

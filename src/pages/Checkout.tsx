@@ -115,7 +115,7 @@ const Checkout = () => {
 
   const originalTotalPrice = useMemo(() => {
     if (!mainProduct) return 0;
-    const bumpsTotal = selectedOrderBumpsDetails.reduce((sum, bump) => sum + bump.price, 0);
+    const bumpsTotal = selectedOrderBumpsDetails.reduce((sum, bump) => sum + bump.price,0);
     return mainProduct.price + bumpsTotal;
   }, [mainProduct, selectedOrderBumpsDetails]);
 
