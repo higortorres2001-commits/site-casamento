@@ -54,11 +54,12 @@ const MyProducts = () => {
 
         if (productIds.length === 0) {
           setMyProducts([]);
-          // Fetch all ACTIVE products for "Compre Também" section
+          // Fetch all ACTIVE products with also_buy=true for "Compre Também" section
           const { data: allProducts, error: allProductsError } = await supabase
             .from('products')
             .select('*')
             .eq('status', 'ativo') // Only fetch ACTIVE products
+            .eq('also_buy', true) // Only fetch products with also_buy=true
             .order('created_at', { ascending: false });
 
           if (allProductsError) {
@@ -85,11 +86,12 @@ const MyProducts = () => {
           setMyProducts(productsData || []);
         }
 
-        // 3. Fetch all ACTIVE products that user doesn't have for "Compre Também" section
+        // 3. Fetch all ACTIVE products with also_buy=true that user doesn't have for "Compre Também" section
         const { data: allProducts, error: allProductsError } = await supabase
           .from('products')
           .select('*')
           .eq('status', 'ativo') // Only fetch ACTIVE products
+          .eq('also_buy', true) // Only fetch products with also_buy=true
           .not('id', 'in', `(${productIds.join(',')})`)
           .order('created_at', { ascending: false })
           .limit(6); // Limit to 6 products for "Compre Também"
