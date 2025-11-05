@@ -26,6 +26,7 @@ const formSchema = z.object({
 
 const LoginForm = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -201,7 +202,7 @@ const LoginForm = () => {
       return;
     }
 
-    setIsLoading(true);
+    setIsResetting(true);
     
     try {
       await supabase.from('logs').insert({
@@ -239,7 +240,7 @@ const LoginForm = () => {
             email: email.toLowerCase().trim()
           }
         });
-        showSuccess("Um link de recuperação de senha foi enviado para o seu email.");
+        showSuccess("Um link de recuperação de senha foi enviado para o seu email. Verifique sua caixa de entrada e a pasta de spam.");
       }
     } catch (err: any) {
       await supabase.from('logs').insert({
@@ -255,7 +256,7 @@ const LoginForm = () => {
       showError("Erro inesperado ao solicitar recuperação de senha.");
       console.error("Unexpected forgot password error:", err);
     } finally {
-      setIsLoading(false);
+      setIsResetting(false);
     }
   };
 
@@ -311,15 +312,37 @@ const LoginForm = () => {
         <Button
           type="submit"
           className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg"
-          disabled={isLoading}
+          disabled={isLoading || isResetting}
         >
           {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Entrar"}
         </Button>
 
-        <div className="text-center mt-2">
-          <Button variant="link" onClick={handleForgotPassword} disabled={isLoading} className="text-blue-600 hover:text-blue-800">
-            Esqueci minha senha
+        <div className="text-center mt-4 space-y-2">
+          <Button 
+            variant="link" 
+            onClick={handleForgotPassword} 
+            disabled={isResetting || isLoading}
+            className="text-blue-600 hover:text-blue-800 text-sm"
+          >
+            {isResetting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Envando email de recuperação...
+              </>
+            ) : (
+              "Esqueci minha senha"
+            )}
           </Button>
+          
+          <div className="text-xs text-gray-500 mt-2">
+            <p>Dicas para recuperação de senha:</p>
+            <ul className="text-left mt-1 space-y-1">
+              <li>• Verifique sua caixa de entrada</li>
+              <li>• Verifique a pasta de spam/li>
+              <li>• Aguarde alguns minutos para receber o email</li>
+              <li>• O link de recuperação expira em 24 horas</li>
+            </ul>
+          </div>
         </div>
       </form>
     </Form>
