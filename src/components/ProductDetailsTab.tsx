@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useFormContext } from "react-hook-form";
+import { UseFormReturn } from "react-hook-form";
 import * as z from "zod";
+import { X } from "lucide-react";
 import {
   FormControl,
   FormField,
@@ -29,7 +30,7 @@ const formSchema = z.object({
 });
 
 interface ProductDetailsTabProps {
-  form: any; // UseFormReturn<z.infer<typeof formSchema>>
+  form: UseFormReturn<z.infer<typeof formSchema>>;
   isLoading: boolean;
   onImageFileChange: (file: File | null) => void;
   initialImageUrl?: string | null;
