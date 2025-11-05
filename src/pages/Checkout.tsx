@@ -8,7 +8,7 @@ import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
-import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
+import SmartCheckoutForm from "@/components/checkout/SmartCheckoutForm";
 import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditCardForm";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
 import CouponInputCard from "@/components/checkout/CouponInputCard";
@@ -43,8 +43,11 @@ const Checkout = () => {
   const [asaasPaymentId, setAsaasPaymentId] = useState<string | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
+  
+  // Novos estados para o formulário inteligente
+  const [userData, setUserData] = useState<any>(null);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
 
-  const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
 
   useEffect(() => {
@@ -93,21 +96,21 @@ const Checkout = () => {
   }, [productId, navigate]);
 
   useEffect(() => {
-    if (mainProduct && window.fbq) {
+    if (mainProduct && userData && window.fbq) {
       trackInitiateCheckout(
         mainProduct.price,
         "BRL",
         [mainProduct.id],
         1,
         {
-          email: user?.email,
-          phone: user?.user_metadata?.whatsapp,
-          firstName: user?.user_metadata?.name?.split(" ")[0],
-          lastName: user?.user_metadata?.name?.split(" ").slice(1).join(" "),
+          email: userData.email,
+          phone: userData.whatsapp,
+          firstName: userData.name?.split(" ")[0],
+          lastName: userData.name?.split(" ").slice(1).join(" "),
         }
       );
     }
-  }, [mainProduct, user]);
+  }, [mainProduct, userData]);
 
   const selectedOrderBumpsDetails = useMemo(() => {
     return orderBumps.filter((bump) => selectedOrderBumps.includes(bump.id));
@@ -141,21 +144,14 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
+  const handleUserData = (data: any) => {
+    setUserData(data);
+    setShowPaymentForm(true);
+  };
+
   const handleSubmit = async () => {
-    if (!mainProduct) {
-      showError("Produto não carregado.");
-      return;
-    }
-
-    const checkoutFormValid = await checkoutFormRef.current?.submitForm();
-    if (!checkoutFormValid) {
-      showError("Por favor, preencha todos os campos obrigatórios do formulário.");
-      return;
-    }
-
-    const checkoutFormData = checkoutFormRef.current?.getValues();
-    if (!checkoutFormData) {
-      showError("Erro ao obter dados do formulário.");
+    if (!mainProduct || !userData) {
+      showError("Dados incompletos. Por favor, preencha todas as informações.");
       return;
     }
 
@@ -175,10 +171,10 @@ const Checkout = () => {
       const productIds = [mainProduct.id, ...selectedOrderBumps];
 
       const payload: any = {
-        name: checkoutFormData.name,
-        email: checkoutFormData.email,
-        cpf: checkoutFormData.cpf,
-        whatsapp: checkoutFormData.whatsapp,
+        name: userData.name,
+        email: userData.email,
+        cpf: userData.cpf.replace(/[^\d]+/g, ''), // Enviar CPF limpo
+        whatsapp: userData.whatsapp.replace(/\D/g, ''), // Enviar WhatsApp limpo
         productIds,
         coupon_code: appliedCoupon?.code || null,
         paymentMethod,
@@ -186,7 +182,13 @@ const Checkout = () => {
           ...metaTrackingData,
           event_source_url: window.location.href,
         },
+        isNewUser: userData.isNewUser,
       };
+
+      // Se for usuário existente, incluir o userId
+      if (!userData.isNewUser && userData.userId) {
+        payload.userId = userData.userId;
+      }
 
       if (paymentMethod === "CREDIT_CARD" && creditCardData) {
         payload.creditCard = creditCardData;
@@ -262,54 +264,81 @@ const Checkout = () => {
             </div>
           )}
 
-          <CouponInputCard onCouponApplied={handleCouponApplied} />
-
-          <OrderSummaryAccordion
-            mainProduct={mainProduct}
-            selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-            originalTotalPrice={originalTotalPrice}
-            currentTotalPrice={currentTotalPrice}
-            appliedCoupon={appliedCoupon}
-          />
-
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Dados de Pagamento</h2>
-            <CheckoutForm
-              ref={checkoutFormRef}
-              onSubmit={() => {}}
+          {!showPaymentForm ? (
+            <SmartCheckoutForm
+              onUserData={handleUserData}
               isLoading={isSubmitting}
             />
+          ) : (
+            <>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center gap-2 text-green-800">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="font-medium">Identificado como: {userData.name}</span>
+                </div>
+                <p className="text-sm text-green-700 mt-1">
+                  E-mail: {userData.email}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowPaymentForm(false);
+                    setUserData(null);
+                  }}
+                  className="mt-2"
+                >
+                  Usar outro e-mail
+                </Button>
+              </div>
 
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
-              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="PIX">PIX</TabsTrigger>
-                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
-                </TabsList>
-                <TabsContent value="PIX" className="mt-4">
-                  <p className="text-sm text-gray-600">
-                    Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
-                  </p>
-                </TabsContent>
-                <TabsContent value="CREDIT_CARD" className="mt-4">
-                  <CreditCardForm
-                    ref={creditCardFormRef}
-                    isLoading={isSubmitting}
-                    totalPrice={currentTotalPrice}
-                  />
-                </TabsContent>
-              </Tabs>
-            </div>
-          </div>
+              <CouponInputCard onCouponApplied={handleCouponApplied} />
+
+              <OrderSummaryAccordion
+                mainProduct={mainProduct}
+                selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+                originalTotalPrice={originalTotalPrice}
+                currentTotalPrice={currentTotalPrice}
+                appliedCoupon={appliedCoupon}
+              />
+
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">Dados de Pagamento</h2>
+                
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
+                  <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="PIX">PIX</TabsTrigger>
+                      <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="PIX" className="mt-4">
+                      <p className="text-sm text-gray-600">
+                        Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
+                      </p>
+                    </TabsContent>
+                    <TabsContent value="CREDIT_CARD" className="mt-4">
+                      <CreditCardForm
+                        ref={creditCardFormRef}
+                        isLoading={isSubmitting}
+                        totalPrice={currentTotalPrice}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </main>
 
-      <FixedBottomBar
-        totalPrice={currentTotalPrice}
-        isSubmitting={isSubmitting}
-        onSubmit={handleSubmit}
-      />
+      {showPaymentForm && (
+        <FixedBottomBar
+          totalPrice={currentTotalPrice}
+          isSubmitting={isSubmitting}
+          onSubmit={handleSubmit}
+        />
+      )}
 
       <PixPaymentModal
         isOpen={isPixModalOpen}
