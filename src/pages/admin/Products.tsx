@@ -36,6 +36,7 @@ const formSchema = z.object({
   status: z.enum(["draft", "ativo", "inativo"]),
   internal_tag: z.string().optional(),
   checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
+  also_buy: z.boolean().default(false),
 });
 
 const Products = () => {
@@ -169,6 +170,19 @@ const Products = () => {
       newImageUrl = null as any;
     }
     (productData as any).image_url = newImageUrl;
+
+    // Log para debug do also_buy
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'product-save-debug',
+      message: 'Saving product with also_buy field',
+      metadata: { 
+        productId: currentProductId,
+        also_buy: formData.also_buy,
+        formData: JSON.stringify(formData),
+        isEditing: !!editingProduct
+      }
+    });
 
     if (editingProduct) {
       const { error } = await supabase.from("products").update(productData).eq("id", editingProduct.id);
@@ -351,6 +365,7 @@ const Products = () => {
                 <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Tag Interna</TableHead>
+                <TableHead>Compre Também</TableHead>
                 <TableHead>Bumps</TableHead>
                 <TableHead>Materiais</TableHead>
                 <TableHead className="text-right w-[220px]">Ações</TableHead>
@@ -387,6 +402,12 @@ const Products = () => {
                         {product.internal_tag ?? "CRIAR TAG"}
                       </button>
                     </div>
+                  </TableCell>
+
+                  <TableCell>
+                    <Badge className={product.also_buy ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                      {product.also_buy ? "Sim" : "Não"}
+                    </Badge>
                   </TableCell>
 
                   <TableCell>{product.orderbumps?.length ?? 0}</TableCell>
