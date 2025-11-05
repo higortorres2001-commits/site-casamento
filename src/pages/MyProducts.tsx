@@ -140,8 +140,10 @@ const MyProducts = () => {
         </div>
       )}
 
-      {/* "Compre Também" Section */}
-      <ProductsAlsoBuy products={alsoBuyProducts} />
+      {/* "Compre Também" Section - Only show if there are products to display */}
+      {alsoBuyProducts.length > 0 && (
+        <ProductsAlsoBuy products={alsoBuyProducts} />
+      )}
     </div>
   );
 };
