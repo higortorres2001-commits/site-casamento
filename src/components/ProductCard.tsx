@@ -12,7 +12,7 @@ interface ProductCardProps {
 
 const ProductCard = ({ product }: ProductCardProps) => {
   return (
-    <Card className="bg-white rounded-xl shadow-lg flex flex-col overflow-hidden">
+    <Card className="bg-white rounded-xl shadow-lg flex flex-col overflow-hidden hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
       {product.image_url && (
         <div className="relative w-full h-48 overflow-hidden">
           <img
@@ -38,16 +38,27 @@ const ProductCard = ({ product }: ProductCardProps) => {
             {product.internal_tag}
           </span>
         )}
+        
+        {/* Badge de preço melhorado */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-baseline gap-1">
+            <span className="text-sm text-gray-500">R$</span>
+            <span className="text-2xl font-bold text-gray-900">
+              {product.price.toFixed(2).replace('.', ',')}
+            </span>
+          </div>
+        </div>
+        
         <div className="mt-auto">
           {product.memberareaurl ? (
             <a href={product.memberareaurl} target="_blank" rel="noopener noreferrer">
-              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 text-base transition-all duration-200 hover:shadow-lg">
                 Acessar Conteúdo
               </Button>
             </a>
           ) : (
             <Link to={`/produto/${product.id}`}>
-              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 text-base transition-all duration-200 hover:shadow-lg">
                 Acessar Conteúdo
               </Button>
             </Link>

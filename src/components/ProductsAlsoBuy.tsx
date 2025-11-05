@@ -25,7 +25,7 @@ const ProductsAlsoBuy = ({ products }: ProductsAlsoBuyProps) => {
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((product) => (
-          <Card key={product.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
+          <Card key={product.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
             {product.image_url && (
               <div className="relative w-full h-48 overflow-hidden">
                 <img
@@ -49,14 +49,18 @@ const ProductsAlsoBuy = ({ products }: ProductsAlsoBuyProps) => {
                 </p>
               )}
               
+              {/* Badge de preço melhorado */}
               <div className="flex items-center justify-between">
-                <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-lg px-3 py-1">
-                  R$ {product.price.toFixed(2)}
-                </Badge>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-sm text-gray-500">R$</span>
+                  <span className="text-2xl font-bold text-gray-900">
+                    {product.price.toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
               </div>
               
               <Link to={`/checkout/${product.id}`}>
-                <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg font-semibold">
+                <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 text-base transition-all duration-200 hover:shadow-lg">
                   Comprar Agora
                 </Button>
               </Link>
