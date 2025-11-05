@@ -120,6 +120,7 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
   useEffect(() => {
     const alsoBuyValue = form.getValues("also_buy");
     console.log("ProductDetailsTab - also_buy value:", alsoBuyValue);
+    console.log("ProductDetailsTab - form values:", form.getValues());
   }, [form]);
 
   return (
