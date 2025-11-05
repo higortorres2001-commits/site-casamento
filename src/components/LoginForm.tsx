@@ -214,6 +214,31 @@ const LoginForm = () => {
         }
       });
 
+      // Verificar se o usuário existe antes de enviar o email
+      const { data: authUsers, error: listError } = await supabase.auth.admin.listUsers();
+      
+      if (listError) {
+        console.error("Error checking user existence:", listError);
+        showError("Erro ao verificar usuário. Tente novamente.");
+        return;
+      }
+
+      const existingUser = authUsers.users?.find(u => u.email?.toLowerCase() === email.toLowerCase().trim());
+      
+      if (!existingUser) {
+        await supabase.from('logs').insert({
+          level: 'warning',
+          context: 'forgot-password-user-not-found',
+          message: 'Password reset requested for non-existent user',
+          metadata: { 
+            email: email.toLowerCase().trim()
+          }
+        });
+        // Por segurança, não informamos que o usuário não existe
+        showSuccess("Se o email estiver cadastrado, você receberá um link de recuperação. Verifique sua caixa de entrada.");
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase().trim(), {
         redirectTo: `${window.location.origin}/update-password`,
       });
@@ -226,10 +251,30 @@ const LoginForm = () => {
           metadata: { 
             email: email.toLowerCase().trim(),
             error: error.message,
-            errorType: error.name
+            errorType: error.name,
+            errorCode: error.status,
+            errorDetails: {
+              isAuthApiError: error.name === 'AuthApiError',
+              isNetworkError: error.message.includes('fetch'),
+              isConfigError: error.message.includes('configuration')
+            }
           }
         });
-        showError("Erro ao solicitar recuperação de senha: " + error.message);
+
+        // Tratamento específico para diferentes tipos de erro
+        if (error.name === 'AuthApiError') {
+          if (error.message.includes('configuration') || error.message.includes('disabled')) {
+            showError("O serviço de recuperação de senha está temporariamente indisponível. Por favor, contate o suporte.");
+          } else if (error.message.includes('rate limit')) {
+            showError("Muitas tentativas de recuperação. Por favor, aguarde alguns minutos antes de tentar novamente.");
+          } else {
+            showError("Erro ao enviar email de recuperação. Por favor, tente novamente mais tarde.");
+          }
+        } else if (error.message.includes('fetch') || error.message.includes('network')) {
+          showError("Erro de conexão. Verifique sua internet e tente novamente.");
+        } else {
+          showError("Erro ao solicitar recuperação de senha: " + error.message);
+        }
         console.error("Forgot password error:", error);
       } else {
         await supabase.from('logs').insert({
@@ -327,7 +372,7 @@ const LoginForm = () => {
             {isResetting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Envando email de recuperação...
+                Enviando email de recuperação...
               </>
             ) : (
               "Esqueci minha senha"
@@ -338,9 +383,10 @@ const LoginForm = () => {
             <p>Dicas para recuperação de senha:</p>
             <ul className="text-left mt-1 space-y-1">
               <li>• Verifique sua caixa de entrada</li>
-              <li>• Verifique a pasta de spam/li>
+              <li>• Verifique a pasta de spam</li>
               <li>• Aguarde alguns minutos para receber o email</li>
               <li>• O link de recuperação expira em 24 horas</li>
+              <li>• Se não receber o email, verifique se o endereço está correto</li>
             </ul>
           </div>
         </div>
