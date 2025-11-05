@@ -58,7 +58,7 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
     if (typeof value === "object") {
       return (
         <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
-          <pre className="text-xs text-green-400 font-mono">
+          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
             {JSON.stringify(value, null, 2)}
           </pre>
         </div>
@@ -75,7 +75,9 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
           // Se não for JSON válido, exibir como string
           return (
             <div className="bg-gray-100 rounded p-2">
-              <code className="text-sm text-gray-800 break-all">{value}</code>
+              <code className="text-sm text-gray-800 break-all whitespace-pre-wrap">
+                {value}
+              </code>
             </div>
           );
         }
@@ -85,7 +87,7 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
     // Para valores primitivos (string, number, boolean)
     return (
       <div className="bg-gray-50 rounded p-2">
-        <span className="text-sm text-gray-800 break-all">
+        <span className="text-sm text-gray-800 break-all whitespace-pre-wrap">
           {String(value)}
         </span>
       </div>
@@ -97,7 +99,7 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div className="flex items-center gap-3">
             {getLevelIcon(log.level)}
@@ -155,7 +157,7 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-gray-700">Mensagem</h4>
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800 break-all">
+                <p className="text-sm text-blue-800 break-all whitespace-pre-wrap">
                   {log.message}
                 </p>
                 <Button
