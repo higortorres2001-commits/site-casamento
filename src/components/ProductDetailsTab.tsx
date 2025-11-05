@@ -116,6 +116,12 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
 
   const currentImageToDisplay = selectedImageFile ? imagePreviewUrl : form.getValues("image_url") || initialImageUrl;
 
+  // Log para debug do campo also_buy
+  useEffect(() => {
+    const alsoBuyValue = form.getValues("also_buy");
+    console.log("ProductDetailsTab - also_buy value:", alsoBuyValue);
+  }, [form]);
+
   return (
     <div className="space-y-4">
       <FormField
