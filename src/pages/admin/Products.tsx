@@ -116,11 +116,6 @@ const Products = () => {
     setIsModalOpen(true);
   };
 
-  const handleOpenAssetManager = (product: Product & { assetCount: number }) => {
-    setAssetManagementProduct(product);
-    setIsAssetModalOpen(true);
-  };
-
   const handleCancelEdit = () => {
     // Simplesmente fecha o modal sem fazer nada
     setIsModalOpen(false);
@@ -137,6 +132,10 @@ const Products = () => {
     setIsSubmitting(true);
     let hasErrors = false;
     const errorMessages: string[] = [];
+
+    // Log para debug do also_buy
+    console.log("Products - Form data received:", formData);
+    console.log("Products - also_buy value:", formData.also_buy);
 
     const productData = { ...formData, user_id: user?.id };
 

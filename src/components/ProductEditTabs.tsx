@@ -23,6 +23,7 @@ const formSchema = z.object({
   status: z.enum(["draft", "ativo", "inativo"]),
   internal_tag: z.string().optional(),
   checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
+  also_buy: z.boolean().default(false),
 });
 
 interface ProductEditTabsProps {
@@ -54,6 +55,7 @@ const ProductEditTabs = ({
           status: initialData.status || "draft",
           internal_tag: (initialData as any).internal_tag ?? "",
           checkout_return_url: initialData.checkout_return_url || "",
+          also_buy: (initialData as any).also_buy ?? false,
         }
       : {
           name: "",
@@ -65,6 +67,7 @@ const ProductEditTabs = ({
           status: "draft",
           internal_tag: "",
           checkout_return_url: "",
+          also_buy: false,
         },
   });
 
@@ -82,6 +85,7 @@ const ProductEditTabs = ({
         status: initialData.status || "draft",
         internal_tag: (initialData as any).internal_tag ?? "",
         checkout_return_url: initialData.checkout_return_url || "",
+        also_buy: (initialData as any).also_buy ?? false,
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
@@ -97,6 +101,7 @@ const ProductEditTabs = ({
         status: "draft",
         internal_tag: "",
         checkout_return_url: "",
+        also_buy: false,
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);
@@ -120,6 +125,10 @@ const ProductEditTabs = ({
   };
 
   const handleFormSubmit = (data: z.infer<typeof formSchema>) => {
+    // Log para debug do also_buy
+    console.log("ProductEditTabs - Form data before submit:", data);
+    console.log("ProductEditTabs - also_buy value:", data.also_buy);
+    
     onSubmit(data, selectedFiles, deletedAssetIds, selectedImageFile, initialData?.image_url ?? null);
   };
 
