@@ -26,7 +26,7 @@ const formSchema = z.object({
   status: z.enum(["draft", "ativo", "inativo"]),
   internal_tag: z.string().optional(),
   checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
-  also_buy: z.boolean().default(false), // New field
+  also_buy: z.boolean().default(false),
 });
 
 interface ProductDetailsTabProps {
