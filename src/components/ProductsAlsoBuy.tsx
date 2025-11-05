@@ -49,7 +49,7 @@ const ProductsAlsoBuy = ({ products }: ProductsAlsoBuyProps) => {
                 </p>
               )}
               
-              {/* Badge de preço com tons suaves de verde e fonte menor */}
+              {/* Badge de preço com tons suaves de verde e fonte menor - APENAS para Compre Também */}
               <div className="flex items-center justify-between">
                 <div className="flex items-baseline gap-1">
                   <span className="text-sm text-green-600 font-medium">R$</span>
