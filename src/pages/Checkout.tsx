@@ -44,7 +44,7 @@ const Checkout = () => {
   const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
   
-  // Novos estados para o formulário inteligente
+  // Estados para o formulário inteligente
   const [userData, setUserData] = useState<any>(null);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
 

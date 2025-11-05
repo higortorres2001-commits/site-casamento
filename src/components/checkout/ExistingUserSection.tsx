@@ -45,9 +45,8 @@ const ExistingUserSection = ({ email, onUserAuthenticated, onBackToEmail }: Exis
     setIsAccessCodeModalOpen(true);
   };
 
-  const handleCodeVerified = () => {
-    // Após verificação do código, buscar dados do usuário
-    fetchUserData();
+  const handleCodeVerified = (userData: any) => {
+    onUserAuthenticated(userData);
   };
 
   const handlePasswordLogin = async (data: z.infer<typeof passwordFormSchema>) => {
@@ -63,23 +62,29 @@ const ExistingUserSection = ({ email, onUserAuthenticated, onBackToEmail }: Exis
         console.error("Password login error:", error);
       } else {
         showSuccess("Login realizado com sucesso!");
-        onUserAuthenticated(authData.user);
+        
+        // Buscar dados completos do perfil
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name, cpf, whatsapp')
+          .eq('id', authData.user.id)
+          .single();
+
+        const userData = {
+          ...authData.user,
+          name: profile?.name || "",
+          cpf: profile?.cpf || "",
+          whatsapp: profile?.whatsapp || "",
+          isNewUser: false,
+          userId: authData.user.id,
+        };
+        
+        onUserAuthenticated(userData);
       }
     } catch (error: any) {
       showError("Erro ao fazer login: " + error.message);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchUserData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        onUserAuthenticated(user);
-      }
-    } catch (error: any) {
-      showError("Erro ao buscar dados do usuário: " + error.message);
     }
   };
 

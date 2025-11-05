@@ -12,7 +12,7 @@ interface AccessCodeModalProps {
   isOpen: boolean;
   onClose: () => void;
   email: string;
-  onCodeVerified: () => void;
+  onCodeVerified: (userData: any) => void;
 }
 
 const AccessCodeModal = ({ isOpen, onClose, email, onCodeVerified }: AccessCodeModalProps) => {
@@ -53,7 +53,7 @@ const AccessCodeModal = ({ isOpen, onClose, email, onCodeVerified }: AccessCodeM
     setIsVerifying(true);
     try {
       // Verificar o código usando OTP
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         email: email.toLowerCase().trim(),
         token: code,
         type: 'email',
@@ -63,7 +63,26 @@ const AccessCodeModal = ({ isOpen, onClose, email, onCodeVerified }: AccessCodeM
         showError("Código inválido: " + error.message);
       } else {
         showSuccess("Código verificado com sucesso!");
-        onCodeVerified();
+        // Buscar dados completos do usuário autenticado
+        if (data.user) {
+          // Buscar dados do perfil
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('name, cpf, whatsapp')
+            .eq('id', data.user.id)
+            .single();
+
+          const userData = {
+            ...data.user,
+            name: profile?.name || "",
+            cpf: profile?.cpf || "",
+            whatsapp: profile?.whatsapp || "",
+            isNewUser: false,
+            userId: data.user.id,
+          };
+          
+          onCodeVerified(userData);
+        }
         onClose();
       }
     } catch (error: any) {

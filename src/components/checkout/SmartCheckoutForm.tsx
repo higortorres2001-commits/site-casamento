@@ -154,6 +154,14 @@ const SmartCheckoutForm = ({ onUserData, isLoading }: SmartCheckoutFormProps) =>
     fullForm.reset();
   };
 
+  // Resetar o formulário quando o step muda
+  useEffect(() => {
+    if (step === "email") {
+      emailForm.reset();
+      fullForm.reset();
+    }
+  }, [step]);
+
   if (step === "email") {
     return (
       <div className="space-y-6">
