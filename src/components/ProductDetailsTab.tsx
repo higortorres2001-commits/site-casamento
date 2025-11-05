@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ProductAlsoBuyToggle from "@/components/admin/ProductAlsoBuyToggle";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -24,7 +25,8 @@ const formSchema = z.object({
   image_url: z.string().url("URL da imagem inválida").optional().or(z.literal("")),
   status: z.enum(["draft", "ativo", "inativo"]),
   internal_tag: z.string().optional(),
-  checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")), // NOVO
+  checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
+  also_buy: z.boolean().default(false), // New field
 });
 
 interface ProductDetailsTabProps {
@@ -204,6 +206,17 @@ const ProductDetailsTab = ({ form, isLoading, onImageFileChange, initialImageUrl
             <FormControl>
               <Input placeholder="Ex: https://sua-landing.com" {...field} disabled={isLoading} className="focus:ring-orange-500 focus:border-orange-500" />
             </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="also_buy"
+        render={({ field }) => (
+          <FormItem>
+            <ProductAlsoBuyToggle disabled={isLoading} />
             <FormMessage />
           </FormItem>
         )}

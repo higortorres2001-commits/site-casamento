@@ -7,19 +7,20 @@ import { Product } from "@/types";
 import { showError } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
-import { useNavigate } from "react-router-dom"; // Import useNavigate
+import ProductsAlsoBuy from "@/components/ProductsAlsoBuy";
+import { useNavigate } from "react-router-dom";
 
 const MyProducts = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [alsoBuyProducts, setAlsoBuyProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate(); // Initialize useNavigate
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchMyProducts = async () => {
       if (!user) {
         setIsLoading(false);
-        // SessionContextProvider already handles redirection to /login if not logged in
         return;
       }
 
@@ -36,6 +37,7 @@ const MyProducts = () => {
           showError("Erro ao carregar seu perfil.");
           console.error("Error fetching profile:", profileError);
           setMyProducts([]);
+          setAlsoBuyProducts([]);
           setIsLoading(false);
           return;
         }
@@ -44,7 +46,7 @@ const MyProducts = () => {
         if (profile.has_changed_password === false) {
           console.log("User has not changed password, redirecting to /primeira-senha");
           navigate("/primeira-senha");
-          setIsLoading(false); // Stop loading state as we are redirecting
+          setIsLoading(false);
           return;
         }
 
@@ -52,11 +54,24 @@ const MyProducts = () => {
 
         if (productIds.length === 0) {
           setMyProducts([]);
+          // Fetch all active products for "Compre Também" section
+          const { data: allProducts, error: allProductsError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('status', 'ativo')
+            .order('created_at', { ascending: false });
+
+          if (allProductsError) {
+            console.error("Error fetching all products:", allProductsError);
+            setAlsoBuyProducts([]);
+          } else {
+            setAlsoBuyProducts(allProducts || []);
+          }
           setIsLoading(false);
           return;
         }
 
-        // 2. Fetch product details for the IDs in the 'access' array
+        // 2. Fetch user's products
         const { data: productsData, error: productsError } = await supabase
           .from('products')
           .select('*')
@@ -69,6 +84,22 @@ const MyProducts = () => {
         } else {
           setMyProducts(productsData || []);
         }
+
+        // 3. Fetch all active products that user doesn't have for "Compre Também" section
+        const { data: allProducts, error: allProductsError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('status', 'ativo')
+          .not('id', 'in', `(${productIds.join(',')})`)
+          .order('created_at', { ascending: false })
+          .limit(6); // Limit to 6 products for "Compre Também"
+
+        if (allProductsError) {
+          console.error("Error fetching all products:", allProductsError);
+          setAlsoBuyProducts([]);
+        } else {
+          setAlsoBuyProducts(allProducts || []);
+        }
       } catch (error: any) {
         showError("Erro inesperado ao carregar produtos: " + error.message);
         console.error("Unexpected error:", error);
@@ -80,7 +111,7 @@ const MyProducts = () => {
     if (!isSessionLoading) {
       fetchMyProducts();
     }
-  }, [user, isSessionLoading, navigate]); // Add navigate to dependencies
+  }, [user, isSessionLoading, navigate]);
 
   if (isLoading || isSessionLoading) {
     return (
@@ -98,15 +129,17 @@ const MyProducts = () => {
         <div className="text-center text-gray-600 text-lg mt-10">
           <p>Você ainda não possui nenhum produto em sua biblioteca.</p>
           <p>Explore nossos produtos para começar!</p>
-          {/* O link "Visite nossa loja" foi removido */}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           {myProducts.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>
       )}
+
+      {/* "Compre Também" Section */}
+      <ProductsAlsoBuy products={alsoBuyProducts} />
     </div>
   );
 };

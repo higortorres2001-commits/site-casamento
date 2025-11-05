@@ -19,7 +19,8 @@ export type Product = {
   image_url: string | null;
   status: 'draft' | 'ativo' | 'inativo';
   internal_tag?: string | null;
-  checkout_return_url?: string | null; // Nova URL de retorno do checkout
+  checkout_return_url?: string | null;
+  also_buy?: boolean; // New field for "Compre Também" section
 };
 
 export type ProductAsset = {
