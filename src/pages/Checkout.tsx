@@ -26,6 +26,29 @@ declare global {
   }
 }
 
+// Função para extrair primeiro e último nome
+const extractNameParts = (fullName: string | null | undefined): { firstName: string | null; lastName: string | null } => {
+  if (!fullName || typeof fullName !== 'string') {
+    return { firstName: null, lastName: null };
+  }
+  
+  const nameParts = fullName.trim().split(/\s+/);
+  if (nameParts.length === 0) {
+    return { firstName: null, lastName: null };
+  }
+  
+  const firstName = nameParts[0];
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
+  
+  return { firstName, lastName };
+};
+
+// Função para limpar WhatsApp (remover formatação)
+const cleanWhatsApp = (whatsapp: string | null | undefined): string | null => {
+  if (!whatsapp) return null;
+  return whatsapp.replace(/\D/g, ''); // Remove tudo que não é dígito
+};
+
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
@@ -94,17 +117,30 @@ const Checkout = () => {
 
   useEffect(() => {
     if (mainProduct && window.fbq) {
+      // Extrair dados do usuário logado
+      let customerData = {
+        email: user?.email || null,
+        phone: user?.user_metadata?.whatsapp ? cleanWhatsApp(user.user_metadata.whatsapp) : null,
+        firstName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).firstName : null,
+        lastName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
+      };
+
+      // Se não há usuário logado, usar dados vazios
+      if (!user) {
+        customerData = {
+          email: null,
+          phone: null,
+          firstName: null,
+          lastName: null,
+        };
+      }
+
       trackInitiateCheckout(
         mainProduct.price,
         "BRL",
         [mainProduct.id],
         1,
-        {
-          email: user?.email,
-          phone: user?.user_metadata?.whatsapp,
-          firstName: user?.user_metadata?.name?.split(" ")[0],
-          lastName: user?.user_metadata?.name?.split(" ").slice(1).join(" "),
-        }
+        customerData
       );
     }
   }, [mainProduct, user]);
@@ -157,6 +193,25 @@ const Checkout = () => {
     if (!checkoutFormData) {
       showError("Erro ao obter dados do formulário.");
       return;
+    }
+
+    // Extrair dados do formulário para Meta Pixel
+    const formDataCustomerData = {
+      email: checkoutFormData.email,
+      phone: cleanWhatsApp(checkoutFormData.whatsapp),
+      firstName: extractNameParts(checkoutFormData.name).firstName,
+      lastName: extractNameParts(checkoutFormData.name).lastName,
+    };
+
+    // Disparar evento InitiateCheckout com dados do formulário
+    if (window.fbq) {
+      trackInitiateCheckout(
+        currentTotalPrice,
+        "BRL",
+        [mainProduct.id, ...selectedOrderBumps],
+        1 + selectedOrderBumps.length,
+        formDataCustomerData
+      );
     }
 
     let creditCardData = null;

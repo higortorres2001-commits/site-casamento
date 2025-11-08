@@ -8,7 +8,7 @@
   </head>
 
   <body>
-    <!-- Meta Pixel Base Code -->
+    <!-- Meta Pixel Base Code with Advanced Matching -->
     <script>
       !function(f,b,e,v,n,t,s)
       {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -18,13 +18,24 @@
       t.src=v;s=b.getElementsByTagName(e)[0];
       s.parentNode.insertBefore(t,s)}(window, document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '1335524184734471'); // Updated with provided Meta Pixel ID
+      
+      // Initialize Pixel with your ID: 1028226016169295
+      fbq('init', '1028226016169295', {
+        // Advanced Matching parameters will be added dynamically
+        // em: 'user@email.com',   // Will be hashed automatically
+        // ph: '1234567890',      // Will be hashed automatically
+        // fn: 'John',             // Will be hashed automatically
+        // ln: 'Doe'              // Will be hashed automatically
+      });
+      
+      // Track initial page view
       fbq('track', 'PageView');
     </script>
     <noscript><img height="1" width="1" style="display:none"
-      src="https://www.facebook.com/tr?id=1335524184734471&ev=PageView&noscript=1"
+      src="https://www.facebook.com/tr?id=1028226016169295&ev=PageView&noscript=1"
     /></noscript>
     <!-- End Meta Pixel Base Code -->
+    
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

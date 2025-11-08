@@ -71,3 +71,34 @@ export const trackPurchase = (
   });
   console.log("Meta Pixel: Purchase event tracked.", { value, currency, order_id, hashedCustomerData });
 };
+
+// Função para inicializar o Pixel com dados avançados
+export const initializePixelWithUserData = (
+  pixelId: string,
+  customerData?: { email?: string | null; phone?: string | null; firstName?: string | null; lastName?: string | null }
+) => {
+  if (typeof window === 'undefined' || !window.fbq) {
+    console.warn("Meta Pixel (fbq) not loaded. Cannot initialize with user data.");
+    return;
+  }
+
+  if (!customerData) {
+    // Inicialização padrão sem dados do usuário
+    window.fbq('init', pixelId);
+    window.fbq('track', 'PageView');
+    return;
+  }
+
+  const hashedCustomerData = getHashedCustomerData(customerData.email, customerData.phone, customerData.firstName, customerData.lastName);
+
+  // Inicialização com dados avançados
+  window.fbq('init', pixelId, {
+    em: hashedCustomerData.em,
+    ph: hashedCustomerData.ph,
+    fn: hashedCustomerData.fn,
+    ln: hashedCustomerData.ln,
+  });
+
+  window.fbq('track', 'PageView');
+  console.log("Meta Pixel: Initialized with advanced matching data.", { pixelId, hashedCustomerData });
+};
