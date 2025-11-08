@@ -8,15 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { showError } from "@/utils/toast";
-import { trackPurchase } from "@/utils/metaPixel";
 import { Profile } from "@/types";
-
-// Declare global fbq type for TypeScript
-declare global {
-  interface Window {
-    fbq: (...args: any[]) => void;
-  }
-}
 
 const Confirmation = () => {
   const location = useLocation();
@@ -62,7 +54,7 @@ const Confirmation = () => {
         }
       }
 
-      // Fetch user profile for hashed data
+      // Fetch user profile for display purposes only
       if (user) {
         const { data, error } = await supabase
           .from('profiles')
@@ -71,31 +63,13 @@ const Confirmation = () => {
           .single();
 
         if (error) {
-          console.error("Error fetching user profile for Meta Pixel:", error);
+          console.error("Error fetching user profile:", error);
           showError("Erro ao carregar dados do seu perfil.");
         } else if (data) {
           setUserProfile(data);
         }
       }
       setIsLoadingData(false);
-
-      // Track Purchase event if all data is available and in production
-      if (currentOrderId && currentTotalPrice !== null && user && data && process.env.NODE_ENV === 'production') {
-        const firstName = data.name?.split(' ')[0] || null;
-        const lastName = data.name?.split(' ').slice(1).join(' ') || null;
-
-        trackPurchase(
-          currentTotalPrice,
-          'BRL',
-          currentOrderId,
-          {
-            email: data.email,
-            phone: data.whatsapp,
-            firstName: firstName,
-            lastName: lastName,
-          }
-        );
-      }
     };
 
     if (!isSessionLoading) {

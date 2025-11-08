@@ -57,7 +57,7 @@ serve(async (req) => {
       });
     }
 
-    // 3. Find the order in the 'orders' table
+    // 3. Find order in 'orders' table
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('id, user_id, ordered_product_ids, status, total_price, meta_tracking_data')
@@ -71,7 +71,7 @@ serve(async (req) => {
         message: 'Order not found for given asaas_payment_id.',
         metadata: { asaasPaymentId, error: orderError?.message }
       });
-      // Return 200 to prevent Asaas from retrying endlessly if the order is genuinely missing
+      // Return 200 to prevent Asaas from retrying endlessly if order is genuinely missing
       return new Response(JSON.stringify({ message: 'Order not found, but webhook acknowledged.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
