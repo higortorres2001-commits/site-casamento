@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { useSession } from "@/components/SessionContextProvider";
 
 interface CustomerEditorModalProps {
   open: boolean;
@@ -27,6 +28,7 @@ const CustomerEditorModal = ({
   products,
   onRefresh,
 }: CustomerEditorModalProps) => {
+  const { user } = useSession();
   const [name, setName] = useState<string>(customer?.name ?? "");
   const [email, setEmail] = useState<string>(customer?.email ?? "");
   const [selected, setSelected] = useState<string[]>(customer?.access ?? []);
@@ -76,7 +78,7 @@ const CustomerEditorModal = ({
         metadata: { 
           targetUserId: customer.id,
           targetEmail: customer.email,
-          adminEmail: (await supabase.auth.getUser()).data.user?.email
+          adminEmail: user?.email
         }
       });
 
@@ -145,6 +147,8 @@ const CustomerEditorModal = ({
   };
 
   const handleSave = async () => {
+    if (!customer?.id) return;
+
     setIsLoading(true);
     
     try {
@@ -152,7 +156,7 @@ const CustomerEditorModal = ({
       await supabase.from('logs').insert({
         level: 'info',
         context: 'admin-user-update-start',
-        message: 'Admin started user profile update',
+        message: 'Admin started user profile update via secure function',
         metadata: { 
           targetUserId: customer.id,
           changes: {
@@ -164,122 +168,64 @@ const CustomerEditorModal = ({
             },
             is_admin: { from: customer.is_admin, to: isAdmin }
           },
-          adminEmail: (await supabase.auth.getUser()).data.user?.email
+          adminEmail: user?.email
         }
       });
 
-      // ETAPA 1: Atualizar perfil
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ 
-          name, 
-          email: email.toLowerCase().trim(), 
-          access: selected, 
-          is_admin: isAdmin,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', customer.id)
-        .select()
-        .single();
+      // Chamar a Edge Function segura para atualizar o usuário
+      const { data, error } = await supabase.functions.invoke("admin-update-user", {
+        body: {
+          userIdToUpdate: customer.id,
+          name: name.trim(),
+          email: email.trim(),
+          access: selected,
+          isAdmin: isAdmin
+        }
+      });
 
-      if (profileError) {
+      if (error) {
         await supabase.from('logs').insert({
           level: 'error',
-          context: 'admin-user-profile-update-error',
-          message: 'Failed to update user profile',
+          context: 'admin-user-update-function-error',
+          message: 'Failed to call admin-update-user function',
           metadata: { 
             targetUserId: customer.id,
-            error: profileError.message,
-            errorType: profileError.name,
-            errorCode: profileError.code,
-            attemptedChanges: {
-              name, 
-              email: email.toLowerCase().trim(), 
-              access: selected, 
-              is_admin: isAdmin
-            }
+            error: error.message,
+            errorType: error.name
           }
         });
-        showError("Erro ao salvar perfil: " + profileError.message);
-        console.error("Profile update error:", profileError);
+        showError("Erro ao salvar perfil: " + error.message);
+        console.error("Function call error:", error);
+        return;
+      }
+
+      if (data?.error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-user-update-business-error',
+          message: 'Edge function returned business error',
+          metadata: { 
+            targetUserId: customer.id,
+            businessError: data.error,
+            authUpdateSuccess: data.authUpdateSuccess
+          }
+        });
+        showError(data.error);
         return;
       }
 
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'admin-user-profile-update-success',
-        message: 'User profile updated successfully',
+        context: 'admin-user-update-success',
+        message: 'User updated successfully via secure function',
         metadata: { 
           targetUserId: customer.id,
-          updatedProfile: profileError ? null : {
-            name, 
-            email: email.toLowerCase().trim(), 
-            accessCount: selected.length, 
-            is_admin: isAdmin
-          }
+          authUpdateSuccess: data.authUpdateSuccess,
+          responseMessage: data.message
         }
       });
 
-      // ETAPA 2: Atualizar email no auth se mudou
-      if (email.toLowerCase().trim() !== customer.email?.toLowerCase().trim()) {
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'admin-user-auth-update-start',
-          message: 'Starting auth email update',
-          metadata: { 
-            targetUserId: customer.id,
-            oldEmail: customer.email,
-            newEmail: email.toLowerCase().trim()
-          }
-        });
-
-        const { error: emailError } = await supabase.auth.admin.updateUserById(
-          customer.id,
-          { email: email.toLowerCase().trim() }
-        );
-        
-        if (emailError) {
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'admin-user-auth-update-error',
-            message: 'Failed to update auth email',
-            metadata: { 
-              targetUserId: customer.id,
-              oldEmail: customer.email,
-              newEmail: email.toLowerCase().trim(),
-              error: emailError.message,
-              errorType: emailError.name
-            }
-          });
-          showError("Erro ao atualizar email: " + emailError.message);
-          console.error("Email update error:", emailError);
-          // Continuar mesmo assim - o perfil foi atualizado
-        } else {
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'admin-user-auth-update-success',
-            message: 'Auth email updated successfully',
-            metadata: { 
-              targetUserId: customer.id,
-              newEmail: email.toLowerCase().trim()
-            }
-          });
-        }
-      }
-
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'admin-user-update-complete',
-        message: 'User update process completed successfully',
-        metadata: { 
-          targetUserId: customer.id,
-          finalEmail: email.toLowerCase().trim(),
-          finalAccessCount: selected.length,
-          finalIsAdmin: isAdmin
-        }
-      });
-
-      showSuccess("Perfil atualizado com sucesso!");
+      showSuccess(data.message || "Perfil atualizado com sucesso!");
       onRefresh();
       onClose();
     } catch (error: any) {

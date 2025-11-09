@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import { Loader2 } from "lucide-react";
+import { useSession } from "@/components/SessionContextProvider";
 
 const formSchema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
@@ -42,6 +43,7 @@ interface CreateCustomerFormProps {
 }
 
 const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
+  const { user } = useSession();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<FormData>({
@@ -65,16 +67,17 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
       await supabase.from('logs').insert({
         level: 'info',
         context: 'admin-create-customer-start',
-        message: 'Admin started manual customer creation',
+        message: 'Admin started manual customer creation via secure function',
         metadata: { 
           email: data.email.toLowerCase().trim(),
           name: data.name,
           cpfLength: cpfClean.length,
           whatsappLength: whatsappClean.length,
-          adminEmail: (await supabase.auth.getUser()).data.user?.email
+          adminEmail: user?.email
         }
       });
 
+      // Chamar a Edge Function segura para criar o cliente
       const { data: result, error } = await supabase.functions.invoke("create-customer", {
         body: {
           email: data.email.toLowerCase().trim(),
@@ -87,7 +90,7 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
       if (error) {
         await supabase.from('logs').insert({
           level: 'error',
-          context: 'admin-create-customer-edge-error',
+          context: 'admin-create-customer-function-error',
           message: 'Edge function error during customer creation',
           metadata: { 
             email: data.email.toLowerCase().trim(),
@@ -96,7 +99,7 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
           }
         });
         showError("Erro ao criar cliente: " + error.message);
-        console.error("Create customer error:", error);
+        console.error("Create customer function error:", error);
         return;
       }
 
@@ -118,12 +121,12 @@ const CreateCustomerForm = ({ onCreated }: CreateCustomerFormProps) => {
       await supabase.from('logs').insert({
         level: 'info',
         context: 'admin-create-customer-success',
-        message: 'Manual customer creation completed successfully',
+        message: 'Manual customer creation completed successfully via secure function',
         metadata: { 
           userId: result.userId,
           email: data.email.toLowerCase().trim(),
           name: data.name,
-          adminEmail: (await supabase.auth.getUser()).data.user?.email
+          adminEmail: user?.email
         }
       });
 
