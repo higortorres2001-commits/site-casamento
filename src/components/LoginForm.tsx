@@ -241,18 +241,6 @@ const LoginForm = () => {
             "Entrar"
           )}
         </Button>
-
-        <div className="text-center">
-          <p className="text-sm text-gray-600">
-            Não tem uma conta? {" "}
-            <Link 
-              to="/checkout" 
-              className="text-orange-600 hover:text-orange-700 font-medium"
-            >
-              Crie agora
-            </Link>
-          </p>
-        </div>
       </form>
     </Form>
   );
