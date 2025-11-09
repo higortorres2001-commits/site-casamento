@@ -64,41 +64,10 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
 
     useImperativeHandle(ref, () => ({
       submitForm: async () => {
-        console.log("💳 Submitting credit card form...");
-        
-        // Validar todos os campos
         const isValid = await form.trigger();
-        console.log("💳 Form validation result:", isValid);
-        
-        if (!isValid) {
-          console.error("❌ Credit card form validation failed");
-          return false;
-        }
-        
-        const values = form.getValues();
-        console.log("💳 Credit card form values:", values);
-        
-        // Validações adicionais
-        const currentYear = new Date().getFullYear() % 100;
-        const currentMonth = new Date().getMonth() + 1;
-        const expYear = parseInt(values.expiryYear);
-        const expMonth = parseInt(values.expiryMonth);
-        
-        // Verificar se o cartão não está expirado
-        if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
-          console.error("❌ Credit card is expired");
-          form.setError("expiryYear", { message: "Cartão expirado" });
-          return false;
-        }
-        
-        console.log("✅ Credit card form is valid");
-        return true;
+        return isValid;
       },
-      getValues: () => {
-        const values = form.getValues();
-        console.log("💳 Getting credit card values:", values);
-        return values;
-      },
+      getValues: () => form.getValues(),
     }));
 
     const formatCEP = (value: string) => {
@@ -137,13 +106,13 @@ const CreditCardForm = forwardRef<CreditCardFormRef, CreditCardFormProps>(
                 <FormLabel>Número do Cartão</FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="XXXX XXXX XXXX"
+                    placeholder="XXXX XXXX XXXX XXXX"
                     {...field}
                     disabled={isLoading}
                     maxLength={19}
                     onChange={(e) => {
                       const value = e.target.value.replace(/\D/g, '').substring(0, 16);
-                      const formatted = value.replace(/(\d{4})(?=\d)/, '$1 $2').replace(/(\d{4})(?=\d)/, '$1 $2').replace(/(\d{4})(?=\d)/, '$1 $2');
+                      const formatted = value.replace(/(\d{4})(?=\d)/g, '$1 ');
                       field.onChange(formatted);
                     }}
                     className="focus:ring-orange-500 focus:border-orange-500"
