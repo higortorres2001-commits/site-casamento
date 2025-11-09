@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -12,34 +11,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Loader2,
-  Users,
-  Clock,
-  Mail,
-  Phone,
-  Search,
-  PencilLine,
-  UserPlus,
-  Database,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
-import LogMetadataModal from "@/components/admin/LogMetadataModal";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { useSession } from "@/components/SessionContextProvider";
-import { Badge } from "@/components/ui/badge";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCPF } from "@/utils/cpfValidation";
-import { formatWhatsapp } from "@/utils/whatsappValidation";
+import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XCircle, Eye } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
-import { useDebouncedCallback } from "use-debounce";
+import { useSession } from "@/components/SessionContextProvider";
+import LogMetadataModal from "@/components/admin/LogMetadataModal";
 
 type Log = {
   id: string;
@@ -50,171 +35,172 @@ type Log = {
   metadata: any;
 };
 
-type PaginationData = {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-};
-
-const paymentLabels: Record<string, { label: string; className: string }> = {
-  paid: {
-    label: "Pago",
-    className: "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  },
-  pending: {
-    label: "Pendente",
-    className: "bg-amber-100 text-amber-700 border border-amber-200",
-  },
-  cancelled: {
-    label: "Cancelado",
-    className: "bg-rose-100 text-rose-700 border border-rose-200",
-  },
-};
-
-const formatCurrencyBRL = (value?: number | null) => {
-  if (value === undefined || value === null) {
-    return "—";
-  }
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-};
-
-const PAGE_SIZE = 20;
-
 const Logs = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [logs, setLogs] = useState<Log[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isMassModalOpen, setIsMassModalOpen] = useState(false);
-  const [massProducts, setMassProducts] = useState<{ id: string; name: string }[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
-  const [pagination, setPagination] = useState<PaginationData>({
-    page: 1,
-    pageSize: PAGE_SIZE,
-    total: 0,
-    totalPages: 0,
-  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [contextFilter, setContextFilter] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState<string>("");
+  const [dateFilter, setDateFilter] = useState<string>("all");
+  const [availableContexts, setAvailableContexts] = useState<string[]>([]);
+  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Editor individual
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editingLog, setEditingLog] = useState<Log | null>(null);
+  const isAdmin = user?.email === "higor.torres8@gmail.com";
 
-  // Debounce search term
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    setDebouncedSearchTerm(value);
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on search
-  }, 300);
-
-  useEffect(() => {
-    debouncedSearch(searchTerm);
-  }, [searchTerm, debouncedSearch]);
-
-  const fetchLogs = useCallback(async (page: number = 1, search: string = "") => {
-    setLoading(true);
-    try {
-      // Calculate range for pagination
-      const from = (page - 1) * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-
-      let query = supabase
-        .from("logs")
-        .select("id, level, context, message, metadata, created_at")
-        .order("created_at", { ascending: false });
-
-      // Apply server-side search if provided
-      if (search.trim()) {
-        query = query.or(
-          `message.ilike.%${search}%,context.ilike.%${search}%`
-        );
-      }
-
-      // Apply pagination
-      query = query.range(from, to);
-
-      const { data, error, count } = await query;
-
-      if (error) {
-        console.error("Error fetching logs:", error);
-        showError("Erro ao carregar logs.");
-        setLogs([]);
-        setPagination({
-          page: 1,
-          pageSize: PAGE_SIZE,
-          total: 0,
-          totalPages: 0,
-        });
-        return;
-      }
-
-      console.log(`Fetched ${data?.length || 0} logs from database (page ${page})`);
-
-      if (!data || data.length === 0) {
-        setLogs([]);
-        setPagination({
-          page: 1,
-          pageSize: PAGE_SIZE,
-          total: 0,
-          totalPages: 0,
-        });
-        return;
-      }
-
-      setLogs(data);
-      
-      // Update pagination
-      const totalCount = count || 0;
-      const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-      
-      setPagination({
-        page,
-        pageSize: PAGE_SIZE,
-        total: totalCount,
-        totalPages,
-      });
-
-      showSuccess(`${data.length} logs carregados com sucesso!`);
-    } catch (error: any) {
-      console.error("Unexpected error fetching logs:", error);
-      showError("Erro inesperado ao carregar logs.");
-    } finally {
-      setLoading(false);
+  const cleanupOldLogs = useCallback(async () => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const { error } = await supabase
+      .from("logs")
+      .delete()
+      .lt("created_at", cutoff.toISOString());
+    if (error) {
+      console.error("Error cleaning old logs:", error);
     }
   }, []);
 
-  // Initial load
-  useEffect(() => {
-    if (!isSessionLoading && user) {
-      fetchLogs(1, "");
+  const fetchAvailableContexts = useCallback(async () => {
+    const { data, error } = await supabase.from("logs").select("context", { distinct: true });
+    if (error) {
+      console.error("Error fetching distinct contexts:", error);
+    } else {
+      const contexts = data?.map((item) => item.context).sort() || [];
+      setAvailableContexts(contexts);
     }
-  }, [isSessionLoading, user, fetchLogs]);
+  }, []);
 
-  // Load data when page or search changes
-  useEffect(() => {
-    if (!isSessionLoading && user) {
-      fetchLogs(pagination.page, debouncedSearchTerm);
-    }
-  }, [pagination.page, debouncedSearchTerm, isSessionLoading, user, fetchLogs]);
+  const fetchLogs = useCallback(async () => {
+    setIsLoading(true);
+    let query = supabase.from("logs").select("*").order("created_at", { ascending: false });
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
+    // Aplicar filtros
+    if (levelFilter !== "all") {
+      query = query.eq("level", levelFilter);
     }
+    if (contextFilter !== "all") {
+      query = query.eq("context", contextFilter);
+    }
+    if (searchFilter.trim()) {
+      query = query.or(`message.ilike.%${searchFilter}%,context.ilike.%${searchFilter}%`);
+    }
+    if (dateFilter !== "all") {
+      const now = new Date();
+      let cutoff = new Date();
+      
+      switch (dateFilter) {
+        case "1h":
+          cutoff.setHours(now.getHours() - 1);
+          break;
+        case "24h":
+          cutoff.setDate(now.getDate() - 1);
+          break;
+        case "7d":
+          cutoff.setDate(now.getDate() - 7);
+          break;
+        case "30d":
+          cutoff.setDate(now.getDate() - 30);
+          break;
+      }
+      
+      if (dateFilter !== "all") {
+        query = query.gte("created_at", cutoff.toISOString());
+      }
+    }
+
+    const { data, error } = await query.limit(1000);
+
+    if (error) {
+      showError("Erro ao carregar logs: " + error.message);
+      console.error("Error fetching logs:", error);
+      setLogs([]);
+    } else {
+      // Sanitize metadata: remove internal_tag if present
+      const sanitized = (data || []).map((log: Log) => {
+        if (log.metadata && typeof log.metadata === "object") {
+          const { internal_tag, ...rest } = log.metadata;
+          return { ...log, metadata: rest };
+        }
+        return log;
+      });
+      setLogs(sanitized);
+    }
+
+    setIsLoading(false);
+  }, [levelFilter, contextFilter, searchFilter, dateFilter]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      cleanupOldLogs();
+    }
+  }, [cleanupOldLogs, isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchAvailableContexts();
+    }
+  }, [isAdmin, fetchAvailableContexts]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchLogs();
+    }
+  }, [isAdmin, fetchLogs]);
+
+  const handleClearLogs = async () => {
+    if (!isAdmin) {
+      showError("Você não tem permissão para limpar os logs.");
+      return;
+    }
+    if (!window.confirm("Tem certeza que deseja apagar TODOS os logs? Esta ação é irreversível.")) {
+      return;
+    }
+
+    setIsLoading(true);
+    const { error } = await supabase
+      .from("logs")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) {
+      showError("Erro ao limpar logs: " + error.message);
+      console.error("Error clearing logs:", error);
+    } else {
+      showSuccess("Logs limpos com sucesso!");
+      fetchLogs();
+    }
+    setIsLoading(false);
   };
 
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
+  const exportLogs = () => {
+    const csvContent = [
+      ["Data/Hora", "Nível", "Contexto", "Mensagem", "Metadados"].join(","),
+      ...logs.map(log => [
+        new Date(log.created_at).toLocaleString(),
+        log.level,
+        log.context,
+        `"${log.message.replace(/"/g, '""')}"`,
+        `"${JSON.stringify(log.metadata).replace(/"/g, '""')}"`
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const openLogModal = (log: Log) => {
-    setEditingLog(log);
-    setIsEditorOpen(true);
+    setSelectedLog(log);
+    setIsModalOpen(true);
   };
 
   const closeModal = () => {
-    setIsEditorOpen(false);
-    setEditingLog(null);
+    setIsModalOpen(false);
+    setSelectedLog(null);
   };
 
   const getLevelIcon = (level: string) => {
@@ -251,80 +237,147 @@ const Logs = () => {
 
   if (isSessionLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+      <div className="flex items-center justify-center min-h-[200px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <Card className="max-w-md p-6 text-center">
+          <p className="text-sm text-slate-600">
+            Você não tem permissão para visualizar os logs.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto flex flex-col gap-6 p-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-3">
           <h1 className="text-3xl font-bold">Logs do Sistema</h1>
-          <p className="text-gray-500">Gerencie e visualize todos os logs</p>
+          <Badge variant="outline">{logs.length} registros</Badge>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            onClick={() => fetchLogs(1, "")}
-            className="flex items-center gap-2"
-          >
-            <Database className="h-4 w-4" />
-            Recarregar Logs
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportLogs} className="flex items-center gap-2">
+            <Download className="h-4 w-4" /> Exportar CSV
+          </Button>
+          <Button variant="destructive" onClick={handleClearLogs} disabled={isLoading} className="flex items-center gap-2">
+            <Trash2 className="h-4 w-4" /> Limpar Logs
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <CardTitle>
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                <span>Logs ({pagination.total})</span>
+      {/* Filtros Avançados */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-lg">Filtros</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <Input
+                  placeholder="Buscar em mensagens ou contexto..."
+                  className="pl-9"
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                />
               </div>
-              {pagination.total > PAGE_SIZE && (
-                <div className="text-sm text-gray-500">
-                  Página {pagination.page} de {pagination.totalPages}
-                </div>
-              )}
-            </CardTitle>
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-              <Input
-                placeholder="Buscar logs..."
-                className="pl-9"
-                value={searchTerm}
-                onChange={(e) => handleSearchChange(e.target.value)}
-              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nível</label>
+              <Select value={levelFilter} onValueChange={setLevelFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os níveis" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os níveis</SelectItem>
+                  <SelectItem value="error">Erros</SelectItem>
+                  <SelectItem value="warning">Avisos</SelectItem>
+                  <SelectItem value="info">Informações</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contexto</label>
+              <Select value={contextFilter} onValueChange={setContextFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os contextos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os contextos</SelectItem>
+                  {availableContexts.map((ctx) => (
+                    <SelectItem key={ctx} value={ctx}>
+                      {ctx}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Período</label>
+              <Select value={dateFilter} onValueChange={setDateFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todo o período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo o período</SelectItem>
+                  <SelectItem value="1h">Última hora</SelectItem>
+                  <SelectItem value="24h">Últimas 24h</SelectItem>
+                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                  <SelectItem value="30d">Últimos 30 dias</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        </CardHeader>
+
+          <div className="flex justify-end">
+            <Button onClick={fetchLogs} disabled={isLoading} className="flex items-center gap-2">
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              Aplicar Filtros
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabela de Logs */}
+      <Card>
         <CardContent className="p-0">
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-          ) : logs.length === 0 ? (
-            <div className="text-center p-8 text-gray-500">
-              {debouncedSearchTerm ? "Nenhum log encontrado com os critérios de busca." : "Nenhum log encontrado."}
-            </div>
           ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader className="bg-gray-50 sticky top-0 z-10">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-gray-50 sticky top-0 z-10">
+                  <TableRow>
+                    <TableHead className="w-24">Data/Hora</TableHead>
+                    <TableHead className="w-20">Nível</TableHead>
+                    <TableHead className="w-32">Contexto</TableHead>
+                    <TableHead className="min-w-[300px]">Mensagem</TableHead>
+                    <TableHead className="w-24 text-center">Metadados</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {logs.length === 0 ? (
                     <TableRow>
-                      <TableHead className="w-24">Data/Hora</TableHead>
-                      <TableHead>Nível</TableHead>
-                      <TableHead>Contexto</TableHead>
-                      <TableHead>Mensagem</TableHead>
-                      <TableHead className="text-right">Metadados</TableHead>
+                      <TableCell colSpan={5} className="h-24 text-center text-gray-500">
+                        Nenhum log encontrado com os filtros aplicados.
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {logs.map((log) => (
+                  ) : (
+                    logs.map((log) => (
                       <TableRow key={log.id} className="hover:bg-gray-50">
                         <TableCell className="text-xs">
                           {new Date(log.created_at).toLocaleString()}
@@ -343,12 +396,12 @@ const Logs = () => {
                             {log.context}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm max-w-xs">
                           <div className="truncate" title={log.message}>
                             {log.message}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -360,55 +413,21 @@ const Logs = () => {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Pagination Controls */}
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between p-4 border-t">
-                  <div className="text-sm text-gray-600">
-                    Mostrando {logs.length} de {pagination.total} logs
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(pagination.page - 1)}
-                      disabled={pagination.page <= 1 || loading}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Anterior
-                    </Button>
-                    <span className="text-sm text-gray-600">
-                      Página {pagination.page} de {pagination.totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(pagination.page + 1)}
-                      disabled={pagination.page >= pagination.totalPages || loading}
-                    >
-                      Próxima
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Modal de metadados */}
-      {editingLog && (
-        <LogMetadataModal
-          open={isEditorOpen}
-          onClose={closeModal}
-          log={editingLog}
-        />
-      )}
+      {/* Modal de Metadados */}
+      <LogMetadataModal
+        open={isModalOpen}
+        onClose={closeModal}
+        log={selectedLog}
+      />
     </div>
   );
 };

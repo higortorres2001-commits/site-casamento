@@ -92,7 +92,7 @@ const Products = () => {
     } else if (!isSessionLoading && !user) {
       setIsLoadingProducts(false);
     }
-  }, [isSessionLoading, user, fetchProducts]);
+  }, [user, isSessionLoading, fetchProducts]);
 
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
@@ -306,11 +306,6 @@ const Products = () => {
     }
     
     setProductToDelete(null);
-  };
-
-  const handleOpenAssetManager = (product: Product) => {
-    setAssetManagementProduct(product);
-    setIsAssetModalOpen(true);
   };
 
   const handleCopyCheckoutLink = async (productId: string) => {

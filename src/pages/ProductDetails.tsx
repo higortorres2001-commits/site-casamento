@@ -5,7 +5,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, ProductAsset } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
-import { Loader2, FileText, ArrowLeft, Eye } from "lucide-react";
+import { Loader2, FileText, ArrowLeft, Eye } from "lucide-react"; // Import Eye icon for view
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +15,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useSession } from "@/components/SessionContextProvider";
+import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 
 const ProductDetails = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
-  const { user } = useSession();
+  const { user } = useSession(); // Get user from session
   const [product, setProduct] = useState<(Product & { assets?: ProductAsset[] }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPdfViewerOpen, setIsPdfViewerOpen] = useState(false);
@@ -30,7 +30,7 @@ const ProductDetails = () => {
   const fetchProductDetails = useCallback(async () => {
     if (!productId) {
       showError("ID do produto não fornecido.");
-      navigate("/meus-produtos");
+      navigate("/meus-produtos"); // Redirect if no product ID
       return;
     }
 
@@ -44,7 +44,7 @@ const ProductDetails = () => {
     if (error || !data) {
       showError("Produto não encontrado ou erro ao carregar.");
       console.error("Error fetching product details:", error);
-      navigate("/meus-produtos");
+      navigate("/meus-produtos"); // Redirect if product not found
       return;
     }
 
@@ -61,7 +61,7 @@ const ProductDetails = () => {
             await supabase.from('logs').insert({
               level: 'error',
               context: 'client-product-details',
-              message: 'Failed to generate signed URL for asset',
+              message: `Failed to generate signed URL for asset ${asset.id}: ${signedUrlError.message}`,
               metadata: { userId: user?.id, productId: data.id, assetId: asset.id, storagePath: asset.storage_path, error: signedUrlError.message }
             });
             return { ...asset, signed_url: null }; // Return asset with null signed_url on error
@@ -74,7 +74,7 @@ const ProductDetails = () => {
       setProduct(data);
     }
     setIsLoading(false);
-  }, [productId, navigate, user]);
+  }, [productId, navigate, user]); // Adicionado user como dependência
 
   useEffect(() => {
     fetchProductDetails();
@@ -120,9 +120,9 @@ const ProductDetails = () => {
   };
 
   const handleClosePdfViewer = () => {
-    setIsPdfViewerOpen(false
-</think>
+    setIsPdfViewerOpen(false);
     setCurrentPdfUrl(null);
+    setCurrentPdfName(null);
   };
 
   if (isLoading) {
@@ -142,7 +142,7 @@ const ProductDetails = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8 flex flex-col">
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
       <div className="max-w-3xl mx-auto mb-6">
         <Button
           variant="outline"
@@ -167,9 +167,9 @@ const ProductDetails = () => {
           <h2 className="text-2xl font-semibold text-gray-800 pt-4 border-t border-gray-200">
             Arquivos do Produto
           </h2>
-          {product.assets && product.assets.length > 0 ? (
+          {product.product_assets && product.product_assets.length > 0 ? (
             <div className="space-y-4">
-              {product.assets.map((asset) => (
+              {product.product_assets.map((asset) => (
                 <div
                   key={asset.id}
                   className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg bg-gray-50"
@@ -178,7 +178,7 @@ const ProductDetails = () => {
                     <FileText className="h-6 w-6 text-blue-500" />
                     <span className="text-gray-700 font-medium">{asset.file_name}</span>
                   </div>
-                  <div className="flex gap-2 mb-2 sm:mb-0">
+                  <div className="flex gap-2">
                     {asset.signed_url ? (
                       <>
                         <Button
