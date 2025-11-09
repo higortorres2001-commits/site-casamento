@@ -198,6 +198,7 @@ const Checkout = () => {
   };
 
   const handleCouponApplied = (coupon: Coupon | null) => {
+    console.log("🎯 Cupom recebido no Checkout:", coupon);
     setAppliedCoupon(coupon);
   };
 
@@ -270,6 +271,15 @@ const Checkout = () => {
       if (paymentMethod === "CREDIT_CARD" && creditCardData) {
         payload.creditCard = creditCardData;
       }
+
+      console.log("🚀 Enviando payload com cupom:", {
+        coupon_code: appliedCoupon?.code || null,
+        coupon_applied: !!appliedCoupon,
+        coupon_value: appliedCoupon?.value,
+        coupon_type: appliedCoupon?.discount_type,
+        original_total: originalTotalPrice,
+        final_total: currentTotalPrice
+      });
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: payload,
@@ -347,6 +357,7 @@ const Checkout = () => {
             originalTotalPrice={originalTotalPrice}
             currentTotalPrice={currentTotalPrice}
             appliedCoupon={appliedCoupon}
+            onCouponApplied={handleCouponApplied}
           />
 
           <div className="bg-white rounded-xl shadow-lg p-6">

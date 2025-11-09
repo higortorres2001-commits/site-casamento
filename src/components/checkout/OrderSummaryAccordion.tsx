@@ -17,6 +17,7 @@ interface OrderSummaryAccordionProps {
   originalTotalPrice: number;
   currentTotalPrice: number;
   appliedCoupon: Coupon | null;
+  onCouponApplied: (coupon: Coupon | null) => void; // ✅ ADICIONADO
 }
 
 const OrderSummaryAccordion = ({
@@ -25,8 +26,12 @@ const OrderSummaryAccordion = ({
   originalTotalPrice,
   currentTotalPrice,
   appliedCoupon,
+  onCouponApplied, // ✅ ADICIONADO
 }: OrderSummaryAccordionProps) => {
   const discountAmount = originalTotalPrice - currentTotalPrice;
+
+  console.log("🎯 OrderSummary - Cupom aplicado:", appliedCoupon);
+  console.log("🎯 OrderSummary - Desconto calculado:", discountAmount);
 
   return (
     <Accordion type="single" collapsible defaultValue="item-1" className="w-full">
@@ -63,7 +68,7 @@ const OrderSummaryAccordion = ({
             {/* Cupom de Desconto - Integrado dentro do resumo */}
             <div className="mt-4 pt-4 border-t border-gray-200">
               <CouponInputCard 
-                onCouponApplied={() => {}} 
+                onCouponApplied={onCouponApplied} // ✅ PASSANDO A FUNÇÃO
                 appliedCoupon={appliedCoupon}
               />
             </div>

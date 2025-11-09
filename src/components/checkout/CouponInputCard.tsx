@@ -11,7 +11,7 @@ import { Loader2, ChevronDown, ChevronUp, Tag, X } from "lucide-react";
 
 interface CouponInputCardProps {
   onCouponApplied: (coupon: Coupon | null) => void;
-  appliedCoupon?: Coupon | null; // Nova prop para cupom já aplicado
+  appliedCoupon?: Coupon | null;
 }
 
 const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProps) => {
@@ -20,6 +20,8 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleApplyCoupon = async () => {
+    console.log("🎯 CouponInputCard - Aplicando cupom:", couponCode.trim());
+    
     if (!couponCode.trim()) {
       showError("Por favor, insira um código de cupom.");
       return;
@@ -34,29 +36,36 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
       .single();
 
     if (error || !data) {
+      console.log("❌ Cupom inválido:", error);
       showError("Cupom inválido ou inativo.");
       onCouponApplied(null); // Clear any previously applied coupon
-      console.error("Error fetching coupon:", error);
+      console.log("🔄 Cupom removido do estado pai");
     } else {
+      console.log("✅ Cupom válido encontrado:", data);
       showSuccess("Cupom aplicado com sucesso!");
-      onCouponApplied(data);
+      onCouponApplied(data); // ✅ PASSANDO O CUPOM VÁLIDO
+      console.log("🔄 Cupom aplicado no estado pai:", data);
       setCouponCode(""); // Clear input after successful application
     }
     setIsLoading(false);
   };
 
   const handleRemoveCoupon = () => {
+    console.log("🗑️ CouponInputCard - Removendo cupom");
     onCouponApplied(null);
     setCouponCode(""); // Clear input when removing coupon
     setIsExpanded(false); // Collapse when removing coupon
+    console.log("🔄 Cupom removido do estado pai");
   };
 
   const handleToggleExpanded = () => {
+    console.log("🔄 CouponInputCard - Toggle expanded:", !isExpanded);
     setIsExpanded(!isExpanded);
   };
 
   // Se há um cupom aplicado, mostra o cupom aplicado
   if (appliedCoupon) {
+    console.log("🎯 CouponInputCard - Renderizando cupom aplicado:", appliedCoupon);
     return (
       <Card className="bg-white rounded-xl shadow-lg border-green-200">
         <CardHeader className="pb-3">
@@ -104,6 +113,7 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
 
   // Se não estiver expandido, mostra apenas o link
   if (!isExpanded) {
+    console.log("🎯 CouponInputCard - Renderizando link expansivo");
     return (
       <div className="text-center">
         <button
@@ -117,6 +127,7 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
   }
 
   // Se estiver expandido, mostra o campo completo
+  console.log("🎯 CouponInputCard - Renderizando campo de input");
   return (
     <Card className="bg-white rounded-xl shadow-lg">
       <CardHeader className="pb-3">
