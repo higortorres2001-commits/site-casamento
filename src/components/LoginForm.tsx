@@ -134,8 +134,7 @@ const LoginForm = () => {
           metadata: { 
             userId: sessionData.user.id,
             email: sessionData.user.email,
-            profileError: profileError?.message,
-            errorType: profileError?.name
+            profileError: profileError?.message
           }
         });
         showError("Perfil do usuário não encontrado.");
@@ -185,8 +184,7 @@ const LoginForm = () => {
         metadata: { 
           email: data.email.toLowerCase().trim(),
           error: err.message,
-          errorStack: err.stack,
-          errorType: err.name
+          errorStack: err.stack
         }
       });
       showError("Erro inesperado. Tente novamente.");
@@ -256,7 +254,8 @@ const LoginForm = () => {
             errorDetails: {
               isAuthApiError: error.name === 'AuthApiError',
               isNetworkError: error.message.includes('fetch'),
-              isConfigError: error.message.includes('configuration')
+              isConfigError: error.message.includes('configuration') || error.message.includes('disabled'),
+              isRateLimitError: error.message.includes('rate limit')
             }
           }
         });
@@ -268,7 +267,7 @@ const LoginForm = () => {
           } else if (error.message.includes('rate limit')) {
             showError("Muitas tentativas de recuperação. Por favor, aguarde alguns minutos antes de tentar novamente.");
           } else {
-            showError("Erro ao enviar email de recuperação. Por favor, tente novamente mais tarde.");
+            showError("Erro ao enviar email de recuperação: " + error.message);
           }
         } else if (error.message.includes('fetch') || error.message.includes('network')) {
           showError("Erro de conexão. Verifique sua internet e tente novamente.");
@@ -385,7 +384,6 @@ const LoginForm = () => {
               <li>• Verifique sua caixa de entrada</li>
               <li>• Verifique a pasta de spam</li>
               <li>• Aguarde alguns minutos para receber o email</li>
-              <li>• O link de recuperação expira em 24 horas</li>
               <li>• Se não receber o email, verifique se o endereço está correto</li>
             </ul>
           </div>
