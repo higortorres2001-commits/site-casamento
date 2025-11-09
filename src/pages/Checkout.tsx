@@ -369,12 +369,6 @@ const Checkout = () => {
             />
 
             <div className="mt-6">
-             
-</think>
-Agora vou atualizar o componente principal para incluir a aba de método de pagamento:
-
-<dyad-write path="src/pages/Checkout.tsx" description="Updated checkout with payment method tabs">
-            <div className="mt-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
               <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
                 <TabsList className="grid w-full grid-cols-2">
