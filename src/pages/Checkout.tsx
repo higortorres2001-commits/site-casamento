@@ -80,6 +80,8 @@ const Checkout = () => {
       setIsLoadingProduct(true);
       
       try {
+        console.log("🔍 Fetching product data for:", productId);
+        
         // Executar ambas as consultas em paralelo com Promise.all
         const [productResult, bumpsResult] = await Promise.all([
           // Consulta 1: Buscar o produto principal
@@ -101,17 +103,21 @@ const Checkout = () => {
         const { data: product, error: productError } = productResult;
         
         if (productError || !product) {
+          console.error("❌ Error fetching product:", productError);
           showError("Produto não encontrado ou não está disponível.");
-          console.error("Error fetching product:", productError);
           navigate("/");
           return;
         }
 
+        console.log("✅ Product found:", product);
+        
         // Configurar o produto principal imediatamente
         setMainProduct(product);
 
         // Buscar os order bumps em paralelo (se existirem)
         if (product.orderbumps && product.orderbumps.length > 0) {
+          console.log("🔍 Fetching order bumps:", product.orderbumps);
+          
           const { data: bumps, error: bumpsError } = await supabase
             .from("products")
             .select("*")
@@ -119,16 +125,18 @@ const Checkout = () => {
             .eq("status", "ativo");
 
           if (bumpsError) {
-            console.error("Error fetching order bumps:", bumpsError);
+            console.error("❌ Error fetching order bumps:", bumpsError);
           } else {
+            console.log("✅ Order bumps found:", bumps);
             setOrderBumps(bumps || []);
           }
         } else {
+          console.log("ℹ️ No order bumps for this product");
           setOrderBumps([]);
         }
         
       } catch (error: any) {
-        console.error("Unexpected error in fetchProductData:", error);
+        console.error("❌ Unexpected error in fetchProductData:", error);
         showError("Erro ao carregar dados do produto.");
         navigate("/");
       } finally {
@@ -158,6 +166,8 @@ const Checkout = () => {
           lastName: null,
         };
       }
+
+      console.log("📊 Tracking checkout with data:", customerData);
 
       trackInitiateCheckout(
         mainProduct.price,
@@ -208,17 +218,23 @@ const Checkout = () => {
       return;
     }
 
+    console.log("🚀 Starting checkout process...");
+
     const checkoutFormValid = await checkoutFormRef.current?.submitForm();
     if (!checkoutFormValid) {
+      console.error("❌ Checkout form validation failed");
       showError("Por favor, preencha todos os campos obrigatórios do formulário.");
       return;
     }
 
     const checkoutFormData = checkoutFormRef.current?.getValues();
     if (!checkoutFormData) {
+      console.error("❌ Could not get checkout form data");
       showError("Erro ao obter dados do formulário.");
       return;
     }
+
+    console.log("📝 Checkout form data:", checkoutFormData);
 
     // Extrair dados do formulário para Meta Pixel
     const formDataCustomerData = {
@@ -241,12 +257,15 @@ const Checkout = () => {
 
     let creditCardData = null;
     if (paymentMethod === "CREDIT_CARD") {
+      console.log("💳 Validating credit card form...");
       const creditCardFormValid = await creditCardFormRef.current?.submitForm();
       if (!creditCardFormValid) {
+        console.error("❌ Credit card form validation failed");
         showError("Por favor, preencha todos os campos do cartão de crédito.");
         return;
       }
       creditCardData = creditCardFormRef.current?.getValues();
+      console.log("💳 Credit card data:", creditCardData);
     }
 
     setIsSubmitting(true);
@@ -272,7 +291,8 @@ const Checkout = () => {
         payload.creditCard = creditCardData;
       }
 
-      console.log("🚀 Enviando payload com cupom:", {
+      console.log("📤 Sending payment payload:", {
+        ...payload,
         coupon_code: appliedCoupon?.code || null,
         coupon_applied: !!appliedCoupon,
         coupon_value: appliedCoupon?.value,
@@ -281,33 +301,41 @@ const Checkout = () => {
         final_total: currentTotalPrice
       });
 
+      console.log("🌐 Calling create-asaas-payment function...");
+
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: payload,
       });
 
       if (error) {
-        showError("Falha ao finalizar o checkout: " + error.message);
-        console.error("Edge function error:", error);
+        console.error("❌ Edge function error:", error);
+        showError("Falha ao processar pagamento: " + error.message);
         return;
       }
 
+      console.log("✅ Payment function response:", data);
+
       if (paymentMethod === "PIX") {
+        console.log("📱 Setting up PIX modal...");
         setPixDetails(data);
         setAsaasPaymentId(data.id);
         setOrderId(data.orderId);
         setIsPixModalOpen(true);
       } else if (paymentMethod === "CREDIT_CARD") {
+        console.log("💳 Processing credit card response...");
         if (data.status === "CONFIRMED" || data.status === "RECEIVED") {
+          console.log("✅ Credit card payment confirmed");
           showSuccess("Pagamento confirmado!");
           navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } });
         } else {
+          console.log("⏳ Credit card payment pending");
           showSuccess("Pedido criado! Aguardando confirmação do pagamento.");
           navigate("/processando-pagamento");
         }
       }
     } catch (err: any) {
+      console.error("❌ Unexpected error in handleSubmit:", err);
       showError("Erro inesperado: " + err.message);
-      console.error("Checkout error:", err);
     } finally {
       setIsSubmitting(false);
     }
