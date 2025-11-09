@@ -22,6 +22,8 @@ import {
   UserPlus,
   Database,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import CreateCustomerForm from "@/components/admin/CreateCustomerForm";
 import MassAccessModal from "@/components/admin/MassAccessModal";
@@ -39,6 +41,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import { showError, showSuccess } from "@/utils/toast";
+import { useDebounce } from "use-debounce";
 
 type CustomerSummary = {
   id: string;
@@ -60,6 +63,13 @@ type OrderSnapshot = {
 
 type CustomerRow = CustomerSummary & {
   lastOrder?: OrderSnapshot;
+};
+
+type PaginationData = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 const paymentLabels: Record<string, { label: string; className: string }> = {
@@ -84,45 +94,89 @@ const formatCurrencyBRL = (value?: number | null) => {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 };
 
+const PAGE_SIZE = 20;
+
 const Customers = () => {
   const { user, isLoading: isSessionLoading } = useSession();
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isMassModalOpen, setIsMassModalOpen] = useState(false);
   const [massProducts, setMassProducts] = useState<{ id: string; name: string }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  const [pagination, setPagination] = useState<PaginationData>({
+    page: 1,
+    pageSize: PAGE_SIZE,
+    total: 0,
+    totalPages: 0,
+  });
 
   // Editor individual
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
 
-  const fetchCustomers = useCallback(async () => {
+  // Debounce search term
+  const debouncedSearch = useDebounce((value: string) => {
+    setDebouncedSearchTerm(value);
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on search
+  }, 300);
+
+  useEffect(() => {
+    debouncedSearch(searchTerm);
+  }, [searchTerm, debouncedSearch]);
+
+  const fetchCustomers = useCallback(async (page: number = 1, search: string = "") => {
     setLoading(true);
     try {
-      // Fetch all profiles directly - this is key change
-      const { data: profiles, error: profileError } = await supabase
+      // Calculate range for pagination
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      let query = supabase
         .from("profiles")
-        .select("id, name, email, cpf, whatsapp, access, is_admin")
+        .select("id, name, email, cpf, whatsapp, access, is_admin, created_at")
         .order("created_at", { ascending: false });
+
+      // Apply server-side search if provided
+      if (search.trim()) {
+        query = query.or(
+          `name.ilike.%${search}%,email.ilike.%${search}%,cpf.ilike.%${search}%,whatsapp.ilike.%${search}%`
+        );
+      }
+
+      // Apply pagination
+      query = query.range(from, to);
+
+      const { data: profiles, error: profileError, count } = await query;
 
       if (profileError) {
         console.error("Error fetching profiles:", profileError);
         showError("Erro ao carregar perfis dos usuários.");
         setCustomers([]);
-        setLoading(false);
+        setPagination({
+          page: 1,
+          pageSize: PAGE_SIZE,
+          total: 0,
+          totalPages: 0,
+        });
         return;
       }
 
-      console.log(`Fetched ${profiles?.length || 0} profiles from database`);
+      console.log(`Fetched ${profiles?.length || 0} profiles from database (page ${page})`);
 
       if (!profiles || profiles.length === 0) {
         setCustomers([]);
-        setLoading(false);
+        setPagination({
+          page: 1,
+          pageSize: PAGE_SIZE,
+          total: 0,
+          totalPages: 0,
+        });
         return;
       }
 
-      // Get all user IDs
+      // Get all user IDs for orders query
       const userIds = profiles.map(profile => profile.id);
 
       // Fetch last order for each user
@@ -166,6 +220,18 @@ const Customers = () => {
       });
 
       setCustomers(customersWithOrders);
+      
+      // Update pagination
+      const totalCount = count || 0;
+      const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+      
+      setPagination({
+        page,
+        pageSize: PAGE_SIZE,
+        total: totalCount,
+        totalPages,
+      });
+
       showSuccess(`${customersWithOrders.length} clientes carregados com sucesso!`);
     } catch (error: any) {
       console.error("Unexpected error fetching customers:", error);
@@ -197,13 +263,21 @@ const Customers = () => {
     }
   }, []);
 
+  // Initial load
   useEffect(() => {
     if (!isSessionLoading && user) {
-      fetchCustomers();
+      fetchCustomers(1, "");
       // Pre-fetch products for faster modal opening
       fetchProducts().then(products => setMassProducts(products));
     }
   }, [isSessionLoading, user, fetchCustomers, fetchProducts]);
+
+  // Load data when page or search changes
+  useEffect(() => {
+    if (!isSessionLoading && user) {
+      fetchCustomers(pagination.page, debouncedSearchTerm);
+    }
+  }, [pagination.page, debouncedSearchTerm, isSessionLoading, user, fetchCustomers]);
 
   const handleCreateCustomer = () => {
     setIsCreateModalOpen(true);
@@ -211,7 +285,7 @@ const Customers = () => {
 
   const handleCustomerCreated = () => {
     setIsCreateModalOpen(false);
-    fetchCustomers();
+    fetchCustomers(pagination.page, debouncedSearchTerm);
   };
 
   const handleOpenMassAccess = async () => {
@@ -243,7 +317,7 @@ const Customers = () => {
       }
 
       showSuccess(`Acesso concedido para ${data.updatedCount} cliente(s) com sucesso!`);
-      fetchCustomers();
+      fetchCustomers(pagination.page, debouncedSearchTerm);
     } catch (error: any) {
       console.error("Unexpected error applying mass access:", error);
       showError("Erro inesperado ao aplicar acesso em massa.");
@@ -287,7 +361,7 @@ const Customers = () => {
       }
 
       showSuccess(`Usuário "${customer.name || customer.email}" apagado com sucesso!`);
-      fetchCustomers();
+      fetchCustomers(pagination.page, debouncedSearchTerm);
     } catch (error: any) {
       console.error("Unexpected error deleting user:", error);
       showError("Erro inesperado ao apagar usuário.");
@@ -296,26 +370,15 @@ const Customers = () => {
     }
   };
 
-  const filteredCustomers = useMemo(() => {
-    if (!searchTerm.trim()) return customers;
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+    }
+  };
 
-    const term = searchTerm.toLowerCase().trim();
-    return customers.filter(
-      (customer) =>
-        customer.name?.toLowerCase().includes(term) ||
-        customer.email?.toLowerCase().includes(term) ||
-        customer.cpf?.includes(term) ||
-        customer.whatsapp?.includes(term)
-    );
-  }, [customers, searchTerm]);
-
-  if (isSessionLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+  };
 
   return (
     <div className="container mx-auto flex flex-col gap-6 p-4">
@@ -347,8 +410,13 @@ const Customers = () => {
             <CardTitle>
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                <span>Clientes ({filteredCustomers.length})</span>
+                <span>Clientes ({pagination.total})</span>
               </div>
+              {pagination.total > PAGE_SIZE && (
+                <div className="text-sm text-gray-500">
+                  Página {pagination.page} de {pagination.totalPages}
+                </div>
+              )}
             </CardTitle>
             <div className="relative w-full md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
@@ -356,7 +424,7 @@ const Customers = () => {
                 placeholder="Buscar cliente..."
                 className="pl-9"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
               />
             </div>
           </div>
@@ -366,115 +434,149 @@ const Customers = () => {
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filteredCustomers.length === 0 ? (
+          ) : customers.length === 0 ? (
             <div className="text-center p-8 text-gray-500">
-              {searchTerm ? "Nenhum cliente encontrado com os critérios de busca." : "Nenhum cliente cadastrado."}
+              {debouncedSearchTerm ? "Nenhum cliente encontrado com os critérios de busca." : "Nenhum cliente cadastrado."}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Contato</TableHead>
-                    <TableHead>Acesso</TableHead>
-                    <TableHead>Último Pedido</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCustomers.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell>
-                        <div className="font-medium">{customer.name || "—"}</div>
-                        <div className="text-sm text-gray-500">
-                          {customer.cpf ? formatCPF(customer.cpf) : "—"}
-                        </div>
-                        {customer.is_admin && (
-                          <Badge variant="outline" className="mt-1 bg-blue-50 text-blue-700 border-blue-200">
-                            Admin
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Mail className="h-3 w-3 text-gray-500" />
-                          <span className="text-sm">{customer.email || "—"}</span>
-                        </div>
-                        <div className="flex items-center gap-1 mt-1">
-                          <Phone className="h-3 w-3 text-gray-500" />
-                          <span className="text-sm">
-                            {customer.whatsapp ? formatWhatsapp(customer.whatsapp) : "—"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {customer.access && customer.access.length > 0 ? (
-                            <Badge className="bg-green-100 text-green-700 border-green-200">
-                              {customer.access.length} produto(s)
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-gray-500">
-                              Sem acesso
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Contato</TableHead>
+                      <TableHead>Acesso</TableHead>
+                      <TableHead>Último Pedido</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {customers.map((customer) => (
+                      <TableRow key={customer.id}>
+                        <TableCell>
+                          <div className="font-medium">{customer.name || "—"}</div>
+                          <div className="text-sm text-gray-500">
+                            {customer.cpf ? formatCPF(customer.cpf) : "—"}
+                          </div>
+                          {customer.is_admin && (
+                            <Badge variant="outline" className="mt-1 bg-blue-50 text-blue-700 border-blue-200">
+                              Admin
                             </Badge>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {customer.lastOrder ? (
-                          <div>
-                            <div className="flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-gray-500" />
-                              <span className="text-sm">
-                                {new Date(customer.lastOrder.created_at).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 mt-1">
-                              <Badge
-                                className={
-                                  paymentLabels[customer.lastOrder.status]?.className ||
-                                  "bg-gray-100 text-gray-700"
-                                }
-                              >
-                                {paymentLabels[customer.lastOrder.status]?.label ||
-                                  customer.lastOrder.status}
-                              </Badge>
-                              <span className="text-sm font-medium">
-                                {formatCurrencyBRL(customer.lastOrder.total_price)}
-                              </span>
-                            </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Mail className="h-3 w-3 text-gray-500" />
+                            <span className="text-sm">{customer.email || "—"}</span>
                           </div>
-                        ) : (
-                          <span className="text-gray-500 text-sm">Nenhum pedido</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditCustomer(customer)}
-                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                          >
-                            <PencilLine className="h-4 w-4 mr-1" /> Editar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteCustomer(customer)}
-                            className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                            disabled={loading}
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" /> Apagar
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                          <div className="flex items-center gap-1 mt-1">
+                            <Phone className="h-3 w-3 text-gray-500" />
+                            <span className="text-sm">
+                              {customer.whatsapp ? formatWhatsapp(customer.whatsapp) : "—"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {customer.access && customer.access.length > 0 ? (
+                              <Badge className="bg-green-100 text-green-700 border-green-200">
+                                {customer.access.length} produto(s)
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-gray-500">
+                                Sem acesso
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {customer.lastOrder ? (
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-gray-500" />
+                                <span className="text-sm">
+                                  {new Date(customer.lastOrder.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 mt-1">
+                                <Badge
+                                  className={
+                                    paymentLabels[customer.lastOrder.status]?.className ||
+                                    "bg-gray-100 text-gray-700"
+                                  }
+                                >
+                                  {paymentLabels[customer.lastOrder.status]?.label ||
+                                    customer.lastOrder.status}
+                                </Badge>
+                                <span className="text-sm font-medium">
+                                  {formatCurrencyBRL(customer.lastOrder.total_price)}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-500 text-sm">Nenhum pedido</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditCustomer(customer)}
+                              className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                            >
+                              <PencilLine className="h-4 w-4 mr-1" /> Editar
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteCustomer(customer)}
+                              className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                              disabled={loading}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" /> Apagar
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination Controls */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between p-4 border-t">
+                  <div className="text-sm text-gray-600">
+                    Mostrando {customers.length} de {pagination.total} clientes
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      disabled={pagination.page <= 1 || loading}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Anterior
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      Página {pagination.page} de {pagination.totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      disabled={pagination.page >= pagination.totalPages || loading}
+                    >
+                      Próxima
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -505,7 +607,7 @@ const Customers = () => {
           onClose={() => setIsEditorOpen(false)}
           customer={editingCustomer}
           products={massProducts}
-          onRefresh={fetchCustomers}
+          onRefresh={() => fetchCustomers(pagination.page, debouncedSearchTerm)}
         />
       )}
     </div>
