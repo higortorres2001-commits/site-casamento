@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { getOrCreateCustomer } from '../_shared/getOrCreateCustomer';
-import { validateProducts } from '../_shared/validateProducts';
-import { validateCoupon } from '../_shared/validateCoupon';
-import { createOrder } from '../_shared/createOrder';
-import { processPixPayment } from '../_shared/processPixPayment';
-import { processCreditCardPayment } from '../_shared/processCreditCardPayment';
-import { updateOrderWithPayment } from '../_shared/updateOrderWithPayment';
+import { getOrCreateCustomer } from '../_shared/getOrCreateCustomer.ts';
+import { validateAndPriceOrder } from '../_shared/validateAndPriceOrder';
+import { createOrder } from '../_shared/createOrder.ts';
+import { processPixPayment } from '../_shared/processPixPayment.ts';
+import { processCreditCardPayment } from '../_shared/processCreditCardPayment.ts';
+import { updateOrderWithPayment } from '../_shared/updateOrderWithPayment.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,50 +72,40 @@ serve(async (req) => {
 
     console.log('✅ Step 1 completed:', { userId, isNewUser });
 
-    // ETAPA 2: Validar produtos
-    console.log('📦 Step 2: Validate products');
-    const { products, totalPrice: originalTotalPrice } = await validateProducts({
+    // ETAPA 2: Validar produtos e preço
+    console.log('📦 Step 2: Validate products and price');
+    const { validatedProducts, totalPrice, originalPrice, discountAmount, coupon } = await validateAndPriceOrder({
       supabase,
-      productIds
+      productIds,
+      coupon_code
     });
 
     console.log('✅ Step 2 completed:', { 
-      productCount: products.length, 
-      originalTotalPrice 
+      productCount: validatedProducts.length, 
+      originalPrice,
+      totalPrice,
+      discountAmount,
+      hasCoupon: !!coupon
     });
 
-    // ETAPA 3: Validar cupom (se houver)
-    console.log('🎫 Step 3: Validate coupon (if any)');
-    const { coupon, finalPrice } = await validateCoupon({
-      supabase,
-      couponCode: coupon_code,
-      originalTotalPrice
-    });
-
-    console.log('✅ Step 3 completed:', { 
-      hasCoupon: !!coupon,
-      finalPrice,
-      discountAmount: originalTotalPrice - finalPrice
-    });
-
-    // ETAPA 4: Criar pedido
-    console.log('📦 Step 4: Create order');
+    // ETAPA 3: Criar pedido
+    console.log('📦 Step 3: Create order');
     const { order, orderId } = await createOrder({
       supabase,
       userId,
       productIds,
-      totalPrice: finalPrice,
+      totalPrice,
       metaTrackingData
     });
 
-    console.log('✅ Step 4 completed:', { 
+    console.log('✅ Step 3 completed:', { 
       orderId, 
       orderStatus: order.status,
-      finalPrice 
+      totalPrice 
     });
 
-    // ETAPA 5: Processar pagamento
-    console.log('💳 Step 5: Process payment');
+    // ETAPA 4: Processar pagamento
+    console.log('💳 Step 4: Process payment');
     let paymentResult;
     
     if (paymentMethod === 'PIX') {
@@ -126,7 +115,7 @@ serve(async (req) => {
         email,
         cpfCnpj: cpf,
         phone: whatsapp,
-        value: finalPrice,
+        value: totalPrice,
         description: `Order #${orderId} payment`
       });
     } else if (paymentMethod === 'CREDIT_CARD') {
@@ -156,7 +145,7 @@ serve(async (req) => {
         phone: whatsapp,
         postalCode: creditCard.postalCode,
         addressNumber: creditCard.addressNumber,
-        value: finalPrice,
+        value: totalPrice,
         description: `Order #${orderId} payment`,
         holderName: creditCard.holderName,
         cardNumber: creditCard.cardNumber,
@@ -184,29 +173,30 @@ serve(async (req) => {
       });
     }
 
-    console.log('✅ Step 5 completed:', { 
+    console.log('✅ Step 4 completed:', { 
       paymentMethod,
       paymentId: paymentResult.paymentId
     });
 
-    // ETAPA 6: Atualizar pedido com ID do pagamento
-    console.log('🔄 Step 6: Update order with payment ID');
+    // ETAPA 5: Atualizar pedido com ID do pagamento
+    console.log('🔄 Step 5: Update order with payment ID');
     await updateOrderWithPayment({
       supabase,
       orderId,
       asaasPaymentId: paymentResult.paymentId
     });
 
-    console.log('✅ Step 6 completed');
+    console.log('✅ Step 5 completed');
 
-    // ETAPA 7: Preparar resposta
-    console.log('📋 Step 7: Prepare response');
+    // ETAPA 6: Preparar resposta
+    console.log('📋 Step 6: Prepare response');
     const responseData = {
       ...paymentResult,
       orderId: orderId,
       isNewUser,
-      finalPrice,
+      totalPrice,
       originalTotalPrice,
+      discountAmount,
       coupon: coupon ? {
         code: coupon.code,
         discount_type: coupon.discount_type,
@@ -214,7 +204,7 @@ serve(async (req) => {
       } : null
     };
 
-    console.log('✅ Step 7 completed:', {
+    console.log('✅ Step 6 completed:', {
       responseDataKeys: Object.keys(responseData),
       hasPaymentId: !!responseData.id,
       hasOrderId: !!responseData.orderId,
@@ -222,7 +212,7 @@ serve(async (req) => {
       hasAuthorizationCode: !!responseData.authorizationCode
     });
 
-    // ETAPA 8: Log final de sucesso
+    // ETAPA 7: Log final de sucesso
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-refactored-success',
@@ -233,7 +223,7 @@ serve(async (req) => {
         paymentId: paymentResult.paymentId,
         paymentMethod,
         isNewUser,
-        finalPrice,
+        totalPrice,
         hasCoupon: !!coupon,
         productCount: productIds.length
       }

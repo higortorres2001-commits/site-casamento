@@ -3,7 +3,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Copy, CheckCircle, AlertTriangle, XCircle, Info } from "lucide-react";
-import { Log } from "@/pages/admin/Logs";
+
+interface Log {
+  id: string;
+  created_at: string;
+  level: "info" | "error" | "warning";
+  context: string;
+  message: string;
+  metadata: any;
+}
 
 interface LogMetadataModalProps {
   open: boolean;
@@ -238,8 +246,8 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </DialogContent>
   );
 };
 
