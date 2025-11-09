@@ -256,7 +256,7 @@ const Customers = () => {
       
       console.log(`Fetched ${data?.length || 0} products`);
       return data || [];
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error fetching products:", error);
       showError("Erro inesperado ao carregar produtos.");
       return [];
