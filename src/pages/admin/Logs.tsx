@@ -162,6 +162,7 @@ const Logs = () => {
       .from("logs")
       .delete()
       .neq("id", "00000000-0000-0000-0000-000000000000");
+
     if (error) {
       showError("Erro ao limpar logs: " + error.message);
       console.error("Error clearing logs:", error);
@@ -181,7 +182,7 @@ const Logs = () => {
         log.context,
         `"${log.message.replace(/"/g, '""')}"`,
         `"${JSON.stringify(log.metadata).replace(/"/g, '""')}"`
-      ].join(","))
+      ]).join("\n"))
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv" });
@@ -233,6 +234,286 @@ const Logs = () => {
     if (context.includes("user") || context.includes("customer")) return "text-blue-700 bg-blue-50";
     if (context.includes("checkout")) return "text-orange-700 bg-orange-50";
     return "text-gray-700 bg-gray-50";
+  };
+
+  const renderMetadataValue = (value: any, key: string): React.ReactNode => {
+    if (value === null || value === undefined) {
+      return <span className="text-gray-400 italic">N/A</span>;
+    }
+
+    if (typeof value === "object") {
+      return (
+        <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
+          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
+            {JSON.stringify(value, null, 2)}
+          </pre>
+        </div>
+      );
+    }
+
+    if (
+<dyad-write path="src/pages/admin/Logs.tsx" description="Fix remaining TypeScript errors in Logs admin page">
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XCircle, Eye } from "lucide-react";
+import { showError, showSuccess } from "@/utils/toast";
+import { useSession } from "@/components/SessionContextProvider";
+import LogMetadataModal from "@/components/admin/LogMetadataModal";
+
+type Log = {
+  id: string;
+  created_at: string;
+  level: "info" | "error" | "warning";
+  context: string;
+  message: string;
+  metadata: any;
+};
+
+const Logs = () => {
+  const { user, isLoading: isSessionLoading } = useSession();
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [contextFilter, setContextFilter] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState<string>("");
+  const [dateFilter, setDateFilter] = useState<string>("all");
+  const [availableContexts, setAvailableContexts] = useState<string[]>([]);
+  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const isAdmin = user?.email === "higor.torres8@gmail.com";
+
+  const cleanupOldLogs = useCallback(async () => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const { error } = await supabase
+      .from("logs")
+      .delete()
+      .lt("created_at", cutoff.toISOString());
+    if (error) {
+      console.error("Error cleaning old logs:", error);
+    }
+  }, []);
+
+  const fetchAvailableContexts = useCallback(async () => {
+    const { data, error } = await supabase.from("logs").select("context", { distinct: true });
+    if (error) {
+      console.error("Error fetching distinct contexts:", error);
+    } else {
+      const contexts = data?.map((item) => item.context).sort() || [];
+      setAvailableContexts(contexts);
+    }
+  }, []);
+
+  const fetchLogs = useCallback(async () => {
+    setIsLoading(true);
+    let query = supabase.from("logs").select("*").order("created_at", { ascending: false });
+
+    // Aplicar filtros
+    if (levelFilter !== "all") {
+      query = query.eq("level", levelFilter);
+    }
+    if (contextFilter !== "all") {
+      query = query.eq("context", contextFilter);
+    }
+    if (searchFilter.trim()) {
+      query = query.or(`message.ilike.%${searchFilter}%,context.ilike.%${searchFilter}%`);
+    }
+    if (dateFilter !== "all") {
+      const now = new Date();
+      let cutoff = new Date();
+      
+      switch (dateFilter) {
+        case "1h":
+          cutoff.setHours(now.getHours() - 1);
+          break;
+        case "24h":
+          cutoff.setDate(now.getDate() - 1);
+          break;
+        case "7d":
+          cutoff.setDate(now.getDate() - 7);
+          break;
+        case "30d":
+          cutoff.setDate(now.getDate() - 30);
+          break;
+      }
+      
+      if (dateFilter !== "all") {
+        query = query.gte("created_at", cutoff.toISOString());
+      }
+    }
+
+    const { data, error } = await query.limit(1000);
+
+    if (error) {
+      showError("Erro ao carregar logs: " + error.message);
+      console.error("Error fetching logs:", error);
+      setLogs([]);
+    } else {
+      // Sanitize metadata: remove internal_tag if present
+      const sanitized = (data || []).map((log: Log) => {
+        if (log.metadata && typeof log.metadata === "object") {
+          const { internal_tag, ...rest } = log.metadata;
+          return { ...log, metadata: rest };
+        }
+        return log;
+      });
+      setLogs(sanitized);
+    }
+
+    setIsLoading(false);
+  }, [levelFilter, contextFilter, searchFilter, dateFilter]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      cleanupOldLogs();
+    }
+  }, [cleanupOldLogs, isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchAvailableContexts();
+    }
+  }, [isAdmin, fetchAvailableContexts]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchLogs();
+    }
+  }, [isAdmin, fetchLogs]);
+
+  const handleClearLogs = async () => {
+    if (!isAdmin) {
+      showError("Você não tem permissão para limpar os logs.");
+      return;
+    }
+    if (!window.confirm("Tem certeza que deseja apagar TODOS os logs? Esta ação é irreversível.")) {
+      return;
+    }
+
+    setIsLoading(true);
+    const { error } = await supabase
+      .from("logs")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+
+    if (error) {
+      showError("Erro ao limpar logs: " + error.message);
+      console.error("Error clearing logs:", error);
+    } else {
+      showSuccess("Logs limpos com sucesso!");
+      fetchLogs();
+    }
+    setIsLoading(false);
+  };
+
+  const exportLogs = () => {
+    const csvContent = [
+      ["Data/Hora", "Nível", "Contexto", "Mensagem", "Metadados"].join(","),
+      ...logs.map(log => [
+        new Date(log.created_at).toLocaleString(),
+        log.level,
+        log.context,
+        `"${log.message.replace(/"/g, '""')}"`,
+        `"${JSON.stringify(log.metadata).replace(/"/g, '""')}"`
+      ]).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const openLogModal = (log: Log) => {
+    setSelectedLog(log);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedLog(null);
+  };
+
+  const getLevelIcon = (level: string) => {
+    switch (level) {
+      case "error":
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case "warning":
+        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+      case "info":
+      default:
+        return <Info className="h-4 w-4 text-blue-500" />;
+    }
+  };
+
+  const getLevelBadge = (level: string) => {
+    switch (level) {
+      case "error":
+        return <Badge className="bg-red-100 text-red-800 border-red-200">ERRO</Badge>;
+      case "warning":
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">AVISO</Badge>;
+      case "info":
+      default:
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">INFO</Badge>;
+    }
+  };
+
+  const getContextColor = (context: string) => {
+    if (context.includes("login") || context.includes("auth")) return "text-purple-700 bg-purple-50";
+    if (context.includes("payment") || context.includes("asaas")) return "text-green-700 bg-green-50";
+    if (context.includes("user") || context.includes("customer")) return "text-blue-700 bg-blue-50";
+    if (context.includes("checkout")) return "text-orange-700 bg-orange-50";
+    return "text-gray-700 bg-gray-50";
+  };
+
+  const renderMetadataValue = (value: any, key: string): React.ReactNode => {
+    if (value === null || value === undefined) {
+      return <span className="text-gray-400 italic">N/A</span>;
+    }
+
+    if (typeof value === "object") {
+      return (
+        <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
+          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
+            {JSON.stringify(value, null, 2)}
+          </pre>
+        </div>
+      );
+    }
+
+    // Para valores primitivos (string, number, boolean)
+    return (
+      <div className="bg-gray-50 rounded p-2">
+        <span className="text-sm text-gray-800 break-all whitespace-pre-wrap">
+          {String(value)}
+        </span>
+      </div>
+    );
   };
 
   if (isSessionLoading) {
@@ -316,9 +597,7 @@ const Logs = () => {
                 <SelectContent>
                   <SelectItem value="all">Todos os contextos</SelectItem>
                   {availableContexts.map((ctx) => (
-                    <SelectItem key={ctx} value={ctx}>
-                      {ctx}
-                    </SelectItem>
+                    <SelectItem key={ctx} value={ctx}>{ctx}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -413,7 +692,7 @@ const Logs = () => {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))
+                    ))}
                   )}
                 </TableBody>
               </Table>
