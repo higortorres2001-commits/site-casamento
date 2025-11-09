@@ -62,7 +62,10 @@ const OrderSummaryAccordion = ({
 
             {/* Cupom de Desconto - Integrado dentro do resumo */}
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <CouponInputCard onCouponApplied={() => {}} />
+              <CouponInputCard 
+                onCouponApplied={() => {}} 
+                appliedCoupon={appliedCoupon}
+              />
             </div>
           </AccordionContent>
         </div>

@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import { Coupon } from "@/types";
-import { Loader2, ChevronDown, ChevronUp, Tag } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, Tag, X } from "lucide-react";
 
 interface CouponInputCardProps {
   onCouponApplied: (coupon: Coupon | null) => void;
+  appliedCoupon?: Coupon | null; // Nova prop para cupom já aplicado
 }
 
-const CouponInputCard = ({ onCouponApplied }: CouponInputCardProps) => {
+const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProps) => {
   const [couponCode, setCouponCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -44,9 +45,62 @@ const CouponInputCard = ({ onCouponApplied }: CouponInputCardProps) => {
     setIsLoading(false);
   };
 
+  const handleRemoveCoupon = () => {
+    onCouponApplied(null);
+    setCouponCode(""); // Clear input when removing coupon
+    setIsExpanded(false); // Collapse when removing coupon
+  };
+
   const handleToggleExpanded = () => {
     setIsExpanded(!isExpanded);
   };
+
+  // Se há um cupom aplicado, mostra o cupom aplicado
+  if (appliedCoupon) {
+    return (
+      <Card className="bg-white rounded-xl shadow-lg border-green-200">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Tag className="h-5 w-5 text-green-600" />
+              Cupom Aplicado
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRemoveCoupon}
+              className="text-red-600 hover:text-red-800 hover:bg-red-50"
+              title="Remover cupom"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+              <span className="font-semibold text-green-800">{appliedCoupon.code}</span>
+            </div>
+            <div className="text-right">
+              {appliedCoupon.discount_type === "percentage" ? (
+                <span className="text-green-700 font-medium">
+                  -{appliedCoupon.value}% OFF
+                </span>
+              ) : (
+                <span className="text-green-700 font-medium">
+                  -R$ {appliedCoupon.value.toFixed(2)}
+                </span>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Cupom aplicado com sucesso! Clique no X para remover.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Se não estiver expandido, mostra apenas o link
   if (!isExpanded) {
