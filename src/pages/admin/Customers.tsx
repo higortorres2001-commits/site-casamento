@@ -344,25 +344,88 @@ const Customers = () => {
     setLoading(true);
     
     try {
-      // Call secure backend function
+      // Log da tentativa de exclusão
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-delete-customer-start',
+        message: 'Admin started customer deletion process',
+        metadata: { 
+          targetCustomerId: customer.id, // ✅ ID correto do cliente
+          targetCustomerEmail: customer.email,
+          targetCustomerName: customer.name,
+          adminId: user?.id, // ID do admin para log
+          adminEmail: user?.email // Email do admin para log
+        }
+      });
+
+      // Call secure backend function with CORRECT customer ID
       const { data, error } = await supabase.functions.invoke("admin-delete-user", {
-        body: { userId: customer.id },
+        body: { 
+          userId: customer.id // ✅ ID do cliente selecionado, NÃO do admin
+        },
       });
 
       if (error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-delete-customer-function-error',
+          message: 'Failed to call admin-delete-user function',
+          metadata: { 
+            targetCustomerId: customer.id,
+            targetCustomerEmail: customer.email,
+            error: error.message,
+            errorType: error.name
+          }
+        });
         showError("Erro ao apagar usuário: " + error.message);
         console.error("Error deleting user:", error);
         return;
       }
 
       if (data?.error) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'admin-delete-customer-business-error',
+          message: 'Edge function returned business error',
+          metadata: { 
+            targetCustomerId: customer.id,
+            targetCustomerEmail: customer.email,
+            businessError: data.error
+          }
+        });
         showError(data.error);
         return;
       }
 
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'admin-delete-customer-success',
+        message: 'Customer deleted successfully via secure function',
+        metadata: { 
+          targetCustomerId: customer.id,
+          targetCustomerEmail: customer.email,
+          targetCustomerName: customer.name,
+          adminId: user?.id,
+          adminEmail: user?.email
+        }
+      });
+
       showSuccess(`Usuário "${customer.name || customer.email}" apagado com sucesso!`);
       fetchCustomers(pagination.page, debouncedSearchTerm);
     } catch (error: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'admin-delete-customer-unhandled',
+        message: 'Unhandled error during customer deletion',
+        metadata: { 
+          targetCustomerId: customer.id,
+          targetCustomerEmail: customer.email,
+          error: error.message,
+          errorStack: error.stack,
+          adminId: user?.id,
+          adminEmail: user?.email
+        }
+      });
       console.error("Unexpected error deleting user:", error);
       showError("Erro inesperado ao apagar usuário.");
     } finally {
