@@ -103,7 +103,8 @@ const Customers = () => {
       // Fetch all profiles directly - this is key change
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
-        .select("id, name, email, cpf, whatsapp, access, is_admin");
+        .select("id, name, email, cpf, whatsapp, access, is_admin")
+        .order("created_at", { ascending: false });
 
       if (profileError) {
         console.error("Error fetching profiles:", profileError);
@@ -166,7 +167,7 @@ const Customers = () => {
 
       setCustomers(customersWithOrders);
       showSuccess(`${customersWithOrders.length} clientes carregados com sucesso!`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error fetching customers:", error);
       showError("Erro inesperado ao carregar clientes.");
     } finally {
@@ -225,39 +226,25 @@ const Customers = () => {
 
     setLoading(true);
     try {
-      // Fetch current access for each customer
-      const { data: profiles, error: fetchError } = await supabase
-        .from("profiles")
-        .select("id, access")
-        .in("id", customerIds);
-
-      if (fetchError) {
-        showError("Erro ao buscar perfis dos clientes.");
-        console.error("Error fetching profiles:", fetchError);
-        return;
-      }
-
-      // Update each profile with new access
-      const updates = profiles.map(profile => {
-        const currentAccess = Array.isArray(profile.access) ? profile.access : [];
-        const newAccess = [...new Set([...currentAccess, ...productIds])];
-        return {
-          id: profile.id,
-          access: newAccess,
-        };
+      // Call secure backend function
+      const { data, error } = await supabase.functions.invoke("admin-apply-mass-access", {
+        body: { productIds, customerIds },
       });
 
-      const { error: updateError } = await supabase.from("profiles").upsert(updates);
-
-      if (updateError) {
-        showError("Erro ao atualizar acesso dos clientes.");
-        console.error("Error updating profiles:", updateError);
+      if (error) {
+        showError("Erro ao aplicar acesso dos clientes: " + error.message);
+        console.error("Error applying mass access:", error);
         return;
       }
 
-      showSuccess(`Acesso concedido para ${customerIds.length} cliente(s).`);
+      if (data?.error) {
+        showError(data.error);
+        return;
+      }
+
+      showSuccess(`Acesso concedido para ${data.updatedCount} cliente(s) com sucesso!`);
       fetchCustomers();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Unexpected error applying mass access:", error);
       showError("Erro inesperado ao aplicar acesso em massa.");
     } finally {
@@ -283,52 +270,27 @@ const Customers = () => {
     setLoading(true);
     
     try {
-      console.log(`Starting deletion process for user: ${customer.id}`);
-      
-      // Step 1: Delete user's orders first (to avoid foreign key constraints)
-      const { error: ordersError } = await supabase
-        .from("orders")
-        .delete()
-        .eq("user_id", customer.id);
+      // Call secure backend function
+      const { data, error } = await supabase.functions.invoke("admin-delete-user", {
+        body: { userId: customer.id },
+      });
 
-      if (ordersError) {
-        console.error("Error deleting user orders:", ordersError);
-        showError("Erro ao apagar pedidos do usuário: " + ordersError.message);
+      if (error) {
+        showError("Erro ao apagar usuário: " + error.message);
+        console.error("Error deleting user:", error);
         return;
       }
-      
-      console.log("User orders deleted successfully");
 
-      // Step 2: Delete user's profile
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", customer.id);
-
-      if (profileError) {
-        console.error("Error deleting user profile:", profileError);
-        showError("Erro ao apagar perfil do usuário: " + profileError.message);
+      if (data?.error) {
+        showError(data.error);
         return;
       }
-      
-      console.log("User profile deleted successfully");
-
-      // Step 3: Delete user from auth system
-      const { error: authError } = await supabase.auth.admin.deleteUser(customer.id);
-
-      if (authError) {
-        console.error("Error deleting user from auth:", authError);
-        showError("Erro ao apagar conta de autenticação: " + authError.message);
-        return;
-      }
-      
-      console.log("User deleted from auth system successfully");
 
       showSuccess(`Usuário "${customer.name || customer.email}" apagado com sucesso!`);
       fetchCustomers();
     } catch (error: any) {
       console.error("Unexpected error deleting user:", error);
-      showError("Erro inesperado ao apagar usuário: " + error.message);
+      showError("Erro inesperado ao apagar usuário.");
     } finally {
       setLoading(false);
     }
