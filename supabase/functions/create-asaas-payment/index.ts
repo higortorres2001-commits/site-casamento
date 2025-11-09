@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { getOrCreateCustomer } from '../_shared/getOrCreateCustomer.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,11 +18,6 @@ interface RequestPayload {
   paymentMethod: 'PIX' | 'CREDIT_CARD';
   creditCard?: any;
   metaTrackingData?: any;
-}
-
-interface UserData {
-  id: string;
-  isExisting: boolean;
 }
 
 interface ProductData {
@@ -118,7 +114,7 @@ async function validateRequestData(requestBody: any, supabase: any): Promise<Req
   });
 
   return {
-    name,
+    name: name.trim(),
     email: email.toLowerCase().trim(),
     cpf: cpf.replace(/[^0-9]/g, ''),
     whatsapp: whatsapp.replace(/\D/g, ''),
@@ -128,175 +124,6 @@ async function validateRequestData(requestBody: any, supabase: any): Promise<Req
     creditCard,
     metaTrackingData
   };
-}
-
-// Função para gerenciar usuário (existente ou novo)
-async function handleUserManagement(payload: RequestPayload, supabase: any): Promise<UserData> {
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'user-management-start',
-    message: 'Starting user management process',
-    metadata: { 
-      email: payload.email,
-      cpfLength: payload.cpf.length
-    }
-  });
-
-  // Verificar se usuário já existe
-  const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ 
-    email: payload.email 
-  });
-
-  if (listUsersError) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'user-management-lookup-error',
-      message: 'Failed to check for existing user',
-      metadata: { 
-        email: payload.email,
-        error: listUsersError.message,
-        errorType: listUsersError.name
-      }
-    });
-    throw new Error('Erro ao verificar usuário existente: ' + listUsersError.message);
-  }
-
-  const existingUser = existingUsers.users && existingUsers.users.length > 0 ? existingUsers.users[0] : null;
-
-  if (existingUser) {
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-existing-found',
-      message: 'Existing user found, updating profile',
-      metadata: { 
-        userId: existingUser.id,
-        email: payload.email,
-        existingUserCreated: existingUser.created_at
-      }
-    });
-
-    // Atualizar perfil do usuário existente
-    const { error: updateProfileError } = await supabase
-      .from('profiles')
-      .update({ 
-        name: payload.name, 
-        cpf: payload.cpf, 
-        email: payload.email, 
-        whatsapp: payload.whatsapp,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', existingUser.id);
-
-    if (updateProfileError) {
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'user-management-profile-update-error',
-        message: 'Failed to update existing user profile, but continuing with payment',
-        metadata: { 
-          userId: existingUser.id,
-          error: updateProfileError.message,
-          errorCode: updateProfileError.code
-        }
-      });
-      // Não falhar o processo - continuar com o pagamento
-    } else {
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'user-management-profile-updated',
-        message: 'Existing user profile updated successfully',
-        metadata: { userId: existingUser.id }
-      });
-    }
-
-    return { id: existingUser.id, isExisting: true };
-  } else {
-    // Criar novo usuário
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-creating-new',
-      message: 'Creating new user account',
-      metadata: { 
-        email: payload.email,
-        cpfLength: payload.cpf.length
-      }
-    });
-
-    const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email: payload.email,
-      password: payload.cpf,
-      email_confirm: true,
-      user_metadata: { 
-        name: payload.name, 
-        cpf: payload.cpf, 
-        whatsapp: payload.whatsapp,
-        created_via: 'checkout'
-      },
-    });
-
-    if (createUserError || !newUser?.user) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-management-creation-error',
-        message: 'Failed to create new user account',
-        metadata: { 
-          email: payload.email,
-          error: createUserError?.message,
-          errorType: createUserError?.name,
-          errorCode: createUserError?.code
-        }
-      });
-      throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
-    }
-
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-user-created',
-      message: 'New user account created successfully',
-      metadata: { 
-        userId: newUser.user.id,
-        email: payload.email
-      }
-    });
-
-    // Criar perfil para o novo usuário
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: newUser.user.id,
-        name: payload.name,
-        cpf: payload.cpf,
-        email: payload.email,
-        whatsapp: payload.whatsapp,
-        access: [],
-        primeiro_acesso: true,
-        has_changed_password: false,
-        is_admin: false,
-        created_at: new Date().toISOString()
-      });
-
-    if (profileError) {
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'user-management-profile-creation-error',
-        message: 'Failed to create profile for new user, but user account was created',
-        metadata: { 
-          userId: newUser.user.id,
-          error: profileError.message,
-          errorCode: profileError.code
-        }
-      });
-      // Não falhar - o usuário foi criado no auth
-    } else {
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'user-management-profile-created',
-        message: 'Profile created successfully for new user',
-        metadata: { userId: newUser.user.id }
-      });
-    }
-
-    return { id: newUser.user.id, isExisting: false };
-  }
 }
 
 // Função para validar produtos
@@ -783,7 +610,7 @@ async function updateOrderWithPaymentId(orderId: string, asaasPaymentId: string,
   }
 }
 
-// Função principal
+// FUNÇÃO PRINCIPAL ORQUESTRADORA
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -804,8 +631,8 @@ serve(async (req) => {
     
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'create-asaas-payment-start',
-      message: 'Payment creation process started',
+      context: 'create-asaas-payment-orchestrator-start',
+      message: 'Payment creation orchestrator started',
       metadata: { 
         paymentMethod: requestBody.paymentMethod,
         hasProductIds: !!requestBody.productIds,
@@ -818,9 +645,14 @@ serve(async (req) => {
     // ETAPA 1: Validar dados de entrada
     const validatedPayload = await validateRequestData(requestBody, supabase);
 
-    // ETAPA 2: Gerenciar usuário (existente ou novo)
-    const userData = await handleUserManagement(validatedPayload, supabase);
-    userId = userData.id;
+    // ETAPA 2: Gerenciar usuário (usando função externa)
+    const customerResult = await getOrCreateCustomer(supabase, {
+      email: validatedPayload.email,
+      name: validatedPayload.name,
+      cpf: validatedPayload.cpf,
+      whatsapp: validatedPayload.whatsapp
+    });
+    userId = customerResult.userId;
 
     // ETAPA 3: Validar produtos
     const products = await validateProducts(validatedPayload.productIds, supabase);
@@ -850,8 +682,8 @@ serve(async (req) => {
     // ETAPA 7: Log final de sucesso
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'create-asaas-payment-success',
-      message: 'Payment creation process completed successfully',
+      context: 'create-asaas-payment-orchestrator-success',
+      message: 'Payment creation orchestration completed successfully',
       metadata: { 
         orderId,
         userId,
@@ -860,7 +692,7 @@ serve(async (req) => {
         finalTotal,
         originalTotal,
         discountApplied: originalTotal - finalTotal,
-        wasExistingUser: userData.isExisting,
+        wasExistingUser: customerResult.isExisting,
         productCount: validatedPayload.productIds.length,
         couponUsed: couponData?.code || null
       }
@@ -874,8 +706,8 @@ serve(async (req) => {
   } catch (error: any) {
     await supabase.from('logs').insert({
       level: 'error',
-      context: 'create-asaas-payment-unhandled-error',
-      message: `Payment creation failed: ${error.message}`,
+      context: 'create-asaas-payment-orchestrator-error',
+      message: `Payment creation orchestration failed: ${error.message}`,
       metadata: {
         errorMessage: error.message,
         errorStack: error.stack,
@@ -898,7 +730,7 @@ serve(async (req) => {
       userFriendlyMessage = 'Um ou mais produtos não estão disponíveis.';
     } else if (error.message.includes('Cupom inválido')) {
       userFriendlyMessage = error.message;
-    } else if (error.message.includes('Erro ao criar conta')) {
+    } else if (error.message.includes('Erro ao criar conta') || error.message.includes('Erro ao criar perfil')) {
       userFriendlyMessage = 'Erro ao processar seus dados. Verifique as informações e tente novamente.';
     } else if (error.message.includes('Erro ao criar pagamento') || error.message.includes('Erro ao processar pagamento')) {
       userFriendlyMessage = 'Erro no processamento do pagamento. Verifique os dados do cartão e tente novamente.';
