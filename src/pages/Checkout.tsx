@@ -11,7 +11,6 @@ import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard
 import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
 import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditCardForm";
 import OrderBumpCard from "@/components/checkout/OrderBumpCard";
-import CouponInputCard from "@/components/checkout/CouponInputCard";
 import OrderSummaryAccordion from "@/components/checkout/OrderSummaryAccordion";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
@@ -341,8 +340,6 @@ const Checkout = () => {
               ))}
             </div>
           )}
-
-          <CouponInputCard onCouponApplied={handleCouponApplied} />
 
           <OrderSummaryAccordion
             mainProduct={mainProduct}
