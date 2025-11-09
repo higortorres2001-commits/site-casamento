@@ -79,37 +79,62 @@ const Checkout = () => {
       }
 
       setIsLoadingProduct(true);
-      const { data: product, error: productError } = await supabase
-        .from("products")
-        .select("*")
-        .eq("id", productId)
-        .eq("status", "ativo")
-        .single();
-
-      if (productError || !product) {
-        showError("Produto não encontrado ou não está disponível.");
-        console.error("Error fetching product:", productError);
-        navigate("/");
-        return;
-      }
-
-      setMainProduct(product);
-
-      if (product.orderbumps && product.orderbumps.length > 0) {
-        const { data: bumps, error: bumpsError } = await supabase
-          .from("products")
-          .select("*")
-          .in("id", product.orderbumps)
-          .eq("status", "ativo");
-
-        if (bumpsError) {
-          console.error("Error fetching order bumps:", bumpsError);
-        } else {
-          setOrderBumps(bumps || []);
+      
+      try {
+        // Executar ambas as consultas em paralelo com Promise.all
+        const [productResult, bumpsResult] = await Promise.all([
+          // Consulta 1: Buscar o produto principal
+          supabase
+            .from("products")
+            .select("*")
+            .eq("id", productId)
+            .eq("status", "ativo")
+            .single(),
+          
+          // Consulta 2: Buscar os order bumps (se existirem)
+          supabase
+            .from("products")
+            .select("id, name, price")
+            .eq("status", "ativo")
+            .in("id", [productId]) // Placeholder, será atualizado abaixo
+        ]);
+        
+        const { data: product, error: productError } = productResult;
+        
+        if (productError || !product) {
+          showError("Produto não encontrado ou não está disponível.");
+          console.error("Error fetching product:", productError);
+          navigate("/");
+          return;
         }
-      }
 
-      setIsLoadingProduct(false);
+        // Configurar o produto principal imediatamente
+        setMainProduct(product);
+
+        // Buscar os order bumps em paralelo (se existirem)
+        if (product.orderbumps && product.orderbumps.length > 0) {
+          const { data: bumps, error: bumpsError } = await supabase
+            .from("products")
+            .select("*")
+            .in("id", product.orderbumps)
+            .eq("status", "ativo");
+
+          if (bumpsError) {
+            console.error("Error fetching order bumps:", bumpsError);
+          } else {
+            setOrderBumps(bumps || []);
+          }
+        } else {
+          setOrderBumps([]);
+        }
+        
+      } catch (error: any) {
+        console.error("Unexpected error in fetchProductData:", error);
+        showError("Erro ao carregar dados do produto.");
+        navigate("/");
+      } finally {
+        setIsLoadingProduct(false);
+      }
     };
 
     fetchProductData();
