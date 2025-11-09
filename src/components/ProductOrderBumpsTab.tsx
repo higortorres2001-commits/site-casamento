@@ -41,13 +41,13 @@ const ProductOrderBumpsTab = ({ form, isLoading, currentProductId }: ProductOrde
   const fetchAllProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, price");
+      .select("*");
 
     if (error) {
       showError("Erro ao carregar produtos: " + error.message);
       console.error("Error fetching all products:", error);
     } else {
-      setAllProducts(data || []);
+      setAllProducts((data || []) as Product[]);
     }
   }, []);
 

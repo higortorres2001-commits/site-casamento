@@ -26,7 +26,7 @@ import { showError, showSuccess } from "@/utils/toast";
 import { useSession } from "@/components/SessionContextProvider";
 import LogMetadataModal from "@/components/admin/LogMetadataModal";
 
-type Log = {
+export type Log = {
   id: string;
   created_at: string;
   level: "info" | "error" | "warning";
@@ -62,12 +62,16 @@ const Logs = () => {
   }, []);
 
   const fetchAvailableContexts = useCallback(async () => {
-    const { data, error } = await supabase.from("logs").select("context", { distinct: true });
+    const { data, error } = await supabase
+      .from("logs")
+      .select("context")
+      .order("context");
+    
     if (error) {
       console.error("Error fetching distinct contexts:", error);
     } else {
-      const contexts = data?.map((item) => item.context).sort() || [];
-      setAvailableContexts(contexts);
+      const uniqueContexts = [...new Set(data?.map((item) => item.context))].sort();
+      setAvailableContexts(uniqueContexts);
     }
   }, []);
 

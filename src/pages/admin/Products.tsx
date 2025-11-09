@@ -122,6 +122,11 @@ const Products = () => {
     setEditingProduct(undefined);
   };
 
+  const handleOpenAssetManager = (product: Product) => {
+    setAssetManagementProduct(product);
+    setIsAssetModalOpen(true);
+  };
+
   const handleSaveProduct = async (
     formData: any,
     files: File[],

@@ -21,7 +21,7 @@ const ProductDetails = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
   const { user } = useSession(); // Get user from session
-  const [product, setProduct] = useState<(Product & { assets?: ProductAsset[] }) | null>(null);
+  const [product, setProduct] = useState<(Product & { product_assets?: ProductAsset[]; assets?: ProductAsset[] }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPdfViewerOpen, setIsPdfViewerOpen] = useState(false);
   const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
@@ -141,6 +141,8 @@ const ProductDetails = () => {
     );
   }
 
+  const productAssets = product.product_assets || product.assets || [];
+
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8">
       <div className="max-w-3xl mx-auto mb-6">
@@ -167,9 +169,9 @@ const ProductDetails = () => {
           <h2 className="text-2xl font-semibold text-gray-800 pt-4 border-t border-gray-200">
             Arquivos do Produto
           </h2>
-          {product.product_assets && product.product_assets.length > 0 ? (
+          {productAssets && productAssets.length > 0 ? (
             <div className="space-y-4">
-              {product.product_assets.map((asset) => (
+              {productAssets.map((asset) => (
                 <div
                   key={asset.id}
                   className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg bg-gray-50"
