@@ -25,154 +25,6 @@ serve(async (req) => {
 
   try {
     const requestBody = await req.json();
-    console.log('🚀 create-asaas-payment - Main function invoked', {
-      requestBody: {
-        ...requestBody,
-        // Remover dados sensíveis do log
-        creditCard: requestBody.creditCard ? 'PRESENT' : 'NOT_PRESENT',
-        password: 'REDACTED'
-      }
-    });
-    
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'create-asaas-payment-start',
-      message: 'Refactored payment processing started',
-      metadata: { 
-        hasName: !!requestBody.name,
-        hasEmail: !!requestBody.email,
-        hasCpf: !!requestBody.cpf,
-        hasWhatsapp: !!requestBody.whatsapp,
-        hasProductIds: !!requestBody.productIds,
-        hasPaymentMethod: !!requestBody.paymentMethod,
-        hasCoupon: !!requestBody.coupon_code
-      }
-    });
-
-    const { 
-      name, 
-      email, 
-      cpf, 
-      whatsapp, 
-      productIds, 
-      coupon_code, 
-      paymentMethod, 
-      creditCard, 
-      metaTrackingData 
-    } = requestBody;
-
-    // ETAPA 1: Validação de campos obrigatórios
-    if (!name || !email || !cpf || !whatsapp || !productIds || !Array.isArray(productIds) || productIds.length === 0) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-asaas-payment-validation',
-        message: 'Missing required fields',
-        metadata: { 
-          hasName: !!name,
-          hasEmail: !!email,
-          hasCpf: !!cpf,
-          hasWhatsapp: !!whatsapp,
-          hasProductIds: !!productIds,
-          productIdsLength: productIds?.length || 0,
-          hasPaymentMethod: !!paymentMethod
-        }
-      });
-      return new Response(JSON.stringify({ error: 'Missing required fields (name, email, cpf, whatsapp, productIds, paymentMethod)' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!paymentMethod) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'create-asaas-payment-validation',
-        message: 'Payment method is missing',
-        metadata: { paymentMethod }
-      });
-      return new Response(JSON.stringify({ error: 'Payment method is missing' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ETAPA 2: Obter ou criar cliente
-    console.log('👤 Step 1: Get or create customer');
-    const { userId, isNewUser } = await getOrCreateCustomer({
-      supabase,
-      email,
-      name,
-      cpf,
-      whatsapp
-    });
-
-    // ETAPA 3: Validar produtos
-    console.log('📦 Step 2: Validate products');
-    const { products, totalPrice: originalTotalPrice } = await validateProducts({
-      supabase,
-      productIds
-    });
-
-    // ETAPA 4: Validar cupom (se houver)
-    console.log('🎫 Step 3: Validate coupon (if any)');
-    const { coupon, finalPrice } = await validateCoupon({
-      supabase,
-      couponCode: coupon_code,
-      originalTotalPrice
-    });
-
-    // ETAPA 5: Criar pedido
-    console.log('📦 Step 4: Create order');
-    const { order, orderId } = await createOrder({
-      supabase,
-      userId,
-      productIds,
-      totalPrice: finalPrice,
-      metaTrackingData
-    });
-
-    // ETAPA 6: Processar pagamento
-    console.log('💳 Step 5: Process payment');
-    let paymentResult;
-    let clientResponseData;
-
-    if (paymentMethod === 'PIX') {
-      const pixResult = await processPixPayment({
-        supabase,
-        name,
-        email,
-       
-<think></think>
-Perfeito! Agora vou completar a função principal `create-asaas-payment` refatorada:
-
-<dyad-write path="supabase/functions/create-asaas-payment/index.ts" description="Refactored create-asaas-payment main function">
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { getOrCreateCustomer } from '../_shared/getOrCreateCustomer';
-import { validateProducts } from '../_shared/validateProducts';
-import { validateCoupon } from '../_shared/validateCoupon';
-import { createOrder } from '../_shared/createOrder';
-import { processPixPayment } from '../_shared/processPixPayment';
-import { processCreditCardPayment } from '../_shared/processCreditCardPayment';
-import { updateOrderWithPayment } from '../_shared/updateOrderWithPayment';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
-
-  try {
-    const requestBody = await req.json();
     console.log('🚀 create-asaas-payment - Refactored function invoked', {
       requestBody: {
         ...requestBody,
@@ -326,10 +178,10 @@ serve(async (req) => {
       });
       return new Response(JSON.stringify({ 
         error: 'Invalid payment method' 
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log('✅ Step 5 completed:', { 
