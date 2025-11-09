@@ -41,7 +41,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp } from "@/utils/whatsappValidation";
 import { showError, showSuccess } from "@/utils/toast";
-import { useDebounce } from "use-debounce";
+import { useDebouncedCallback } from "use-debounce";
 
 type CustomerSummary = {
   id: string;
@@ -117,7 +117,7 @@ const Customers = () => {
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow | null>(null);
 
   // Debounce search term
-  const debouncedSearch = useDebounce((value: string) => {
+  const debouncedSearch = useDebouncedCallback((value: string) => {
     setDebouncedSearchTerm(value);
     setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on search
   }, 300);
