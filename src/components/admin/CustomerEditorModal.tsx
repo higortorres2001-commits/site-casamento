@@ -227,7 +227,7 @@ const CustomerEditorModal = ({
 
       showSuccess(data.message || "Perfil atualizado com sucesso!");
       onRefresh();
-      onClose();
+      onClose(); // Fechar modal após sucesso
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
@@ -247,7 +247,12 @@ const CustomerEditorModal = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? null : onClose()}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      // Permitir fechar o modal mesmo durante loading
+      if (!nextOpen) {
+        onClose();
+      }
+    }}>
       <DialogContent className="sm:max-w-2xl p-6">
         <DialogHeader>
           <DialogTitle>Editar Usuário</DialogTitle>
@@ -264,6 +269,7 @@ const CustomerEditorModal = ({
                   value={name} 
                   onChange={(e) => setName(e.target.value)} 
                   placeholder="Nome completo" 
+                  disabled={isLoading}
                 />
               </div>
               <div>
@@ -273,12 +279,14 @@ const CustomerEditorModal = ({
                   onChange={(e) => setEmail(e.target.value)} 
                   placeholder="Email" 
                   type="email" 
+                  disabled={isLoading}
                 />
               </div>
               <div className="flex items-center space-x-2">
                 <Switch 
                   checked={isAdmin}
                   onCheckedChange={setIsAdmin}
+                  disabled={isLoading}
                 />
                 <Label>Usuário Administrador</Label>
               </div>
@@ -301,6 +309,7 @@ const CustomerEditorModal = ({
                     <Checkbox
                       checked={selected.includes(p.id)}
                       onCheckedChange={() => toggleProduct(p.id)}
+                      disabled={isLoading}
                     />
                   </div>
                 ))
@@ -337,7 +346,10 @@ const CustomerEditorModal = ({
               className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white"
             >
               {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Salvando...
+                </span>
               ) : (
                 "Salvar Alterações"
               )}
