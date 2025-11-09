@@ -28,7 +28,7 @@ const formSchema = z.object({
 interface ProductOrderBumpsTabProps {
   form: UseFormReturn<z.infer<typeof formSchema>>;
   isLoading: boolean;
-  currentProductId?: string; // The ID of product being edited
+  currentProductId?: string; // The ID of the product being edited
 }
 
 const ProductOrderBumpsTab = ({ form, isLoading, currentProductId }: ProductOrderBumpsTabProps) => {
