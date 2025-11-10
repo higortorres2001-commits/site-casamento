@@ -15,19 +15,21 @@ export const useEmailExistence = (): UseEmailExistenceReturn => {
   const [error, setError] = useState<string | null>(null);
 
   const checkEmailExists = useCallback(async (email: string): Promise<boolean> => {
-    if (!email || !email.includes("@")) {
+    // Validações mais robustas
+    if (!email || !email.includes('@')) {
       setEmailExists(null);
       setError(null);
       return false;
     }
 
+    // Reset states antes de iniciar verificação
     setIsChecking(true);
     setError(null);
+    setEmailExists(null);
 
     try {
       console.log("🔍 Checking email existence:", email);
       
-      // Chamar edge function para verificar se o email existe
       const { data, error: functionError } = await supabase.functions.invoke("check-user-exists", {
         body: { email: email.toLowerCase().trim() }
       });
@@ -51,6 +53,7 @@ export const useEmailExistence = (): UseEmailExistenceReturn => {
       setEmailExists(null);
       return false;
     } finally {
+      // Garantir que isChecking seja false após a verificação
       setIsChecking(false);
     }
   }, []);
