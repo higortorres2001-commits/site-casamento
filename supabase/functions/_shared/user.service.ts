@@ -1,6 +1,6 @@
 import { RequestPayload, UserData } from './types.ts';
 
-// Função para gerenciar usuário (existente ou novo)
+// Função para gerenciar usuário (existente ou novo) com tratamento de concorrência
 export async function handleUserManagement(payload: RequestPayload, supabase: any): Promise<UserData> {
   await supabase.from('logs').insert({
     level: 'info',
@@ -8,11 +8,12 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
     message: 'Starting user management process',
     metadata: { 
       email: payload.email,
-      cpfLength: payload.cpf.length
+      cpfLength: payload.cpf.length,
+      timestamp: new Date().toISOString()
     }
   });
 
-  // Verificar se usuário já existe
+  // ESTRATÉGIA 1: Buscar usuário existente com tratamento de concorrência
   const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ 
     email: payload.email 
   });
@@ -41,98 +42,158 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
       metadata: { 
         userId: existingUser.id,
         email: payload.email,
-        existingUserCreated: existingUser.created_at
+        existingUserCreated: existingUser.created_at,
+        existingUserLastSignIn: existingUser.last_sign_in_at
       }
     });
 
-    // Atualizar perfil do usuário existente
-    const { error: updateProfileError } = await supabase
+    // ESTRATÉGIA 2: Usar UPSERT para perfil (atualiza ou cria sem conflitos)
+    const { error: upsertProfileError } = await supabase
       .from('profiles')
-      .update({ 
+      .upsert({
+        id: existingUser.id,
         name: payload.name, 
         cpf: payload.cpf, 
         email: payload.email, 
         whatsapp: payload.whatsapp,
         updated_at: new Date().toISOString()
+        // Não sobrescrever campos importantes se já existirem
+      }, {
+        onConflict: 'id', // Se houver conflito no ID, atualiza
+        ignoreDuplicates: false // Não ignorar duplicatas, tratar conflitos
       })
-      .eq('id', existingUser.id);
+      .select()
+      .single();
 
-    if (updateProfileError) {
+    if (upsertProfileError) {
       await supabase.from('logs').insert({
         level: 'warning',
-        context: 'user-management-profile-update-error',
-        message: 'Failed to update existing user profile, but continuing with payment',
+        context: 'user-management-profile-upsert-error',
+        message: 'Failed to upsert existing user profile, but continuing with payment',
         metadata: { 
           userId: existingUser.id,
-          error: updateProfileError.message,
-          errorCode: updateProfileError.code
+          error: upsertProfileError.message,
+          errorCode: upsertProfileError.code
         }
       });
       // Não falhar o processo - continuar com o pagamento
     } else {
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'user-management-profile-updated',
-        message: 'Existing user profile updated successfully',
+        context: 'user-management-profile-upserted',
+        message: 'Existing user profile upserted successfully',
         metadata: { userId: existingUser.id }
       });
     }
 
     return { id: existingUser.id, isExisting: true };
   } else {
-    // Criar novo usuário
+    // ESTRATÉGIA 3: Criar novo usuário com tratamento de erro específico
     await supabase.from('logs').insert({
       level: 'info',
       context: 'user-management-creating-new',
       message: 'Creating new user account',
       metadata: { 
         email: payload.email,
-        cpfLength: payload.cpf.length
+        cpfLength: payload.cpf.length,
+        timestamp: new Date().toISOString()
       }
     });
 
-    const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email: payload.email,
-      password: payload.cpf,
-      email_confirm: true,
-      user_metadata: { 
-        name: payload.name, 
-        cpf: payload.cpf, 
-        whatsapp: payload.whatsapp,
-        created_via: 'checkout'
-      },
-    });
+    let newUser;
+    let createUserAttempts = 0;
+    const maxAttempts = 3;
 
-    if (createUserError || !newUser?.user) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-management-creation-error',
-        message: 'Failed to create new user account',
-        metadata: { 
+    while (createUserAttempts < maxAttempts) {
+      try {
+        const { data: createdUser, error: createUserError } = await supabase.auth.admin.createUser({
           email: payload.email,
-          error: createUserError?.message,
-          errorType: createUserError?.name,
-          errorCode: createUserError?.code
+          password: payload.cpf,
+          email_confirm: true,
+          user_metadata: { 
+            name: payload.name, 
+            cpf: payload.cpf, 
+            whatsapp: payload.whatsapp,
+            created_via: 'checkout',
+            created_at: new Date().toISOString()
+          },
+        });
+
+        if (createUserError) {
+          // Tratar diferentes tipos de erro
+          if (createUserError.message.includes('duplicate') || 
+              createUserError.message.includes('already registered') ||
+              createUserError.message.includes('user_already_exists')) {
+            
+            await supabase.from('logs').insert({
+              level: 'warning',
+              context: 'user-management-duplicate-detected',
+              message: 'Duplicate user detected during creation, fetching existing user',
+              metadata: { 
+                email: payload.email,
+                error: createUserError.message,
+                attempt: createUserAttempts + 1
+              }
+            });
+
+            // Tentar buscar o usuário que foi criado por outra transação
+            const { data: retryUsers } = await supabase.auth.admin.listUsers({ 
+              email: payload.email 
+            });
+
+            if (retryUsers?.users?.length > 0) {
+              const retryUser = retryUsers.users[0];
+              await supabase.from('logs').insert({
+                level: 'info',
+                context: 'user-management-retry-success',
+                message: 'Found existing user after duplicate error',
+                metadata: { 
+                  userId: retryUser.id,
+                  email: payload.email
+                }
+              });
+              return { id: retryUser.id, isExisting: true };
+            }
+          }
+
+          throw createUserError;
         }
-      });
-      throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
+
+        if (!createdUser?.user) {
+          throw new Error('Erro desconhecido: usuário não criado');
+        }
+
+        newUser = createdUser.user;
+        break; // Sucesso, sair do loop
+
+      } catch (createError: any) {
+        createUserAttempts++;
+        
+        await supabase.from('logs').insert({
+          level: 'warning',
+          context: 'user-management-create-attempt',
+          message: `User creation attempt ${createUserAttempts} failed`,
+          metadata: { 
+            email: payload.email,
+            error: createError.message,
+            attempt: createUserAttempts
+          }
+        });
+
+        if (createUserAttempts >= maxAttempts) {
+          throw new Error(`Falha ao criar usuário após ${maxAttempts} tentativas: ${createError.message}`);
+        }
+
+        // Esperar um pouco antes de tentar novamente (backoff exponencial)
+        await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, createUserAttempts)));
+      }
     }
 
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-user-created',
-      message: 'New user account created successfully',
-      metadata: { 
-        userId: newUser.user.id,
-        email: payload.email
-      }
-    });
-
-    // Criar perfil para o novo usuário
+    // ESTRATÉGIA 4: Criar perfil para o novo usuário com UPSERT
     const { error: profileError } = await supabase
       .from('profiles')
-      .insert({
-        id: newUser.user.id,
+      .upsert({
+        id: newUser.id,
         name: payload.name,
         cpf: payload.cpf,
         email: payload.email,
@@ -142,15 +203,19 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
         has_changed_password: false,
         is_admin: false,
         created_at: new Date().toISOString()
-      });
+      }, {
+        onConflict: 'id'
+      })
+      .select()
+      .single();
 
     if (profileError) {
       await supabase.from('logs').insert({
-        level: 'warning',
+        level: 'error',
         context: 'user-management-profile-creation-error',
         message: 'Failed to create profile for new user, but user account was created',
         metadata: { 
-          userId: newUser.user.id,
+          userId: newUser.id,
           error: profileError.message,
           errorCode: profileError.code
         }
@@ -161,10 +226,10 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
         level: 'info',
         context: 'user-management-profile-created',
         message: 'Profile created successfully for new user',
-        metadata: { userId: newUser.user.id }
+        metadata: { userId: newUser.id }
       });
     }
 
-    return { id: newUser.user.id, isExisting: false };
+    return { id: newUser.id, isExisting: false };
   }
 }

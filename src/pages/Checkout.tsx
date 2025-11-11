@@ -5,7 +5,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, Download, FileText } from "lucide-react";
 import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
 import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
@@ -18,6 +18,8 @@ import { useSession } from "@/components/SessionContextProvider";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 declare global {
   interface Window {
@@ -37,8 +39,7 @@ const extractNameParts = (fullName: string | null | undefined): { firstName: str
   }
   
   const firstName = nameParts[0];
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
-  
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;  
   return { firstName, lastName };
 };
 
@@ -65,6 +66,8 @@ const Checkout = () => {
   const [asaasPaymentId, setAsaasPaymentId] = useState<string | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [productAssets, setProductAssets] = useState<any[]>([]);
+  const [isMaterialsExpanded, setIsMaterialsExpanded] = useState(false);
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
@@ -81,7 +84,7 @@ const Checkout = () => {
       
       try {
         // Executar ambas as consultas em paralelo com Promise.all
-        const [productResult, bumpsResult] = await Promise.all([
+        const [productResult, bumpsResult, assetsResult] = await Promise.all([
           // Consulta 1: Buscar o produto principal
           supabase
             .from("products")
@@ -96,6 +99,14 @@ const Checkout = () => {
             .select("id, name, price")
             .eq("status", "ativo")
             .in("id", [productId]) // Placeholder, será atualizado abaixo
+          ,
+          
+          // Consulta 3: Buscar os materiais do produto
+          supabase
+            .from("product_assets")
+            .select("id, file_name, storage_path")
+            .eq("product_id", productId)
+            .order("created_at", { ascending: false })
         ]);
         
         const { data: product, error: productError } = productResult;
@@ -125,6 +136,27 @@ const Checkout = () => {
           }
         } else {
           setOrderBumps([]);
+        }
+
+        // Configurar os materiais do produto
+        if (!assetsResult.error && assetsResult.data) {
+          // Gerar URLs assinadas para os materiais
+          const assetsWithUrls = await Promise.all(
+            assetsResult.data.map(async (asset) => {
+              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                .from('product-assets')
+                .createSignedUrl(asset.storage_path, 3600); // 1 hora
+
+              if (signedUrlError) {
+                console.error(`Error generating signed URL for asset ${asset.id}:`, signedUrlError.message);
+                return { ...asset, signed_url: null };
+              }
+              return { ...asset, signed_url: signedUrlData?.signedUrl || null };
+            })
+          );
+          setProductAssets(assetsWithUrls);
+        } else {
+          setProductAssets([]);
         }
         
       } catch (error: any) {
@@ -313,6 +345,9 @@ const Checkout = () => {
     }
   };
 
+  // Detectar se é mobile
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
   if (isLoadingProduct) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -337,6 +372,31 @@ const Checkout = () => {
         <div className="space-y-6">
           <MainProductDisplayCard product={mainProduct} />
 
+          {/* Anúncio Personalizado */}
+          <Card className="bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200">
+            <CardHeader>
+              <CardTitle className="text-xl font-bold text-orange-800">
+                🎯 Oferta Especial por Tempo Limitado!
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-orange-700 mb-4">
+                Adquira agora {mainProduct.name} e tenha acesso imediato aos materiais exclusivos!
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <Badge className="bg-green-100 text-green-800 text-sm px-3 py-1">
+                  ✅ Entrega Imediata
+                </Badge>
+                <Badge className="bg-blue-100 text-blue-800 text-sm px-3 py-1">
+                  📚 Materiais Exclusivos
+                </Badge>
+                <Badge className="bg-purple-100 text-purple-800 text-sm px-3 py-1">
+                  🎓 Suporte Premium
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+
           {orderBumps.length > 0 && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-gray-800">Aproveite também:</h2>
@@ -349,6 +409,69 @@ const Checkout = () => {
                 />
               ))}
             </div>
+          )}
+
+          {/* Acordeon de Materiais */}
+          {productAssets.length > 0 && (
+            <Card className="bg-white rounded-xl shadow-lg">
+              <CardHeader 
+                className="cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setIsMaterialsExpanded(!isMaterialsExpanded)}
+              >
+                <CardTitle className="flex items-center justify-between text-lg">
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-blue-600" />
+                    Materiais do Produto ({productAssets.length})
+                  </span>
+                  {isMaterialsExpanded ? (
+                    <ChevronUp className="h-5 w-5" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5" />
+                  )}
+                </CardTitle>
+              </CardHeader>
+              {isMaterialsExpanded && (
+                <CardContent className="pt-0">
+                  <div className="space-y-3">
+                    {productAssets.map((asset) => (
+                      <div key={asset.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-blue-500" />
+                          <span className="text-sm font-medium text-gray-700">{asset.file_name}</span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (asset.signed_url) {
+                              const link = document.createElement('a');
+                              link.href = asset.signed_url;
+                              link.download = asset.file_name;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              showSuccess(`Download de "${asset.file_name}" iniciado!`);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Baixar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                    <h4 className="font-semibold text-blue-800 mb-2">Como baixar os materiais:</h4>
+                    <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                      <li>Clique no botão "Baixar" ao lado de cada material</li>
+                      <li>Após a compra, você terá acesso vitalício a todos os materiais</li>
+                      <li>Os materiais ficam disponíveis na sua área de membros</li>
+                    </ol>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
           )}
 
           <OrderSummaryAccordion
@@ -393,11 +516,34 @@ const Checkout = () => {
         </div>
       </main>
 
-      <FixedBottomBar
-        totalPrice={currentTotalPrice}
-        isSubmitting={isSubmitting}
-        onSubmit={handleSubmit}
-      />
+      {/* Barra fixa apenas para mobile */}
+      {isMobile && (
+        <FixedBottomBar
+          totalPrice={currentTotalPrice}
+          isSubmitting={isSubmitting}
+          onSubmit={handleSubmit}
+        />
+      )}
+
+      {/* Botão no corpo da página para desktop */}
+      {!isMobile && (
+        <div className="fixed bottom-8 right-8 z-40">
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 text-lg font-semibold shadow-lg rounded-full"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Processando...
+              </>
+            ) : (
+              "Finalizar Compra Agora"
+            )}
+          </Button>
+        </div>
+      )}
 
       <PixPaymentModal
         isOpen={isPixModalOpen}
