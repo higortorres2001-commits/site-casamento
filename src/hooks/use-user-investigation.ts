@@ -34,7 +34,7 @@ export const useUserInvestigation = () => {
         return;
       }
 
-      const authUser = authUsers.users.find(u => 
+      const authUser = authUsers.users.find((u: any) => 
         u.email?.toLowerCase() === email.toLowerCase().trim()
       );
 
@@ -79,9 +79,6 @@ export const useUserInvestigation = () => {
       } else if (authUser && !profile) {
         issues.push("Usuário existe no auth mas não tem perfil");
         recommendations.push("Executar diagnóstico de usuários para corrigir");
-      } else if (!authUser && profile) {
-        issues.push("Perfil existe mas usuário não está no auth");
-        recommendations.push("Problema crítico - contatar suporte técnico");
       } else if (authUser && profile) {
         // Verificar inconsistências
         if (authUser.email?.toLowerCase() !== profile.email?.toLowerCase()) {
@@ -89,7 +86,7 @@ export const useUserInvestigation = () => {
           recommendations.push("Sincronizar emails usando diagnóstico");
         }
         
-        if (profile.access && profile.access.length === 0 && orders.some(o => o.status === 'paid')) {
+        if (profile.access && profile.access.length === 0 && orders.some((o: any) => o.status === 'paid')) {
           issues.push("Cliente pagou mas não tem acesso aos produtos");
           recommendations.push("Verificar webhook do Asaas e atualizar acesso manualmente");
         }
@@ -101,7 +98,7 @@ export const useUserInvestigation = () => {
       }
 
       // Analisar logs para problemas específicos
-      const errorLogs = recentLogs.filter(log => log.level === 'error');
+      const errorLogs = recentLogs.filter((log: any) => log.level === 'error');
       if (errorLogs.length > 0) {
         issues.push(`${errorLogs.length} erros encontrados nos logs recentes`);
         recommendations.push("Verificar detalhes dos erros na aba de logs");
