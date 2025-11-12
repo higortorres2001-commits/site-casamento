@@ -1,13 +1,9 @@
-"use client";
-
 import React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X, Copy, AlertTriangle, XCircle, Info, User, Mail, CreditCard, Package } from "lucide-react";
+import { X, Copy, CheckCircle, AlertTriangle, XCircle, Info } from "lucide-react";
 import { Log } from "@/pages/admin/Logs";
-import { showSuccess } from "@/utils/toast";
-import { Card, CardContent, CardHeader } from "@/components/ui/card"; // Added Card imports
 
 interface LogMetadataModalProps {
   open: boolean;
@@ -20,7 +16,6 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    showSuccess("Copiado para a área de transferência!");
   };
 
   const getLevelIcon = (level: string) => {
@@ -52,8 +47,6 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
     if (context.includes("payment") || context.includes("asaas")) return "text-green-700 bg-green-50";
     if (context.includes("user") || context.includes("customer")) return "text-blue-700 bg-blue-50";
     if (context.includes("checkout")) return "text-orange-700 bg-orange-50";
-    if (context.includes("profile")) return "text-indigo-700 bg-indigo-50";
-    if (context.includes("webhook")) return "text-pink-700 bg-pink-50";
     return "text-gray-700 bg-gray-50";
   };
 
@@ -102,42 +95,7 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
   };
 
   const metadata = log.metadata || {};
-  
-  // Extrair informações importantes dos metadados
-  const extractedInfo = {
-    email: metadata.email || metadata.targetEmail || null,
-    userId: metadata.userId || metadata.targetUserId || metadata.userIdToUpdate || null,
-    orderId: metadata.orderId || null,
-    asaasPaymentId: metadata.asaasPaymentId || null,
-    paymentMethod: metadata.paymentMethod || null,
-    error: metadata.error || metadata.errorMessage || null,
-    errorType: metadata.errorType || metadata.errorCode || null,
-  };
-
-  // Separar metadados em categorias
-  const userRelatedKeys = ['email', 'userId', 'targetUserId', 'userIdToUpdate', 'name', 'cpf', 'whatsapp'];
-  const paymentRelatedKeys = ['orderId', 'asaasPaymentId', 'paymentMethod', 'totalPrice', 'finalTotal', 'originalTotal'];
-  const errorRelatedKeys = ['error', 'errorMessage', 'errorType', 'errorCode', 'errorStack', 'asaasError'];
-  
-  const userMetadata = Object.fromEntries(
-    Object.entries(metadata).filter(([key]) => userRelatedKeys.includes(key))
-  );
-  
-  const paymentMetadata = Object.fromEntries(
-    Object.entries(metadata).filter(([key]) => paymentRelatedKeys.includes(key))
-  );
-  
-  const errorMetadata = Object.fromEntries(
-    Object.entries(metadata).filter(([key]) => errorRelatedKeys.includes(key))
-  );
-  
-  const otherMetadata = Object.fromEntries(
-    Object.entries(metadata).filter(([key]) => 
-      !userRelatedKeys.includes(key) && 
-      !paymentRelatedKeys.includes(key) && 
-      !errorRelatedKeys.includes(key)
-    )
-  );
+  const metadataEntries = Object.entries(metadata).filter(([key]) => key !== "internal_tag");
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -167,16 +125,11 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Informações Principais */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Info className="h-4 w-4" />
-                  Informações Gerais
-                </h4>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
+          {/* Informações básicas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-gray-700">Informações Gerais</h4>
+              <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Data/Hora:</span>
                   <span className="font-medium">
@@ -198,88 +151,32 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
                     {log.context}
                   </Badge>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <h4 className="text-sm font-semibold text-gray-700">Mensagem</h4>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-800 break-all whitespace-pre-wrap">
-                    {log.message}
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => copyToClipboard(log.message)}
-                    className="mt-2 text-blue-600 hover:text-blue-800"
-                  >
-                    <Copy className="h-3 w-3 mr-1" />
-                    Copiar
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-gray-700">Mensagem</h4>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800 break-all whitespace-pre-wrap">
+                  {log.message}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyToClipboard(log.message)}
+                  className="mt-2 text-blue-600 hover:text-blue-800"
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copiar
+                </Button>
+              </div>
+            </div>
           </div>
 
-          {/* Informações Extraídas */}
-          {(extractedInfo.email || extractedInfo.userId || extractedInfo.orderId) && (
-            <Card>
-              <CardHeader className="pb-3">
-                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  Informações Extraídas
-                </h4>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                  {extractedInfo.email && (
-                    <div className="flex items-center gap-2 p-2 bg-blue-50 rounded">
-                      <Mail className="h-4 w-4 text-blue-600" />
-                      <div>
-                        <div className="text-gray-600">Email:</div>
-                        <div className="font-medium">{extractedInfo.email}</div>
-                      </div>
-                    </div>
-                  )}
-                  {extractedInfo.userId && (
-                    <div className="flex items-center gap-2 p-2 bg-purple-50 rounded">
-                      <User className="h-4 w-4 text-purple-600" />
-                      <div>
-                        <div className="text-gray-600">User ID:</div>
-                        <div className="font-mono text-xs">{extractedInfo.userId}</div>
-                      </div>
-                    </div>
-                  )}
-                  {extractedInfo.orderId && (
-                    <div className="flex items-center gap-2 p-2 bg-green-50 rounded">
-                      <Package className="h-4 w-4 text-green-600" />
-                      <div>
-                        <div className="text-gray-600">Pedido:</div>
-                        <div className="font-mono text-xs">{extractedInfo.orderId}</div>
-                      </div>
-                    </div>
-                  )}
-                  {extractedInfo.asaasPaymentId && (
-                    <div className="flex items-center gap-2 p-2 bg-yellow-50 rounded">
-                      <CreditCard className="h-4 w-4 text-yellow-600" />
-                      <div>
-                        <div className="text-gray-600">Pagamento:</div>
-                        <div className="font-mono text-xs">{extractedInfo.asaasPaymentId}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Metadados Categorizados */}
+          {/* Metadados */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-gray-700">Metadados Detalhados</h4>
+              <h4 className="text-sm font-semibold text-gray-700">Metadados</h4>
               <Button
                 variant="outline"
                 size="sm"
@@ -287,249 +184,60 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
                 className="text-gray-600 hover:text-gray-800"
               >
                 <Copy className="h-3 w-3 mr-1" />
-                Copiar JSON Completo
+                Copiar JSON
               </Button>
             </div>
 
-            {/* Dados do Usuário */}
-            {Object.keys(userMetadata).length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <h5 className="text-sm font-medium text-blue-700 flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    Dados do Usuário
-                  </h5>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {Object.entries(userMetadata).map(([key, value]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <h6 className="text-xs font-medium text-gray-700 capitalize">
-                          {key.replace(/_/g, " ")}
-                        </h6>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(String(value))}
-                          className="text-gray-500 hover:text-gray-700 h-6 w-6 p-0"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      {renderMetadataValue(value, key)}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Dados de Pagamento */}
-            {Object.keys(paymentMetadata).length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <h5 className="text-sm font-medium text-green-700 flex items-center gap-2">
-                    <CreditCard className="h-4 w-4" />
-                    Dados de Pagamento
-                  </h5>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {Object.entries(paymentMetadata).map(([key, value]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <h6 className="text-xs font-medium text-gray-700 capitalize">
-                          {key.replace(/_/g, " ")}
-                        </h6>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(String(value))}
-                          className="text-gray-500 hover:text-gray-700 h-6 w-6 p-0"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      {renderMetadataValue(value, key)}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Dados de Erro */}
-            {Object.keys(errorMetadata).length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <h5 className="text-sm font-medium text-red-700 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4" />
-                    Informações de Erro
-                  </h5>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {Object.entries(errorMetadata).map(([key, value]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <h6 className="text-xs font-medium text-gray-700 capitalize">
-                          {key.replace(/_/g, " ")}
-                        </h6>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(String(value))}
-                          className="text-gray-500 hover:text-gray-700 h-6 w-6 p-0"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      {renderMetadataValue(value, key)}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Outros Metadados */}
-            {Object.keys(otherMetadata).length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <h5 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    <Package className="h-4 w-4" />
-                    Outros Dados
-                  </h5>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {Object.entries(otherMetadata).map(([key, value]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <h6 className="text-xs font-medium text-gray-700 capitalize">
-                          {key.replace(/_/g, " ")}
-                        </h6>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(String(value))}
-                          className="text-gray-500 hover:text-gray-700 h-6 w-6 p-0"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      {renderMetadataValue(value, key)}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Análise Automática para Erros */}
-          {log.level === "error" && (
-            <Card className="border-red-200">
-              <CardHeader className="pb-3">
-                <h4 className="text-sm font-semibold text-red-700 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Análise Automática do Erro
-                </h4>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {/* Análise baseada no contexto */}
-                  {log.context.includes("auth") && (
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                      <h5 className="text-sm font-medium text-purple-800 mb-1">🔐 Problema de Autenticação</h5>
-                      <p className="text-xs text-purple-700">
-                        Este erro está relacionado ao sistema de autenticação. Verifique se:
-                      </p>
-                      <ul className="text-xs text-purple-700 mt-1 list-disc list-inside">
-                        <li>O email está correto e válido</li>
-                        <li>A senha está sendo validada corretamente</li>
-                        <li>Não há duplicatas no sistema auth</li>
-                      </ul>
-                    </div>
-                  )}
-
-                  {log.context.includes("profile") && (
-                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                      <h5 className="text-sm font-medium text-indigo-800 mb-1">👤 Problema de Perfil</h5>
-                      <p className="text-xs text-indigo-700">
-                        Este erro está relacionado à criação/atualização de perfil. Verifique se:
-                      </p>
-                      <ul className="text-xs text-indigo-700 mt-1 list-disc list-inside">
-                        <li>O usuário existe no sistema auth</li>
-                        <li>Os dados do perfil estão válidos</li>
-                        <li>Não há conflitos de CPF ou email</li>
-                      </ul>
-                    </div>
-                  )}
-
-                  {log.context.includes("payment") && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                      <h5 className="text-sm font-medium text-green-800 mb-1">💳 Problema de Pagamento</h5>
-                      <p className="text-xs text-green-700">
-                        Este erro está relacionado ao processamento de pagamento. Verifique se:
-                      </p>
-                      <ul className="text-xs text-green-700 mt-1 list-disc list-inside">
-                        <li>As credenciais do Asaas estão configuradas</li>
-                        <li>Os dados do cartão/PIX estão corretos</li>
-                        <li>O valor do pagamento é válido</li>
-                      </ul>
-                    </div>
-                  )}
-
-                  {log.context.includes("checkout") && (
-                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                      <h5 className="text-sm font-medium text-orange-800 mb-1">🛒 Problema de Checkout</h5>
-                      <p className="text-xs text-orange-700">
-                        Este erro está relacionado ao processo de checkout. Verifique se:
-                      </p>
-                      <ul className="text-xs text-orange-700 mt-1 list-disc list-inside">
-                        <li>Todos os campos obrigatórios foram preenchidos</li>
-                        <li>Os produtos existem e estão ativos</li>
-                        <li>O cupom (se usado) é válido</li>
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Ações Recomendadas */}
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                    <h5 className="text-sm font-medium text-gray-800 mb-1">🔧 Ações Recomendadas</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {extractedInfo.email && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            // Preencher o campo de timeline com o email extraído
-                            const timelineTab = document.querySelector('[data-value="timeline"]') as HTMLElement;
-                            if (timelineTab) {
-                              timelineTab.click();
-                              setTimeout(() => {
-                                const emailInput = document.querySelector('input[placeholder="cliente@exemplo.com"]') as HTMLInputElement;
-                                if (emailInput) {
-                                  emailInput.value = extractedInfo.email!;
-                                  emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-                                }
-                              }, 100);
-                            }
-                          }}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          🔍 Investigar Timeline
-                        </Button>
-                      )}
+            {metadataEntries.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Info className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p>Nenhum metadado disponível para este log</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {metadataEntries.map(([key, value]) => (
+                  <div key={key} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-sm font-medium text-gray-700 capitalize">
+                        {key.replace(/_/g, " ")}
+                      </h5>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        onClick={() => copyToClipboard(log.context)}
-                        className="text-gray-600 hover:text-gray-800"
+                        onClick={() => copyToClipboard(String(value))}
+                        className="text-gray-500 hover:text-gray-700"
                       >
-                        📋 Copiar Contexto
+                        <Copy className="h-3 w-3" />
                       </Button>
                     </div>
+                    {renderMetadataValue(value, key)}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Ações rápidas para erros */}
+        {log.level === "error" && (
+          <div className="border-t pt-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-3">Ações Recomendadas</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <h5 className="text-sm font-medium text-red-800 mb-1">🔍 Investigar Erro</h5>
+                <p className="text-xs text-red-700">
+                  Verifique os logs relacionados para identificar a causa raiz deste erro.
+                </p>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <h5 className="text-sm font-medium text-orange-800 mb-1">📊 Monitorar Frequência</h5>
+                <p className="text-xs text-orange-700">
+                  Filtre por este contexto para ver se o erro está ocorrendo repetidamente.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
