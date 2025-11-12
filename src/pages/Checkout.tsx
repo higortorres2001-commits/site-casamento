@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
 import { Loader2, ChevronDown, ChevronUp, Download, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
 import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
@@ -20,6 +21,7 @@ import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 declare global {
   interface Window {
@@ -365,152 +367,251 @@ const Checkout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
       <CheckoutHeader backUrl={mainProduct.checkout_return_url || undefined} />
 
-      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-2xl pb-32">
-        <div className="space-y-6">
-          <MainProductDisplayCard product={mainProduct} />
+      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-4xl pb-32">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Coluna Principal - Produto e Formulário */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* 1. Produto Principal */}
+            <div className="space-y-6">
+              <MainProductDisplayCard product={mainProduct} />
 
-          {/* Anúncio Personalizado */}
-          <Card className="bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200">
-            <CardHeader>
-              <CardTitle className="text-xl font-bold text-orange-800">
-                🎯 Oferta Especial por Tempo Limitado!
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-orange-700 mb-4">
-                Adquira agora {mainProduct.name} e tenha acesso imediato aos materiais exclusivos!
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4 items-center">
-                <Badge className="bg-green-100 text-green-800 text-sm px-3 py-1">
-                  ✅ Entrega Imediata
-                </Badge>
-                <Badge className="bg-blue-100 text-blue-800 text-sm px-3 py-1">
-                  📚 Materiais Exclusivos
-                </Badge>
-                <Badge className="bg-purple-100 text-purple-800 text-sm px-3 py-1">
-                  🎓 Suporte Premium
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {orderBumps.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-gray-800">Aproveite também:</h2>
-              {orderBumps.map((bump) => (
-                <OrderBumpCard
-                  key={bump.id}
-                  product={bump}
-                  isSelected={selectedOrderBumps.includes(bump.id)}
-                  onToggle={handleOrderBumpToggle}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Acordeon de Materiais */}
-          {productAssets.length > 0 && (
-            <Card className="bg-white rounded-xl shadow-lg">
-              <CardHeader 
-                className="cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => setIsMaterialsExpanded(!isMaterialsExpanded)}
-              >
-                <CardTitle className="flex items-center justify-between text-lg">
-                  <span className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-blue-600" />
-                    Materiais do Produto ({productAssets.length})
-                  </span>
-                  {isMaterialsExpanded ? (
-                    <ChevronUp className="h-5 w-5" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5" />
-                  )}
-                </CardTitle>
-              </CardHeader>
-              {isMaterialsExpanded && (
-                <CardContent className="pt-0">
-                  <div className="space-y-3">
-                    {productAssets.map((asset) => (
-                      <div key={asset.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm font-medium text-gray-700">{asset.file_name}</span>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (asset.signed_url) {
-                              const link = document.createElement('a');
-                              link.href = asset.signed_url;
-                              link.download = asset.file_name;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              showSuccess(`Download de "${asset.file_name}" iniciado!`);
-                            }
-                          }}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          <Download className="h-4 w-4 mr-1" />
-                          Baixar
-                        </Button>
-                      </div>
-                    ))}
+              {/* Banner Promocional */}
+              <Card className="bg-gradient-to-r from-orange-50 via-yellow-50 to-orange-50 border-orange-200 shadow-lg">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center">
+                      <span className="text-2xl">🎯</span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-orange-800">
+                        Oferta Especial por Tempo Limitado!
+                      </h3>
+                      <p className="text-orange-700">
+                        Adquira agora e tenha acesso imediato aos materiais exclusivos!
+                      </p>
+                    </div>
                   </div>
-                  <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                    <h4 className="font-semibold text-blue-800 mb-2">Como baixar os materiais:</h4>
-                    <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                      <li>Clique no botão "Baixar" ao lado de cada material</li>
-                      <li>Após a compra, você terá acesso vitalício a todos os materiais</li>
-                      <li>Os materiais ficam disponíveis na sua área de membros</li>
-                    </ol>
+                  <div className="flex flex-wrap gap-3">
+                    <Badge className="bg-green-100 text-green-800 border-green-200 px-3 py-1">
+                      ✅ Entrega Imediata
+                    </Badge>
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-200 px-3 py-1">
+                      📚 Materiais Exclusivos
+                    </Badge>
+                    <Badge className="bg-purple-100 text-purple-800 border-purple-200 px-3 py-1">
+                      🎓 Suporte Premium
+                    </Badge>
                   </div>
                 </CardContent>
-              )}
-            </Card>
-          )}
+              </Card>
+            </div>
 
-          <OrderSummaryAccordion
-            mainProduct={mainProduct}
-            selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-            originalTotalPrice={originalTotalPrice}
-            currentTotalPrice={currentTotalPrice}
-            appliedCoupon={appliedCoupon}
-            onCouponApplied={handleCouponApplied}
-          />
-
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
-            <CheckoutForm
-              ref={checkoutFormRef}
-              onSubmit={() => {}}
-              isLoading={isSubmitting}
-            />
-
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
-              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="PIX">PIX</TabsTrigger>
-                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
-                </TabsList>
-                <TabsContent value="PIX" className="mt-4">
-                  <p className="text-sm text-gray-600">
-                    Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
+            {/* 2. Order Bumps */}
+            {orderBumps.length > 0 && (
+              <div className="space-y-6">
+                <div className="text-center">
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                    Aproveite também estas ofertas especiais!
+                  </h2>
+                  <p className="text-gray-600">
+                    Produtos complementares selecionados especialmente para você
                   </p>
-                </TabsContent>
-                <TabsContent value="CREDIT_CARD" className="mt-4">
-                  <CreditCardForm
-                    ref={creditCardFormRef}
-                    isLoading={isSubmitting}
-                    totalPrice={currentTotalPrice}
-                  />
-                </TabsContent>
-              </Tabs>
+                </div>
+                <div className="space-y-4">
+                  {orderBumps.map((bump) => (
+                    <OrderBumpCard
+                      key={bump.id}
+                      product={bump}
+                      isSelected={selectedOrderBumps.includes(bump.id)}
+                      onToggle={handleOrderBumpToggle}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Materiais do Produto */}
+            {productAssets.length > 0 && (
+              <Card className="bg-white shadow-lg border-blue-200">
+                <CardHeader 
+                  className="cursor-pointer hover:bg-blue-50 transition-colors rounded-t-lg"
+                  onClick={() => setIsMaterialsExpanded(!isMaterialsExpanded)}
+                >
+                  <CardTitle className="flex items-center justify-between text-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <FileText className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <span className="text-blue-800">Materiais Inclusos</span>
+                        <p className="text-sm text-blue-600 font-normal">
+                          {productAssets.length} arquivo(s) disponível(is)
+                        </p>
+                      </div>
+                    </div>
+                    {isMaterialsExpanded ? (
+                      <ChevronUp className="h-5 w-5 text-blue-600" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-blue-600" />
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                {isMaterialsExpanded && (
+                  <CardContent className="pt-0">
+                    <Separator className="mb-4" />
+                    <div className="space-y-3">
+                      {productAssets.map((asset) => (
+                        <div key={asset.id} className="flex items-center justify-between p-4 border border-blue-100 rounded-lg bg-blue-50/50 hover:bg-blue-50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                              <FileText className="h-4 w-4 text-blue-600" />
+                            </div>
+                            <span className="text-sm font-medium text-gray-700">{asset.file_name}</span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (asset.signed_url) {
+                                const link = document.createElement('a');
+                                link.href = asset.signed_url;
+                                link.download = asset.file_name;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                showSuccess(`Download de "${asset.file_name}" iniciado!`);
+                              }
+                            }}
+                            className="text-blue-600 hover:text-blue-800 border-blue-200 hover:bg-blue-50"
+                          >
+                            <Download className="h-4 w-4 mr-1" />
+                            Baixar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                      <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                        <span className="text-lg">📋</span>
+                        Como acessar seus materiais:
+                      </h4>
+                      <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                        <li>Após a compra, você receberá acesso vitalício a todos os materiais</li>
+                        <li>Os arquivos ficam disponíveis na sua área de membros</li>
+                        <li>Você pode baixar quantas vezes quiser, quando quiser</li>
+                      </ol>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            )}
+
+            {/* 4. Formulário de Dados */}
+            <Card className="bg-white shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-t-lg">
+                <CardTitle className="text-xl text-gray-800 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                    <span className="text-orange-600 font-bold">1</span>
+                  </div>
+                  Seus Dados
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <CheckoutForm
+                  ref={checkoutFormRef}
+                  onSubmit={() => {}}
+                  isLoading={isSubmitting}
+                />
+              </CardContent>
+            </Card>
+
+            {/* 5. Método de Pagamento */}
+            <Card className="bg-white shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-t-lg">
+                <CardTitle className="text-xl text-gray-800 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                    <span className="text-orange-600 font-bold">2</span>
+                  </div>
+                  Método de Pagamento
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
+                  <TabsList className="grid w-full grid-cols-2 mb-6">
+                    <TabsTrigger value="PIX" className="flex items-center gap-2">
+                      <span className="text-lg">💳</span>
+                      PIX
+                    </TabsTrigger>
+                    <TabsTrigger value="CREDIT_CARD" className="flex items-center gap-2">
+                      <span className="text-lg">💰</span>
+                      Cartão de Crédito
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="PIX" className="mt-4">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-2xl">⚡</span>
+                        <h4 className="font-semibold text-green-800">Pagamento via PIX</h4>
+                      </div>
+                      <p className="text-sm text-green-700">
+                        Você receberá um QR Code para pagamento instantâneo via PIX após finalizar o pedido.
+                        O acesso é liberado automaticamente após a confirmação.
+                      </p>
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="CREDIT_CARD" className="mt-4">
+                    <CreditCardForm
+                      ref={creditCardFormRef}
+                      isLoading={isSubmitting}
+                      totalPrice={currentTotalPrice}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Coluna Lateral - Resumo do Pedido */}
+          <div className="lg:col-span-1">
+            <div className="sticky top-24">
+              <OrderSummaryAccordion
+                mainProduct={mainProduct}
+                selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+                originalTotalPrice={originalTotalPrice}
+                currentTotalPrice={currentTotalPrice}
+                appliedCoupon={appliedCoupon}
+                onCouponApplied={handleCouponApplied}
+              />
+
+              {/* Botão de Finalizar para Desktop */}
+              {!isMobile && (
+                <div className="mt-6">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-4 text-lg font-semibold shadow-lg rounded-lg transition-all duration-200 transform hover:scale-105"
+                    size="lg"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xl mr-2">🚀</span>
+                        Finalizar Compra Agora
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-gray-500 text-center mt-2">
+                    Pagamento 100% seguro e protegido
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -523,26 +624,6 @@ const Checkout = () => {
           isSubmitting={isSubmitting}
           onSubmit={handleSubmit}
         />
-      )}
-
-      {/* Botão no corpo da página para desktop */}
-      {!isMobile && (
-        <div className="fixed bottom-8 right-8 z-40">
-          <Button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 text-lg font-semibold shadow-lg rounded-full"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Processando...
-              </>
-            ) : (
-              "Finalizar Compra Agora"
-            )}
-          </Button>
-        </div>
       )}
 
       <PixPaymentModal
