@@ -40,197 +40,121 @@ interface CouponData {
   active: boolean;
 }
 
-// ==================== FAILSAFE USER SERVICE ====================
-async function handleUserManagementFailsafe(payload: RequestPayload, supabase: any): Promise<UserData> {
+// ==================== BULLETPROOF USER SERVICE ====================
+async function handleUserManagementBulletproof(payload: RequestPayload, supabase: any): Promise<UserData> {
   await supabase.from('logs').insert({
     level: 'info',
-    context: 'user-management-failsafe-start',
-    message: 'Starting FAILSAFE user management - sale will NOT be lost',
+    context: 'user-management-bulletproof-start',
+    message: 'Starting BULLETPROOF user management - ZERO SALES LOST',
     metadata: { 
       email: payload.email,
       cpfLength: payload.cpf.length,
-      flow: 'checkout-failsafe'
+      flow: 'checkout-bulletproof'
     }
   });
 
+  // ETAPA 1: Buscar usuário existente por EMAIL (mais confiável que listar todos)
+  let existingUserId: string | null = null;
+  
   try {
-    // ETAPA 1: Verificar se usuário já existe no Auth
-    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
+    // Buscar na tabela profiles primeiro (mais rápido e confiável)
+    const { data: existingProfile, error: profileSearchError } = await supabase
+      .from('profiles')
+      .select('id, name, email, cpf, whatsapp, access')
+      .eq('email', payload.email.toLowerCase())
+      .single();
 
-    if (listUsersError) {
+    if (!profileSearchError && existingProfile) {
       await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-management-lookup-error',
-        message: 'Failed to list users from Auth - proceeding with fallback',
+        level: 'info',
+        context: 'user-management-existing-profile-found',
+        message: 'Found existing profile by email',
         metadata: { 
+          userId: existingProfile.id,
           email: payload.email,
-          error: listUsersError.message,
-          errorType: listUsersError.name
+          profileEmail: existingProfile.email
         }
       });
-      // NÃO FALHAR - continuar com criação
-    } else {
-      const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === payload.email.toLowerCase());
 
-      if (existingUser) {
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'user-management-existing-found',
-          message: 'Existing user found in Auth, checking profile',
-          metadata: { 
-            userId: existingUser.id,
-            email: payload.email,
-            existingUserCreated: existingUser.created_at
-          }
-        });
+      // Atualizar dados se necessário
+      const needsUpdate = 
+        existingProfile.name !== payload.name ||
+        existingProfile.cpf !== payload.cpf ||
+        existingProfile.whatsapp !== payload.whatsapp;
 
-        // Verificar se perfil já existe
-        const { data: existingProfile, error: profileCheckError } = await supabase
-          .from('profiles')
-          .select('id, name, email, cpf, whatsapp, access, created_at')
-          .eq('id', existingUser.id)
-          .single();
-
-        if (!profileCheckError && existingProfile) {
-          // Perfil existe - atualizar se necessário
-          const needsUpdate = 
-            existingProfile.name !== payload.name ||
-            existingProfile.email !== payload.email ||
-            existingProfile.cpf !== payload.cpf ||
-            existingProfile.whatsapp !== payload.whatsapp;
-
-          if (needsUpdate) {
-            await supabase
-              .from('profiles')
-              .update({ 
-                name: payload.name, 
-                cpf: payload.cpf, 
-                email: payload.email, 
-                whatsapp: payload.whatsapp,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', existingUser.id);
-          }
-
-          return { id: existingUser.id, isExisting: true };
-        } else {
-          // Perfil não existe - tentar criar
-          try {
-            await supabase
-              .from('profiles')
-              .insert({
-                id: existingUser.id,
-                name: payload.name,
-                cpf: payload.cpf,
-                email: payload.email,
-                whatsapp: payload.whatsapp,
-                access: [],
-                primeiro_acesso: false,
-                has_changed_password: false,
-                is_admin: false,
-                created_at: new Date().toISOString()
-              });
-
-            return { id: existingUser.id, isExisting: true };
-          } catch (profileError: any) {
-            await supabase.from('logs').insert({
-              level: 'warning',
-              context: 'user-management-profile-creation-failed',
-              message: 'Failed to create profile for existing user - continuing with sale',
-              metadata: { 
-                userId: existingUser.id,
-                error: profileError.message
-              }
-            });
-            // CONTINUAR COM A VENDA mesmo se falhar
-            return { id: existingUser.id, isExisting: true };
-          }
+      if (needsUpdate) {
+        try {
+          await supabase
+            .from('profiles')
+            .update({ 
+              name: payload.name, 
+              cpf: payload.cpf, 
+              whatsapp: payload.whatsapp,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingProfile.id);
+        } catch (updateError: any) {
+          // Não falhar se não conseguir atualizar
+          await supabase.from('logs').insert({
+            level: 'warning',
+            context: 'user-management-update-failed',
+            message: 'Failed to update existing profile but continuing',
+            metadata: { 
+              userId: existingProfile.id,
+              error: updateError.message
+            }
+          });
         }
       }
+
+      return { id: existingProfile.id, isExisting: true };
     }
 
-    // ETAPA 2: Tentar criar novo usuário
-    let newUserId: string | null = null;
+    // Se não encontrou na tabela profiles, buscar no Auth
+    const { data: authUsers, error: authSearchError } = await supabase.auth.admin.listUsers();
     
-    try {
-      const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-        email: payload.email,
-        password: payload.cpf,
-        email_confirm: true,
-        user_metadata: { 
-          name: payload.name, 
-          cpf: payload.cpf, 
-          whatsapp: payload.whatsapp,
-          created_via: 'checkout-failsafe',
-          created_at_checkout: new Date().toISOString()
-        },
-      });
-
-      if (createUserError) {
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'user-management-auth-creation-failed',
-          message: 'Failed to create Auth user - will use fallback ID',
-          metadata: { 
-            email: payload.email,
-            error: createUserError.message,
-            errorType: createUserError?.name,
-            errorCode: createUserError?.code
-          }
-        });
-        // NÃO FALHAR - usar ID gerado
-      } else if (newUser?.user) {
-        newUserId = newUser.user.id;
+    if (!authSearchError && authUsers?.users) {
+      const existingAuthUser = authUsers.users.find(u => u.email?.toLowerCase() === payload.email.toLowerCase());
+      
+      if (existingAuthUser) {
+        existingUserId = existingAuthUser.id;
         await supabase.from('logs').insert({
           level: 'info',
-          context: 'user-management-auth-created',
-          message: 'Auth user created successfully',
+          context: 'user-management-existing-auth-found',
+          message: 'Found existing Auth user without profile',
           metadata: { 
-            userId: newUserId,
-            email: payload.email
+            userId: existingUserId,
+            email: payload.email,
+            authUserCreated: existingAuthUser.created_at
           }
         });
       }
-    } catch (authError: any) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-management-auth-exception',
-        message: 'Exception creating Auth user - will use fallback',
-        metadata: { 
-          email: payload.email,
-          error: authError.message
-        }
-      });
     }
+  } catch (searchError: any) {
+    await supabase.from('logs').insert({
+      level: 'warning',
+      context: 'user-management-search-error',
+      message: 'Error searching for existing user - will create new',
+      metadata: { 
+        email: payload.email,
+        error: searchError.message
+      }
+    });
+  }
 
-    // ETAPA 3: Se não conseguiu criar no Auth, gerar ID único para continuar a venda
-    if (!newUserId) {
-      // Gerar UUID único para garantir que a venda continue
-      newUserId = crypto.randomUUID();
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'user-management-fallback-id',
-        message: 'Using fallback UUID for user - SALE WILL CONTINUE',
-        metadata: { 
-          fallbackUserId: newUserId,
-          email: payload.email,
-          reason: 'auth_creation_failed'
-        }
-      });
-    }
-
-    // ETAPA 4: Tentar criar perfil (com fallback em caso de erro)
+  // ETAPA 2: Se encontrou usuário Auth sem perfil, criar perfil
+  if (existingUserId) {
     try {
       await supabase
         .from('profiles')
         .insert({
-          id: newUserId,
+          id: existingUserId,
           name: payload.name,
           cpf: payload.cpf,
           email: payload.email,
           whatsapp: payload.whatsapp,
           access: [],
-          primeiro_acesso: true,
+          primeiro_acesso: false,
           has_changed_password: false,
           is_admin: false,
           created_at: new Date().toISOString()
@@ -238,48 +162,157 @@ async function handleUserManagementFailsafe(payload: RequestPayload, supabase: a
 
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'user-management-profile-created',
-        message: 'Profile created successfully',
+        context: 'user-management-profile-created-for-existing',
+        message: 'Profile created for existing Auth user',
         metadata: { 
-          userId: newUserId,
+          userId: existingUserId,
           email: payload.email
         }
       });
+
+      return { id: existingUserId, isExisting: true };
     } catch (profileError: any) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'user-management-profile-creation-failed',
-        message: 'CRITICAL: Profile creation failed but SALE WILL CONTINUE',
+        context: 'user-management-profile-creation-failed-existing',
+        message: 'Failed to create profile for existing Auth user - will continue with sale',
         metadata: { 
-          userId: newUserId,
-          email: payload.email,
+          userId: existingUserId,
           error: profileError.message,
-          errorCode: profileError.code,
-          customerData: {
-            name: payload.name,
-            email: payload.email,
-            cpf: payload.cpf,
-            whatsapp: payload.whatsapp
-          }
+          errorCode: profileError.code
         }
       });
-      // NÃO FALHAR - continuar com a venda
+      // CONTINUAR COM A VENDA usando o ID do Auth
+      return { id: existingUserId, isExisting: true };
     }
+  }
 
-    return { id: newUserId, isExisting: false };
+  // ETAPA 3: Criar novo usuário (ESTRATÉGIA BULLETPROOF)
+  let finalUserId: string;
+  let authCreated = false;
+  let profileCreated = false;
 
-  } catch (error: any) {
-    // ÚLTIMO RECURSO: Gerar ID único e continuar a venda
-    const fallbackUserId = crypto.randomUUID();
-    
+  // ETAPA 3A: Gerar ID único ANTES de qualquer criação
+  const uniqueUserId = crypto.randomUUID();
+  
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-new-user-start',
+    message: 'Creating new user with bulletproof strategy',
+    metadata: { 
+      email: payload.email,
+      generatedUserId: uniqueUserId
+    }
+  });
+
+  // ETAPA 3B: Tentar criar no Auth (não falhar se der erro)
+  try {
+    const { data: newAuthUser, error: authError } = await supabase.auth.admin.createUser({
+      email: payload.email,
+      password: payload.cpf,
+      email_confirm: true,
+      user_metadata: { 
+        name: payload.name, 
+        cpf: payload.cpf, 
+        whatsapp: payload.whatsapp,
+        created_via: 'checkout-bulletproof',
+        profile_id: uniqueUserId // Referência cruzada
+      },
+    });
+
+    if (authError) {
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'user-management-auth-creation-failed',
+        message: 'Auth creation failed but sale will continue with profile-only approach',
+        metadata: { 
+          email: payload.email,
+          generatedUserId: uniqueUserId,
+          error: authError.message,
+          errorCode: authError.code
+        }
+      });
+      // NÃO FALHAR - usar apenas o perfil
+      finalUserId = uniqueUserId;
+    } else if (newAuthUser?.user) {
+      finalUserId = newAuthUser.user.id;
+      authCreated = true;
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'user-management-auth-created',
+        message: 'Auth user created successfully',
+        metadata: { 
+          authUserId: finalUserId,
+          email: payload.email,
+          generatedUserId: uniqueUserId
+        }
+      });
+    } else {
+      finalUserId = uniqueUserId;
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'user-management-auth-no-user',
+        message: 'Auth creation returned no user - using generated ID',
+        metadata: { 
+          email: payload.email,
+          generatedUserId: uniqueUserId
+        }
+      });
+    }
+  } catch (authException: any) {
+    finalUserId = uniqueUserId;
+    await supabase.from('logs').insert({
+      level: 'warning',
+      context: 'user-management-auth-exception',
+      message: 'Auth creation threw exception - using generated ID',
+      metadata: { 
+        email: payload.email,
+        generatedUserId: uniqueUserId,
+        error: authException.message
+      }
+    });
+  }
+
+  // ETAPA 3C: Criar perfil (SEMPRE com ID único)
+  try {
+    await supabase
+      .from('profiles')
+      .insert({
+        id: finalUserId, // Usar o ID final (Auth ou gerado)
+        name: payload.name,
+        cpf: payload.cpf,
+        email: payload.email,
+        whatsapp: payload.whatsapp,
+        access: [],
+        primeiro_acesso: true,
+        has_changed_password: false,
+        is_admin: false,
+        created_at: new Date().toISOString()
+      });
+
+    profileCreated = true;
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'user-management-profile-created',
+      message: 'Profile created successfully with bulletproof strategy',
+      metadata: { 
+        userId: finalUserId,
+        email: payload.email,
+        authCreated,
+        profileCreated: true
+      }
+    });
+  } catch (profileError: any) {
     await supabase.from('logs').insert({
       level: 'error',
-      context: 'user-management-total-failure',
-      message: 'CRITICAL: Complete user management failure - using emergency fallback',
+      context: 'user-management-profile-creation-failed',
+      message: 'CRITICAL: Profile creation failed - SALE WILL STILL CONTINUE',
       metadata: { 
-        fallbackUserId,
+        userId: finalUserId,
         email: payload.email,
-        error: error.message,
+        error: profileError.message,
+        errorCode: profileError.code,
+        authCreated,
         customerData: {
           name: payload.name,
           email: payload.email,
@@ -288,9 +321,23 @@ async function handleUserManagementFailsafe(payload: RequestPayload, supabase: a
         }
       }
     });
-
-    return { id: fallbackUserId, isExisting: false };
+    // NÃO FALHAR - continuar com a venda mesmo sem perfil
   }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-bulletproof-complete',
+    message: 'Bulletproof user management completed - sale will proceed',
+    metadata: { 
+      userId: finalUserId,
+      email: payload.email,
+      authCreated,
+      profileCreated,
+      strategy: 'bulletproof'
+    }
+  });
+
+  return { id: finalUserId, isExisting: false };
 }
 
 // ==================== ORDER SERVICE ====================
@@ -521,11 +568,11 @@ async function applyCoupon(couponCode: string | undefined, originalTotal: number
   }
 }
 
-async function createOrderFailsafe(userId: string, productIds: string[], totalPrice: number, metaTrackingData: any, req: Request, supabase: any): Promise<OrderData> {
+async function createOrderBulletproof(userId: string, productIds: string[], totalPrice: number, metaTrackingData: any, req: Request, supabase: any): Promise<OrderData> {
   await supabase.from('logs').insert({
     level: 'info',
-    context: 'order-creation-failsafe-start',
-    message: 'Starting FAILSAFE order creation - order WILL be created',
+    context: 'order-creation-bulletproof-start',
+    message: 'Starting BULLETPROOF order creation - order WILL be created',
     metadata: { 
       userId,
       productIds,
@@ -543,10 +590,10 @@ async function createOrderFailsafe(userId: string, productIds: string[], totalPr
     client_user_agent: clientUserAgent,
   };
 
-  // Tentar criar o pedido com retry
+  // Tentar criar o pedido com retry e fallback
   let order: OrderData | null = null;
   let orderAttempts = 0;
-  const maxOrderAttempts = 3;
+  const maxOrderAttempts = 5;
 
   while (orderAttempts < maxOrderAttempts && !order) {
     orderAttempts++;
@@ -580,7 +627,7 @@ async function createOrderFailsafe(userId: string, productIds: string[], totalPr
         });
 
         if (orderAttempts < maxOrderAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1000 * orderAttempts)); // Backoff exponencial
           continue;
         }
         
@@ -946,7 +993,7 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-start',
-      message: 'FAILSAFE Payment creation process started - SALE WILL NOT BE LOST',
+      message: 'BULLETPROOF Payment creation process started - ZERO SALES LOST',
       metadata: { 
         paymentMethod: requestBody.paymentMethod,
         hasProductIds: !!requestBody.productIds,
@@ -967,12 +1014,12 @@ serve(async (req) => {
     // ETAPA 3: Aplicar cupom (não falhar se der erro)
     const { finalTotal, couponData } = await applyCoupon(validatedPayload.coupon_code, originalTotal, supabase);
 
-    // ETAPA 4: Gerenciar usuário (FAILSAFE - nunca falha)
-    const userData = await handleUserManagementFailsafe(validatedPayload, supabase);
+    // ETAPA 4: Gerenciar usuário (BULLETPROOF - nunca falha)
+    const userData = await handleUserManagementBulletproof(validatedPayload, supabase);
     userId = userData.id;
 
-    // ETAPA 5: Criar pedido (FAILSAFE - com retry)
-    const order = await createOrderFailsafe(userId, validatedPayload.productIds, finalTotal, validatedPayload.metaTrackingData, req, supabase);
+    // ETAPA 5: Criar pedido (BULLETPROOF - com retry)
+    const order = await createOrderBulletproof(userId, validatedPayload.productIds, finalTotal, validatedPayload.metaTrackingData, req, supabase);
     orderId = order.id;
 
     // ETAPA 6: Processar pagamento (PRIORIDADE MÁXIMA)
@@ -992,7 +1039,7 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-success',
-      message: 'FAILSAFE Payment creation process completed successfully - SALE SECURED',
+      message: 'BULLETPROOF Payment creation process completed successfully - SALE SECURED',
       metadata: { 
         orderId,
         userId,
