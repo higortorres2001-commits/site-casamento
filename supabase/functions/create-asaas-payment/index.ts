@@ -56,14 +56,65 @@ async function validateRequestData(requestBody: any, supabase: any) {
   }
 
   // Validação específica para cartão de crédito
-  if (paymentMethod === 'CREDIT_CARD' && !creditCard) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'create-payment-validation-error',
-      message: 'Credit card data missing for CREDIT_CARD payment',
-      metadata: { paymentMethod, hasCreditCard: !!creditCard }
-    });
-    throw new Error('Dados do cartão de crédito são obrigatórios para pagamento com cartão');
+  if (paymentMethod === 'CREDIT_CARD') {
+    if (!creditCard) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-payment-validation-error',
+        message: 'Credit card data missing for CREDIT_CARD payment',
+        metadata: { paymentMethod, hasCreditCard: !!creditCard }
+      });
+      throw new Error('Dados do cartão de crédito são obrigatórios para pagamento com cartão');
+    }
+
+    // Validar campos específicos do cartão
+    const creditCardMissingFields = [];
+    if (!creditCard.holderName) creditCardMissingFields.push('holderName');
+    if (!creditCard.cardNumber) creditCardMissingFields.push('cardNumber');
+    if (!creditCard.expiryMonth) creditCardMissingFields.push('expiryMonth');
+    if (!creditCard.expiryYear) creditCardMissingFields.push('expiryYear');
+    if (!creditCard.ccv) creditCardMissingFields.push('ccv');
+    if (!creditCard.postalCode) creditCardMissingFields.push('postalCode');
+    if (!creditCard.addressNumber) creditCardMissingFields.push('addressNumber');
+
+    if (creditCardMissingFields.length > 0) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-payment-validation-error',
+        message: 'Missing credit card fields',
+        metadata: { 
+          missingCreditCardFields: creditCardMissingFields,
+          receivedCreditCardFields: Object.keys(creditCard || {})
+        }
+      });
+      throw new Error(`Campos do cartão obrigatórios ausentes: ${creditCardMissingFields.join(', ')}`);
+    }
+
+    // Validar formato dos campos do cartão
+    const cardNumber = creditCard.cardNumber.replace(/\s/g, '');
+    if (cardNumber.length < 13 || cardNumber.length > 19) {
+      throw new Error('Número do cartão inválido');
+    }
+
+    const expiryMonth = creditCard.expiryMonth.padStart(2, '0');
+    const expiryYear = creditCard.expiryYear;
+    
+    if (!/^\d{2}$/.test(expiryMonth) || parseInt(expiryMonth) < 1 || parseInt(expiryMonth) > 12) {
+      throw new Error('Mês de expiração inválido');
+    }
+
+    if (!/^\d{2}$/.test(expiryYear)) {
+      throw new Error('Ano de expiração inválido');
+    }
+
+    if (creditCard.ccv.length < 3 || creditCard.ccv.length > 4) {
+      throw new Error('CVV inválido');
+    }
+
+    const postalCode = creditCard.postalCode.replace(/\D/g, '');
+    if (postalCode.length !== 8) {
+      throw new Error('CEP inválido');
+    }
   }
 
   await supabase.from('logs').insert({
@@ -385,12 +436,37 @@ async function processPixPayment(order: any, customerData: any, supabase: any) {
 
 // Função para processar pagamento com cartão
 async function processCreditCardPayment(order: any, customerData: any, creditCardData: any, clientIpAddress: string, supabase: any) {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'credit-card-payment-start',
+    message: 'Starting credit card payment processing',
+    metadata: { 
+      orderId: order.id,
+      totalPrice: order.total_price,
+      installmentCount: creditCardData.installmentCount || 1,
+      hasCardNumber: !!creditCardData.cardNumber,
+      hasHolderName: !!creditCardData.holderName,
+      hasExpiryMonth: !!creditCardData.expiryMonth,
+      hasExpiryYear: !!creditCardData.expiryYear,
+      hasCcv: !!creditCardData.ccv,
+      hasPostalCode: !!creditCardData.postalCode,
+      hasAddressNumber: !!creditCardData.addressNumber
+    }
+  });
+
   const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
   const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
 
   if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
     throw new Error('Configuração de pagamento não encontrada');
   }
+
+  // Limpar e formatar dados do cartão
+  const cardNumber = creditCardData.cardNumber.replace(/\s/g, '');
+  const expiryMonth = creditCardData.expiryMonth.padStart(2, '0');
+  const expiryYear = creditCardData.expiryYear;
+  const ccv = creditCardData.ccv;
+  const postalCode = creditCardData.postalCode.replace(/\D/g, '');
 
   const asaasPayload: any = {
     customer: {
@@ -405,17 +481,17 @@ async function processCreditCardPayment(order: any, customerData: any, creditCar
     billingType: 'CREDIT_CARD',
     creditCard: {
       holderName: creditCardData.holderName,
-      number: creditCardData.cardNumber.replace(/\s/g, ''),
-      expiryMonth: creditCardData.expiryMonth,
-      expiryYear: creditCardData.expiryYear,
-      ccv: creditCardData.ccv,
+      number: cardNumber,
+      expiryMonth: expiryMonth,
+      expiryYear: expiryYear,
+      ccv: ccv,
     },
     creditCardHolderInfo: {
       name: customerData.name,
       email: customerData.email,
       cpfCnpj: customerData.cpf,
       phone: customerData.whatsapp,
-      postalCode: creditCardData.postalCode.replace(/\D/g, ''),
+      postalCode: postalCode,
       addressNumber: creditCardData.addressNumber,
     },
     remoteIp: clientIpAddress,
@@ -426,6 +502,23 @@ async function processCreditCardPayment(order: any, customerData: any, creditCar
     asaasPayload.installmentCount = creditCardData.installmentCount;
     asaasPayload.installmentValue = parseFloat((order.total_price / creditCardData.installmentCount).toFixed(2));
   }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'credit-card-payment-payload',
+    message: 'Prepared credit card payment payload',
+    metadata: { 
+      orderId: order.id,
+      value: asaasPayload.value,
+      installmentCount: asaasPayload.installmentCount || 1,
+      installmentValue: asaasPayload.installmentValue || asaasPayload.value,
+      cardNumberLength: cardNumber.length,
+      expiryMonth,
+      expiryYear,
+      ccvLength: ccv.length,
+      postalCodeLength: postalCode.length
+    }
+  });
 
   const asaasHeaders = {
     'Content-Type': 'application/json',
@@ -440,10 +533,35 @@ async function processCreditCardPayment(order: any, customerData: any, creditCar
 
   if (!asaasResponse.ok) {
     const errorData = await asaasResponse.json();
-    throw new Error('Erro ao processar pagamento com cartão: ' + (errorData.message || 'Erro na comunicação com gateway'));
+    
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'credit-card-payment-asaas-error',
+      message: 'Asaas API returned error for credit card payment',
+      metadata: { 
+        orderId: order.id,
+        httpStatus: asaasResponse.status,
+        httpStatusText: asaasResponse.statusText,
+        asaasError: errorData
+      }
+    });
+
+    throw new Error('Erro ao processar pagamento com cartão: ' + (errorData.message || errorData.description || 'Erro na comunicação com gateway'));
   }
 
   const paymentData = await asaasResponse.json();
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'credit-card-payment-success',
+    message: 'Credit card payment processed successfully',
+    metadata: { 
+      orderId: order.id,
+      asaasPaymentId: paymentData.id,
+      status: paymentData.status,
+      authorizationCode: paymentData.authorizationCode
+    }
+  });
 
   // Atualizar pedido com ID do pagamento
   await supabase
@@ -481,7 +599,8 @@ serve(async (req) => {
         paymentMethod: requestBody.paymentMethod,
         hasProductIds: !!requestBody.productIds,
         productCount: requestBody.productIds?.length || 0,
-        hasCoupon: !!requestBody.coupon_code
+        hasCoupon: !!requestBody.coupon_code,
+        hasCreditCard: !!requestBody.creditCard
       }
     });
 
@@ -553,7 +672,8 @@ serve(async (req) => {
         orderId,
         asaasPaymentId,
         paymentMethod: requestBody?.paymentMethod,
-        requestBodyKeys: requestBody ? Object.keys(requestBody) : []
+        requestBodyKeys: requestBody ? Object.keys(requestBody) : [],
+        hasCreditCard: !!(requestBody?.creditCard)
       }
     });
 
@@ -572,6 +692,16 @@ serve(async (req) => {
       userFriendlyMessage = 'Erro ao processar seus dados. Verifique as informações e tente novamente.';
     } else if (error.message.includes('Erro ao criar pagamento') || error.message.includes('Erro ao processar pagamento')) {
       userFriendlyMessage = 'Erro no processamento do pagamento. Verifique os dados do cartão e tente novamente.';
+    } else if (error.message.includes('Número do cartão inválido')) {
+      userFriendlyMessage = 'Número do cartão inválido. Verifique os dados e tente novamente.';
+    } else if (error.message.includes('Mês de expiração inválido')) {
+      userFriendlyMessage = 'Mês de expiração do cartão inválido.';
+    } else if (error.message.includes('Ano de expiração inválido')) {
+      userFriendlyMessage = 'Ano de expiração do cartão inválido.';
+    } else if (error.message.includes('CVV inválido')) {
+      userFriendlyMessage = 'CVV do cartão inválido.';
+    } else if (error.message.includes('CEP inválido')) {
+      userFriendlyMessage = 'CEP inválido. Use o formato XXXXX-XXX.';
     }
 
     return new Response(JSON.stringify({ 
