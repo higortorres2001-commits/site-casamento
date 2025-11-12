@@ -1,439 +1,443 @@
-"use client";
-
-import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XCircle, Eye } from "lucide-react";
-import { showError, showSuccess } from "@/utils/toast";
-import { useSession } from "@/components/SessionContextProvider";
-import LogMetadataModal from "@/components/admin/LogMetadataModal";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Search, Filter, User, ShoppingCart, CreditCard, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 
-export type Log = {
+interface Log {
   id: string;
   created_at: string;
-  level: "info" | "error" | "warning";
+  level: string;
   context: string;
   message: string;
   metadata: any;
-};
+}
 
-const Logs = () => {
-  const { user, isLoading: isSessionLoading } = useSession();
+interface UserJourney {
+  email: string;
+  userId: string;
+  logs: Log[];
+  timeline: TimelineEvent[];
+  status: 'success' | 'error' | 'warning' | 'processing';
+}
+
+interface TimelineEvent {
+  timestamp: string;
+  event: string;
+  context: string;
+  message: string;
+  level: string;
+  metadata: any;
+}
+
+export default function Logs() {
   const [logs, setLogs] = useState<Log[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [contextFilter, setContextFilter] = useState<string>("all");
-  const [searchFilter, setSearchFilter] = useState<string>("");
-  const [dateFilter, setDateFilter] = useState<string>("all");
-  const [availableContexts, setAvailableContexts] = useState<string[]>([]);
-  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [userJourneys, setUserJourneys] = useState<UserJourney[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchEmail, setSearchEmail] = useState("");
+  const [selectedContext, setSelectedContext] = useState<string>("all");
+  const [selectedLevel, setSelectedLevel] = useState<string>("all");
+  const [refreshing, setRefreshing] = useState(false);
 
-  const isAdmin = user?.email === "higor.torres8@gmail.com";
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
-  const cleanupOldLogs = useCallback(async () => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    const { error } = await supabase
-      .from("logs")
-      .delete()
-      .lt("created_at", cutoff.toISOString());
-    if (error) {
-      console.error("Error cleaning old logs:", error);
+      if (error) throw error;
+      setLogs(data || []);
+      processUserJourneys(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar logs:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  };
 
-  const fetchAvailableContexts = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("logs")
-      .select("context")
-      .order("context");
+  const processUserJourneys = (logsData: Log[]) => {
+    const userMap = new Map<string, UserJourney>();
     
-    if (error) {
-      console.error("Error fetching distinct contexts:", error);
-    } else {
-      const uniqueContexts = [...new Set(data?.map((item) => item.context))].sort();
-      setAvailableContexts(uniqueContexts);
-    }
-  }, []);
-
-  const fetchLogs = useCallback(async () => {
-    setIsLoading(true);
-    let query = supabase.from("logs").select("*").order("created_at", { ascending: false });
-
-    // Aplicar filtros
-    if (levelFilter !== "all") {
-      query = query.eq("level", levelFilter);
-    }
-    if (contextFilter !== "all") {
-      query = query.eq("context", contextFilter);
-    }
-    if (searchFilter.trim()) {
-      query = query.or(`message.ilike.%${searchFilter}%,context.ilike.%${searchFilter}%`);
-    }
-    if (dateFilter !== "all") {
-      const now = new Date();
-      let cutoff = new Date();
+    logsData.forEach(log => {
+      const email = extractEmailFromLog(log);
+      const userId = extractUserIdFromLog(log);
       
-      switch (dateFilter) {
-        case "1h":
-          cutoff.setHours(now.getHours() - 1);
-          break;
-        case "24h":
-          cutoff.setDate(now.getDate() - 1);
-          break;
-        case "7d":
-          cutoff.setDate(now.getDate() - 7);
-          break;
-        case "30d":
-          cutoff.setDate(now.getDate() - 30);
-          break;
-      }
-      
-      if (dateFilter !== "all") {
-        query = query.gte("created_at", cutoff.toISOString());
-      }
-    }
-
-    const { data, error } = await query.limit(1000);
-
-    if (error) {
-      showError("Erro ao carregar logs: " + error.message);
-      console.error("Error fetching logs:", error);
-      setLogs([]);
-    } else {
-      // Sanitize metadata: remove internal_tag if present
-      const sanitized = (data || []).map((log: Log) => {
-        if (log.metadata && typeof log.metadata === "object") {
-          const { internal_tag, ...rest } = log.metadata;
-          return { ...log, metadata: rest };
+      if (email || userId) {
+        const key = email || userId;
+        if (!userMap.has(key!)) {
+          userMap.set(key!, {
+            email: email || 'Email não identificado',
+            userId: userId || 'ID não identificado',
+            logs: [],
+            timeline: [],
+            status: 'processing'
+          });
         }
-        return log;
-      });
-      setLogs(sanitized);
-    }
+        
+        const journey = userMap.get(key!)!;
+        journey.logs.push(log);
+        
+        // Criar evento da timeline
+        const event: TimelineEvent = {
+          timestamp: log.created_at,
+          event: getEventType(log.context),
+          context: log.context,
+          message: log.message,
+          level: log.level,
+          metadata: log.metadata
+        };
+        
+        journey.timeline.push(event);
+      }
+    });
 
-    setIsLoading(false);
-  }, [levelFilter, contextFilter, searchFilter, dateFilter]);
+    // Ordenar timeline por timestamp e determinar status final
+    userMap.forEach(journey => {
+      journey.timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      journey.status = determineJourneyStatus(journey);
+    });
 
-  useEffect(() => {
-    if (isAdmin) {
-      cleanupOldLogs();
-    }
-  }, [cleanupOldLogs, isAdmin]);
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchAvailableContexts();
-    }
-  }, [isAdmin, fetchAvailableContexts]);
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchLogs();
-    }
-  }, [isAdmin, fetchLogs]);
-
-  const handleClearLogs = async () => {
-    if (!isAdmin) {
-      showError("Você não tem permissão para limpar os logs.");
-      return;
-    }
-    if (!window.confirm("Tem certeza que deseja apagar TODOS os logs? Esta ação é irreversível.")) {
-      return;
-    }
-
-    setIsLoading(true);
-    const { error } = await supabase
-      .from("logs")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000");
-    if (error) {
-      showError("Erro ao limpar logs: " + error.message);
-      console.error("Error clearing logs:", error);
-    } else {
-      showSuccess("Logs limpos com sucesso!");
-      fetchLogs();
-    }
-    setIsLoading(false);
+    setUserJourneys(Array.from(userMap.values()));
   };
 
-  const exportLogs = () => {
-    const csvContent = [
-      ["Data/Hora", "Nível", "Contexto", "Mensagem", "Metadados"].join(","),
-      ...logs.map(log => [
-        new Date(log.created_at).toLocaleString(),
-        log.level,
-        log.context,
-        `"${log.message.replace(/"/g, '""')}"`,
-        `"${JSON.stringify(log.metadata).replace(/"/g, '""')}"`
-      ].join(","))
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `logs-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const openLogModal = (log: Log) => {
-    setSelectedLog(log);
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setSelectedLog(null);
-  };
-
-  const getLevelIcon = (level: string) => {
-    switch (level) {
-      case "error":
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      case "warning":
-        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
-      case "info":
-      default:
-        return <Info className="h-4 w-4 text-blue-500" />;
+  const extractEmailFromLog = (log: Log): string | null => {
+    if (log.metadata?.email) return log.metadata.email;
+    if (log.metadata?.requestBody?.email) return log.metadata.requestBody.email;
+    if (log.message?.includes('@')) {
+      const emailMatch = log.message.match(/\S+@\S+\.\S+/);
+      return emailMatch ? emailMatch[0] : null;
     }
+    return null;
+  };
+
+  const extractUserIdFromLog = (log: Log): string | null => {
+    if (log.metadata?.userId) return log.metadata.userId;
+    if (log.metadata?.adminUserId) return log.metadata.adminUserId;
+    if (log.metadata?.userIdToUpdate) return log.metadata.userIdToUpdate;
+    if (log.metadata?.userIdToDelete) return log.metadata.userIdToDelete;
+    return null;
+  };
+
+  const getEventType = (context: string): string => {
+    const eventMap: Record<string, string> = {
+      'create-asaas-payment': 'Início do Pagamento',
+      'user-management': 'Gerenciamento de Usuário',
+      'product-validation': 'Validação de Produto',
+      'coupon-application': 'Aplicação de Cupom',
+      'order-creation': 'Criação de Pedido',
+      'pix-payment': 'Pagamento PIX',
+      'credit-card-payment': 'Pagamento Cartão',
+      'asaas-webhook': 'Webhook Asaas',
+      'admin-update-user': 'Atualização Admin',
+      'admin-delete-user': 'Exclusão Admin',
+      'reset-user-password': 'Redefinição Senha',
+      'check-user-exists': 'Verificação Usuário',
+      'create-customer': 'Criação Cliente'
+    };
+    
+    return eventMap[context] || context;
+  };
+
+  const determineJourneyStatus = (journey: UserJourney): 'success' | 'error' | 'warning' | 'processing' => {
+    const hasError = journey.logs.some(log => log.level === 'error');
+    const hasSuccess = journey.logs.some(log => 
+      log.context === 'asaas-webhook' && 
+      log.message.includes('processed successfully')
+    );
+    
+    if (hasError) return 'error';
+    if (hasSuccess) return 'success';
+    if (journey.logs.some(log => log.level === 'warning')) return 'warning';
+    return 'processing';
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants = {
+      success: { color: "bg-green-100 text-green-800", icon: CheckCircle },
+      error: { color: "bg-red-100 text-red-800", icon: AlertCircle },
+      warning: { color: "bg-yellow-100 text-yellow-800", icon: AlertCircle },
+      processing: { color: "bg-blue-100 text-blue-800", icon: RefreshCw }
+    };
+    
+    const variant = variants[status as keyof typeof variants] || variants.processing;
+    const IconComponent = variant.icon;
+    
+    return (
+      <Badge className={`${variant.color} flex items-center gap-1`}>
+        <IconComponent className="h-3 w-3" />
+        {status === 'success' ? 'Concluído' : 
+         status === 'error' ? 'Erro' :
+         status === 'warning' ? 'Atenção' : 'Processando'}
+      </Badge>
+    );
   };
 
   const getLevelBadge = (level: string) => {
-    switch (level) {
-      case "error":
-        return <Badge className="bg-red-100 text-red-800 border-red-200">ERRO</Badge>;
-      case "warning":
-        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">AVISO</Badge>;
-      case "info":
-      default:
-        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">INFO</Badge>;
-    }
+    const colors = {
+      error: "bg-red-100 text-red-800",
+      warning: "bg-yellow-100 text-yellow-800",
+      info: "bg-blue-100 text-blue-800"
+    };
+    
+    return (
+      <Badge className={colors[level as keyof typeof colors] || "bg-gray-100 text-gray-800"}>
+        {level}
+      </Badge>
+    );
   };
 
-  const getContextColor = (context: string) => {
-    if (context.includes("login") || context.includes("auth")) return "text-purple-700 bg-purple-50";
-    if (context.includes("payment") || context.includes("asaas")) return "text-green-700 bg-green-50";
-    if (context.includes("user") || context.includes("customer")) return "text-blue-700 bg-blue-50";
-    if (context.includes("checkout")) return "text-orange-700 bg-orange-50";
-    return "text-gray-700 bg-gray-50";
-  };
+  const filteredJourneys = userJourneys.filter(journey => {
+    const emailMatch = journey.email.toLowerCase().includes(searchEmail.toLowerCase());
+    const contextMatch = selectedContext === "all" || 
+      journey.logs.some(log => log.context === selectedContext);
+    const levelMatch = selectedLevel === "all" || 
+      journey.logs.some(log => log.level === selectedLevel);
+    
+    return emailMatch && contextMatch && levelMatch;
+  });
 
-  if (isSessionLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    fetchLogs();
+  }, []);
 
-  if (!isAdmin) {
-    return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <Card className="max-w-md p-6 text-center">
-          <p className="text-sm text-slate-600">
-            Você não tem permissão para visualizar os logs.
-          </p>
-        </Card>
-      </div>
-    );
-  }
+  const contexts = [...new Set(logs.map(log => log.context))];
+  const levels = [...new Set(logs.map(log => log.level))];
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold">Logs do Sistema</h1>
-          <Badge variant="outline">{logs.length} registros</Badge>
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Logs do Sistema</h1>
+          <p className="text-muted-foreground">
+            Monitoramento da jornada dos usuários no checkout
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={exportLogs} className="flex items-center gap-2">
-            <Download className="h-4 w-4" /> Exportar CSV
-          </Button>
-          <Button variant="destructive" onClick={handleClearLogs} disabled={isLoading} className="flex items-center gap-2">
-            <Trash2 className="h-4 w-4" /> Limpar Logs
-          </Button>
-        </div>
+        <Button 
+          onClick={() => {
+            setRefreshing(true);
+            fetchLogs();
+          }}
+          disabled={refreshing}
+          variant="outline"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          Atualizar
+        </Button>
       </div>
 
-      {/* Filtros Avançados */}
-      <Card className="mb-6">
+      {/* Filtros */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Filtros</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filtros
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                <Input
-                  placeholder="Buscar em mensagens ou contexto..."
-                  className="pl-9"
-                  value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
-                />
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Buscar por E-mail</label>
+              <Input
+                placeholder="Digite o e-mail..."
+                value={searchEmail}
+                onChange={(e) => setSearchEmail(e.target.value)}
+                className="w-full"
+              />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nível</label>
-              <Select value={levelFilter} onValueChange={setLevelFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos os níveis" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os níveis</SelectItem>
-                  <SelectItem value="error">Erros</SelectItem>
-                  <SelectItem value="warning">Avisos</SelectItem>
-                  <SelectItem value="info">Informações</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contexto</label>
-              <Select value={contextFilter} onValueChange={setContextFilter}>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Contexto</label>
+              <Select value={selectedContext} onValueChange={setSelectedContext}>
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os contextos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os contextos</SelectItem>
-                  {availableContexts.map((ctx) => (
-                    <SelectItem key={ctx} value={ctx}>
-                      {ctx}
+                  {contexts.map(context => (
+                    <SelectItem key={context} value={context}>
+                      {getEventType(context)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Período</label>
-              <Select value={dateFilter} onValueChange={setDateFilter}>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nível</label>
+              <Select value={selectedLevel} onValueChange={setSelectedLevel}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Todo o período" />
+                  <SelectValue placeholder="Todos os níveis" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todo o período</SelectItem>
-                  <SelectItem value="1h">Última hora</SelectItem>
-                  <SelectItem value="24h">Últimas 24h</SelectItem>
-                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
-                  <SelectItem value="30d">Últimos 30 dias</SelectItem>
+                  <SelectItem value="all">Todos os níveis</SelectItem>
+                  {levels.map(level => (
+                    <SelectItem key={level} value={level}>
+                      {level.charAt(0).toUpperCase() + level.slice(1)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
-
-          <div className="flex justify-end">
-            <Button onClick={fetchLogs} disabled={isLoading} className="flex items-center gap-2">
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              Aplicar Filtros
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
-      {/* Tabela de Logs */}
+      {/* Resumo */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Total de Jornadas</p>
+                <p className="text-2xl font-bold">{userJourneys.length}</p>
+              </div>
+              <User className="h-8 w-8 text-blue-500" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Concluídas</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {userJourneys.filter(j => j.status === 'success').length}
+                </p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Com Erros</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {userJourneys.filter(j => j.status === 'error').length}
+                </p>
+              </div>
+              <AlertCircle className="h-8 w-8 text-red-500" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Processando</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {userJourneys.filter(j => j.status === 'processing').length}
+                </p>
+              </div>
+              <RefreshCw className="h-8 w-8 text-blue-500" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Lista de Jornadas */}
       <Card>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" />
+            Jornadas dos Usuários
+          </CardTitle>
+          <CardDescription>
+            Linha do tempo completa de cada usuário no processo de checkout
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin" />
+            </div>
+          ) : filteredJourneys.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Nenhuma jornada encontrada com os filtros aplicados</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="bg-gray-50 sticky top-0 z-10">
-                  <TableRow>
-                    <TableHead className="w-24">Data/Hora</TableHead>
-                    <TableHead className="w-20">Nível</TableHead>
-                    <TableHead className="w-32">Contexto</TableHead>
-                    <TableHead className="min-w-[300px]">Mensagem</TableHead>
-                    <TableHead className="w-24 text-center">Metadados</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {logs.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center text-gray-500">
-                        Nenhum log encontrado com os filtros aplicados.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    logs.map((log) => (
-                      <TableRow key={log.id} className="hover:bg-gray-50">
-                        <TableCell className="text-xs">
-                          {new Date(log.created_at).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getLevelIcon(log.level)}
-                            {getLevelBadge(log.level)}
+            <div className="space-y-6">
+              {filteredJourneys.map((journey, index) => (
+                <Card key={index} className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <User className="h-5 w-5" />
+                          {journey.email}
+                          {getStatusBadge(journey.status)}
+                        </CardTitle>
+                        <CardDescription>
+                          User ID: {journey.userId} • 
+                          {journey.logs.length} eventos • 
+                          Última atualização: {format(new Date(journey.timeline[journey.timeline.length - 1]?.timestamp || new Date()), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {journey.timeline.map((event, eventIndex) => (
+                        <div key={eventIndex} className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-3 h-3 rounded-full ${
+                              event.level === 'error' ? 'bg-red-500' :
+                              event.level === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
+                            }`} />
+                            {eventIndex < journey.timeline.length - 1 && (
+                              <div className={`w-0.5 h-8 ${
+                                event.level === 'error' ? 'bg-red-200' :
+                                event.level === 'warning' ? 'bg-yellow-200' : 'bg-blue-200'
+                              }`} />
+                            )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            className={`text-xs ${getContextColor(log.context)}`}
-                            variant="outline"
-                          >
-                            {log.context}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm max-w-xs">
-                          <div className="truncate" title={log.message}>
-                            {log.message}
+                          <div className="flex-1 pb-4">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-medium">{event.event}</span>
+                              <div className="flex items-center gap-2">
+                                {getLevelBadge(event.level)}
+                                <span className="text-xs text-muted-foreground">
+                                  {format(new Date(event.timestamp), "dd/MM HH:mm", { locale: ptBR })}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">{event.message}</p>
+                            {event.metadata && Object.keys(event.metadata).length > 0 && (
+                              <details className="text-xs">
+                                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                  Detalhes do evento
+                                </summary>
+                                <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(event.metadata, null, 2)}
+                                </pre>
+                              </details>
+                            )}
                           </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openLogModal(log)}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Ver metadados"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </CardContent>
       </Card>
-
-      {/* Modal de Metadados */}
-      <LogMetadataModal
-        open={isModalOpen}
-        onClose={closeModal}
-        log={selectedLog}
-      />
     </div>
   );
-};
-
-export default Logs;
+}
