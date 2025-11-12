@@ -1,27 +1,26 @@
 import { RequestPayload, UserData } from './types.ts';
 
-// Função para gerenciar usuário (existente ou novo)
+// Função para gerenciar usuário (existente ou novo) - SEMPRE cria Auth+Profile no checkout
 export async function handleUserManagement(payload: RequestPayload, supabase: any): Promise<UserData> {
   await supabase.from('logs').insert({
     level: 'info',
     context: 'user-management-start',
-    message: 'Starting user management process',
+    message: 'Starting user management process (checkout flow)',
     metadata: { 
       email: payload.email,
-      cpfLength: payload.cpf.length
+      cpfLength: payload.cpf.length,
+      flow: 'checkout'
     }
   });
 
-  // Verificar se usuário já existe
-  const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers({ 
-    email: payload.email 
-  });
+  // ETAPA 1: Verificar se usuário já existe no Auth
+  const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
 
   if (listUsersError) {
     await supabase.from('logs').insert({
       level: 'error',
       context: 'user-management-lookup-error',
-      message: 'Failed to check for existing user',
+      message: 'Failed to list users from Auth',
       metadata: { 
         email: payload.email,
         error: listUsersError.message,
@@ -31,13 +30,13 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
     throw new Error('Erro ao verificar usuário existente: ' + listUsersError.message);
   }
 
-  const existingUser = existingUsers.users && existingUsers.users.length > 0 ? existingUsers.users[0] : null;
+  const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === payload.email.toLowerCase());
 
   if (existingUser) {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'user-management-existing-found',
-      message: 'Existing user found, updating profile',
+      message: 'Existing user found in Auth, updating profile',
       metadata: { 
         userId: existingUser.id,
         email: payload.email,
@@ -45,7 +44,7 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
       }
     });
 
-    // Atualizar perfil do usuário existente
+    // ETAPA 2A: Atualizar perfil do usuário existente (sem tocar no access)
     const { error: updateProfileError } = await supabase
       .from('profiles')
       .update({ 
@@ -61,14 +60,13 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'user-management-profile-update-error',
-        message: 'Failed to update existing user profile, but continuing with payment',
+        message: 'Failed to update existing user profile, but continuing',
         metadata: { 
           userId: existingUser.id,
           error: updateProfileError.message,
           errorCode: updateProfileError.code
         }
       });
-      // Não falhar o processo - continuar com o pagamento
     } else {
       await supabase.from('logs').insert({
         level: 'info',
@@ -79,92 +77,109 @@ export async function handleUserManagement(payload: RequestPayload, supabase: an
     }
 
     return { id: existingUser.id, isExisting: true };
-  } else {
-    // Criar novo usuário
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-creating-new',
-      message: 'Creating new user account',
-      metadata: { 
-        email: payload.email,
-        cpfLength: payload.cpf.length
-      }
-    });
-
-    const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email: payload.email,
-      password: payload.cpf,
-      email_confirm: true,
-      user_metadata: { 
-        name: payload.name, 
-        cpf: payload.cpf, 
-        whatsapp: payload.whatsapp,
-        created_via: 'checkout'
-      },
-    });
-
-    if (createUserError || !newUser?.user) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'user-management-creation-error',
-        message: 'Failed to create new user account',
-        metadata: { 
-          email: payload.email,
-          error: createUserError?.message,
-          errorType: createUserError?.name,
-          errorCode: createUserError?.code
-        }
-      });
-      throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
-    }
-
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-user-created',
-      message: 'New user account created successfully',
-      metadata: { 
-        userId: newUser.user.id,
-        email: payload.email
-      }
-    });
-
-    // Criar perfil para o novo usuário
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: newUser.user.id,
-        name: payload.name,
-        cpf: payload.cpf,
-        email: payload.email,
-        whatsapp: payload.whatsapp,
-        access: [],
-        primeiro_acesso: true,
-        has_changed_password: false,
-        is_admin: false,
-        created_at: new Date().toISOString()
-      });
-
-    if (profileError) {
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'user-management-profile-creation-error',
-        message: 'Failed to create profile for new user, but user account was created',
-        metadata: { 
-          userId: newUser.user.id,
-          error: profileError.message,
-          errorCode: profileError.code
-        }
-      });
-      // Não falhar - o usuário foi criado no auth
-    } else {
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'user-management-profile-created',
-        message: 'Profile created successfully for new user',
-        metadata: { userId: newUser.user.id }
-      });
-    }
-
-    return { id: newUser.user.id, isExisting: false };
   }
+
+  // ETAPA 2B: Criar NOVO usuário (Auth + Profile) IMEDIATAMENTE
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-creating-new',
+    message: 'Creating new user account (Auth + Profile) in checkout flow',
+    metadata: { 
+      email: payload.email,
+      cpfLength: payload.cpf.length,
+      flow: 'checkout-immediate'
+    }
+  });
+
+  // Criar usuário no Auth
+  const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+    email: payload.email,
+    password: payload.cpf, // Senha = CPF (números)
+    email_confirm: true, // Email já confirmado
+    user_metadata: { 
+      name: payload.name, 
+      cpf: payload.cpf, 
+      whatsapp: payload.whatsapp,
+      created_via: 'checkout',
+      created_at_checkout: new Date().toISOString()
+    },
+  });
+
+  if (createUserError || !newUser?.user) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'user-management-auth-creation-error',
+      message: 'CRITICAL: Failed to create Auth user in checkout',
+      metadata: { 
+        email: payload.email,
+        error: createUserError?.message,
+        errorType: createUserError?.name,
+        errorCode: createUserError?.code,
+        flow: 'checkout'
+      }
+    });
+    throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
+  }
+
+  const userId = newUser.user.id;
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-auth-created',
+    message: 'Auth user created successfully in checkout',
+    metadata: { 
+      userId,
+      email: payload.email,
+      flow: 'checkout'
+    }
+  });
+
+  // Criar perfil IMEDIATAMENTE (sem acesso aos produtos ainda)
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({
+      id: userId,
+      name: payload.name,
+      cpf: payload.cpf,
+      email: payload.email,
+      whatsapp: payload.whatsapp,
+      access: [], // ⚠️ VAZIO - acesso será liberado pelo webhook
+      primeiro_acesso: true,
+      has_changed_password: false,
+      is_admin: false,
+      created_at: new Date().toISOString()
+    });
+
+  if (profileError) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'user-management-profile-creation-error',
+      message: 'CRITICAL: Failed to create profile for new user in checkout',
+      metadata: { 
+        userId,
+        email: payload.email,
+        error: profileError.message,
+        errorCode: profileError.code,
+        flow: 'checkout'
+      }
+    });
+    
+    // Tentar deletar o usuário do Auth para evitar inconsistência
+    await supabase.auth.admin.deleteUser(userId);
+    
+    throw new Error('Erro ao criar perfil do usuário: ' + profileError.message);
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-profile-created',
+    message: 'Profile created successfully for new user in checkout (access empty, will be granted by webhook)',
+    metadata: { 
+      userId,
+      email: payload.email,
+      flow: 'checkout'
+    }
+  });
+
+  return { id: userId, isExisting: false };
 }
