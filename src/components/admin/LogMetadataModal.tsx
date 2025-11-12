@@ -4,9 +4,10 @@ import React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X, Copy, CheckCircle, AlertTriangle, XCircle, Info, User, Mail, CreditCard, Package } from "lucide-react";
+import { X, Copy, AlertTriangle, XCircle, Info, User, Mail, CreditCard, Package } from "lucide-react";
 import { Log } from "@/pages/admin/Logs";
 import { showSuccess } from "@/utils/toast";
+import { Card, CardContent, CardHeader } from "@/components/ui/card"; // Added Card imports
 
 interface LogMetadataModalProps {
   open: boolean;
@@ -532,50 +533,6 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
       </DialogContent>
     </Dialog>
   );
-
-  function renderMetadataValue(value: any, key: string): React.ReactNode {
-    if (value === null || value === undefined) {
-      return <span className="text-gray-400 italic">N/A</span>;
-    }
-
-    if (typeof value === "object") {
-      return (
-        <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto">
-          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
-            {JSON.stringify(value, null, 2)}
-          </pre>
-        </div>
-      );
-    }
-
-    if (typeof value === "string") {
-      // Detectar se parece ser JSON
-      if (value.startsWith("{") || value.startsWith("[")) {
-        try {
-          const parsed = JSON.parse(value);
-          return renderMetadataValue(parsed, key);
-        } catch {
-          // Se não for JSON válido, exibir como string
-          return (
-            <div className="bg-gray-100 rounded p-2">
-              <code className="text-sm text-gray-800 break-all whitespace-pre-wrap">
-                {value}
-              </code>
-            </div>
-          );
-        }
-      }
-    }
-
-    // Para valores primitivos (string, number, boolean)
-    return (
-      <div className="bg-gray-50 rounded p-2">
-        <span className="text-sm text-gray-800 break-all whitespace-pre-wrap">
-          {String(value)}
-        </span>
-      </div>
-    );
-  }
 };
 
 export default LogMetadataModal;
