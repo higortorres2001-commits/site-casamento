@@ -20,6 +20,7 @@ import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 declare global {
   interface Window {
@@ -304,13 +305,11 @@ const Checkout = () => {
         payload.creditCard = creditCardData;
       }
 
-      console.log("🚀 Enviando payload com cupom:", {
-        coupon_code: appliedCoupon?.code || null,
-        coupon_applied: !!appliedCoupon,
-        coupon_value: appliedCoupon?.value,
-        coupon_type: appliedCoupon?.discount_type,
-        original_total: originalTotalPrice,
-        final_total: currentTotalPrice
+      console.log("🚀 Enviando payload para checkout:", {
+        paymentMethod,
+        productCount: productIds.length,
+        hasCoupon: !!appliedCoupon,
+        totalPrice: currentTotalPrice
       });
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
@@ -318,8 +317,29 @@ const Checkout = () => {
       });
 
       if (error) {
-        showError("Falha ao finalizar o checkout: " + error.message);
-        console.error("Edge function error:", error);
+        console.error("Edge function error details:", error);
+        
+        // Tratamento de erros mais específico
+        let errorMessage = "Erro ao processar pagamento. Tente novamente.";
+        
+        if (error.message) {
+          if (error.message.includes("FunctionsHttpError")) {
+            errorMessage = "Erro de comunicação com o servidor. Verifique sua conexão e tente novamente.";
+          } else if (error.message.includes("timeout")) {
+            errorMessage = "Tempo limite excedido. Tente novamente em alguns instantes.";
+          } else {
+            errorMessage = error.message;
+          }
+        }
+        
+        showError(errorMessage);
+        return;
+      }
+
+      // Verificar se há erro na resposta da função
+      if (data && data.error) {
+        console.error("Business logic error:", data);
+        showError(data.error);
         return;
       }
 
@@ -338,8 +358,18 @@ const Checkout = () => {
         }
       }
     } catch (err: any) {
-      showError("Erro inesperado: " + err.message);
       console.error("Checkout error:", err);
+      
+      // Tratamento de erros de rede
+      let errorMessage = "Erro inesperado. Tente novamente.";
+      
+      if (err.name === "TypeError" && err.message.includes("fetch")) {
+        errorMessage = "Erro de conexão. Verifique sua internet e tente novamente.";
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      showError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
