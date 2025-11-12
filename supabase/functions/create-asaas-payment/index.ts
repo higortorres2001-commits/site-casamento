@@ -1,15 +1,790 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { handleUserManagement } from '../_shared/user.service.ts';
-import { validateRequestData, validateProducts, applyCoupon, createOrder } from '../_shared/order.service.ts';
-import { processPixPayment, processCreditCardPayment } from '../_shared/asaas.service.ts';
 
+// ==================== TYPES ====================
+interface RequestPayload {
+  name: string;
+  email: string;
+  cpf: string;
+  whatsapp: string;
+  productIds: string[];
+  coupon_code?: string;
+  paymentMethod: 'PIX' | 'CREDIT_CARD';
+  creditCard?: any;
+  metaTrackingData?: any;
+}
+
+interface UserData {
+  id: string;
+  isExisting: boolean;
+}
+
+interface ProductData {
+  id: string;
+  name: string;
+  price: number;
+  status: string;
+}
+
+interface OrderData {
+  id: string;
+  user_id: string;
+  total_price: number;
+  status: string;
+}
+
+interface CouponData {
+  code: string;
+  discount_type: 'percentage' | 'fixed';
+  value: number;
+  active: boolean;
+}
+
+// ==================== USER SERVICE ====================
+async function handleUserManagement(payload: RequestPayload, supabase: any): Promise<UserData> {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-start',
+    message: 'Starting user management process (checkout flow)',
+    metadata: { 
+      email: payload.email,
+      cpfLength: payload.cpf.length,
+      flow: 'checkout'
+    }
+  });
+
+  // ETAPA 1: Verificar se usuário já existe no Auth
+  const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
+
+  if (listUsersError) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'user-management-lookup-error',
+      message: 'Failed to list users from Auth',
+      metadata: { 
+        email: payload.email,
+        error: listUsersError.message,
+        errorType: listUsersError.name
+      }
+    });
+    throw new Error('Erro ao verificar usuário existente: ' + listUsersError.message);
+  }
+
+  const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === payload.email.toLowerCase());
+
+  if (existingUser) {
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'user-management-existing-found',
+      message: 'Existing user found in Auth, updating profile',
+      metadata: { 
+        userId: existingUser.id,
+        email: payload.email,
+        existingUserCreated: existingUser.created_at
+      }
+    });
+
+    // ETAPA 2A: Atualizar perfil do usuário existente (sem tocar no access)
+    const { error: updateProfileError } = await supabase
+      .from('profiles')
+      .update({ 
+        name: payload.name, 
+        cpf: payload.cpf, 
+        email: payload.email, 
+        whatsapp: payload.whatsapp,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', existingUser.id);
+
+    if (updateProfileError) {
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'user-management-profile-update-error',
+        message: 'Failed to update existing user profile, but continuing',
+        metadata: { 
+          userId: existingUser.id,
+          error: updateProfileError.message,
+          errorCode: updateProfileError.code
+        }
+      });
+    } else {
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'user-management-profile-updated',
+        message: 'Existing user profile updated successfully',
+        metadata: { userId: existingUser.id }
+      });
+    }
+
+    return { id: existingUser.id, isExisting: true };
+  }
+
+  // ETAPA 2B: Criar NOVO usuário (Auth + Profile) IMEDIATAMENTE
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-creating-new',
+    message: 'Creating new user account (Auth + Profile) in checkout flow',
+    metadata: { 
+      email: payload.email,
+      cpfLength: payload.cpf.length,
+      flow: 'checkout-immediate'
+    }
+  });
+
+  // Criar usuário no Auth
+  const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+    email: payload.email,
+    password: payload.cpf, // Senha = CPF (números)
+    email_confirm: true, // Email já confirmado
+    user_metadata: { 
+      name: payload.name, 
+      cpf: payload.cpf, 
+      whatsapp: payload.whatsapp,
+      created_via: 'checkout',
+      created_at_checkout: new Date().toISOString()
+    },
+  });
+
+  if (createUserError || !newUser?.user) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'user-management-auth-creation-error',
+      message: 'CRITICAL: Failed to create Auth user in checkout',
+      metadata: { 
+        email: payload.email,
+        error: createUserError?.message,
+        errorType: createUserError?.name,
+        errorCode: createUserError?.code,
+        flow: 'checkout'
+      }
+    });
+    throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
+  }
+
+  const userId = newUser.user.id;
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-auth-created',
+    message: 'Auth user created successfully in checkout',
+    metadata: { 
+      userId,
+      email: payload.email,
+      flow: 'checkout'
+    }
+  });
+
+  // Criar perfil IMEDIATAMENTE (sem acesso aos produtos ainda)
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({
+      id: userId,
+      name: payload.name,
+      cpf: payload.cpf,
+      email: payload.email,
+      whatsapp: payload.whatsapp,
+      access: [], // ⚠️ VAZIO - acesso será liberado pelo webhook
+      primeiro_acesso: true,
+      has_changed_password: false,
+      is_admin: false,
+      created_at: new Date().toISOString()
+    });
+
+  if (profileError) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'user-management-profile-creation-error',
+      message: 'CRITICAL: Failed to create profile for new user in checkout',
+      metadata: { 
+        userId,
+        email: payload.email,
+        error: profileError.message,
+        errorCode: profileError.code,
+        flow: 'checkout'
+      }
+    });
+    
+    // Tentar deletar o usuário do Auth para evitar inconsistência
+    await supabase.auth.admin.deleteUser(userId);
+    
+    throw new Error('Erro ao criar perfil do usuário: ' + profileError.message);
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'user-management-profile-created',
+    message: 'Profile created successfully for new user in checkout (access empty, will be granted by webhook)',
+    metadata: { 
+      userId,
+      email: payload.email,
+      flow: 'checkout'
+    }
+  });
+
+  return { id: userId, isExisting: false };
+}
+
+// ==================== ORDER SERVICE ====================
+async function validateRequestData(requestBody: any, supabase: any): Promise<RequestPayload> {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'create-payment-validation-start',
+    message: 'Starting request validation',
+    metadata: { 
+      hasName: !!requestBody.name,
+      hasEmail: !!requestBody.email,
+      hasCpf: !!requestBody.cpf,
+      hasWhatsapp: !!requestBody.whatsapp,
+      hasProductIds: !!requestBody.productIds,
+      productIdsCount: requestBody.productIds?.length || 0,
+      paymentMethod: requestBody.paymentMethod
+    }
+  });
+
+  const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = requestBody;
+
+  const missingFields = [];
+  if (!name) missingFields.push('name');
+  if (!email) missingFields.push('email');
+  if (!cpf) missingFields.push('cpf');
+  if (!whatsapp) missingFields.push('whatsapp');
+  if (!productIds || !Array.isArray(productIds) || productIds.length === 0) missingFields.push('productIds');
+  if (!paymentMethod) missingFields.push('paymentMethod');
+
+  if (missingFields.length > 0) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'create-payment-validation-error',
+      message: 'Missing required fields in request',
+      metadata: { missingFields, receivedFields: Object.keys(requestBody) }
+    });
+    throw new Error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
+  }
+
+  if (!['PIX', 'CREDIT_CARD'].includes(paymentMethod)) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'create-payment-validation-error',
+      message: 'Invalid payment method',
+      metadata: { paymentMethod, validMethods: ['PIX', 'CREDIT_CARD'] }
+    });
+    throw new Error(`Método de pagamento inválido: ${paymentMethod}`);
+  }
+
+  if (paymentMethod === 'CREDIT_CARD' && !creditCard) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'create-payment-validation-error',
+      message: 'Credit card data missing for CREDIT_CARD payment',
+      metadata: { paymentMethod, hasCreditCard: !!creditCard }
+    });
+    throw new Error('Dados do cartão de crédito são obrigatórios para pagamento com cartão');
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'create-payment-validation-success',
+    message: 'Request validation completed successfully',
+    metadata: { 
+      email: email.toLowerCase().trim(),
+      paymentMethod,
+      productCount: productIds.length,
+      hasCoupon: !!coupon_code
+    }
+  });
+
+  return {
+    name,
+    email: email.toLowerCase().trim(),
+    cpf: cpf.replace(/[^0-9]/g, ''),
+    whatsapp: whatsapp.replace(/\D/g, ''),
+    productIds,
+    coupon_code,
+    paymentMethod,
+    creditCard,
+    metaTrackingData
+  };
+}
+
+async function validateProducts(productIds: string[], supabase: any): Promise<ProductData[]> {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'product-validation-start',
+    message: 'Starting product validation',
+    metadata: { 
+      requestedProductIds: productIds,
+      productCount: productIds.length
+    }
+  });
+
+  const uniqueProductIds = [...new Set(productIds)];
+
+  const { data: products, error: productsError } = await supabase
+    .from('products')
+    .select('id, price, name, status')
+    .in('id', uniqueProductIds);
+
+  if (productsError) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'product-validation-query-error',
+      message: 'Database error while fetching products',
+      metadata: { 
+        requestedIds: uniqueProductIds,
+        error: productsError.message,
+        errorCode: productsError.code
+      }
+    });
+    throw new Error('Erro ao buscar produtos no banco de dados: ' + productsError.message);
+  }
+
+  if (!products || products.length !== uniqueProductIds.length) {
+    const foundIds = new Set(products?.map(p => p.id) || []);
+    const missingIds = uniqueProductIds.filter(id => !foundIds.has(id));
+
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'product-validation-missing-products',
+      message: 'Some requested products were not found',
+      metadata: { 
+        requestedIds: uniqueProductIds,
+        foundIds: Array.from(foundIds),
+        missingIds,
+        foundCount: products?.length || 0,
+        requestedCount: uniqueProductIds.length
+      }
+    });
+    throw new Error(`Produtos não encontrados: ${missingIds.join(', ')}`);
+  }
+
+  const inactiveProducts = products.filter(p => p.status !== 'ativo');
+  if (inactiveProducts.length > 0) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'product-validation-inactive-products',
+      message: 'Some requested products are not active',
+      metadata: { 
+        inactiveProducts: inactiveProducts.map(p => ({ id: p.id, name: p.name, status: p.status }))
+      }
+    });
+    throw new Error(`Produtos não disponíveis para compra: ${inactiveProducts.map(p => p.name).join(', ')}`);
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'product-validation-success',
+    message: 'All products validated successfully',
+    metadata: { 
+      validatedProducts: products.map(p => ({ id: p.id, name: p.name, price: p.price, status: p.status }))
+    }
+  });
+
+  return products as ProductData[];
+}
+
+async function applyCoupon(couponCode: string | undefined, originalTotal: number, supabase: any): Promise<{ finalTotal: number; couponData?: CouponData }> {
+  if (!couponCode) {
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'coupon-application-skipped',
+      message: 'No coupon code provided, skipping coupon validation',
+      metadata: { originalTotal }
+    });
+    return { finalTotal: originalTotal };
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'coupon-application-start',
+    message: 'Starting coupon validation and application',
+    metadata: { 
+      couponCode: couponCode.toUpperCase().trim(),
+      originalTotal
+    }
+  });
+
+  const { data: coupon, error: couponError } = await supabase
+    .from('coupons')
+    .select('code, discount_type, value, active')
+    .eq('code', couponCode.toUpperCase().trim())
+    .eq('active', true)
+    .single();
+
+  if (couponError || !coupon) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'coupon-application-invalid',
+      message: 'Invalid or inactive coupon code provided',
+      metadata: { 
+        couponCode: couponCode.toUpperCase().trim(),
+        error: couponError?.message,
+        errorCode: couponError?.code
+      }
+    });
+    throw new Error(`Cupom inválido ou inativo: ${couponCode}`);
+  }
+
+  let finalTotal = originalTotal;
+  let discountAmount = 0;
+
+  if (coupon.discount_type === 'percentage') {
+    discountAmount = originalTotal * (parseFloat(coupon.value) / 100);
+    finalTotal = originalTotal - discountAmount;
+  } else if (coupon.discount_type === 'fixed') {
+    discountAmount = parseFloat(coupon.value);
+    finalTotal = Math.max(0, originalTotal - discountAmount);
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'coupon-application-success',
+    message: 'Coupon applied successfully',
+    metadata: { 
+      couponCode: coupon.code,
+      discountType: coupon.discount_type,
+      discountValue: coupon.value,
+      originalTotal,
+      discountAmount,
+      finalTotal
+    }
+  });
+
+  return { finalTotal, couponData: coupon as CouponData };
+}
+
+async function createOrder(userId: string, productIds: string[], totalPrice: number, metaTrackingData: any, req: Request, supabase: any): Promise<OrderData> {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'order-creation-start',
+    message: 'Starting order creation',
+    metadata: { 
+      userId,
+      productIds,
+      totalPrice,
+      productCount: productIds.length
+    }
+  });
+
+  const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
+  const clientUserAgent = req.headers.get('user-agent') || '';
+
+  const fullMetaTrackingData = {
+    ...metaTrackingData,
+    client_ip_address: clientIpAddress,
+    client_user_agent: clientUserAgent,
+  };
+
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .insert({
+      user_id: userId,
+      ordered_product_ids: productIds,
+      total_price: totalPrice,
+      status: 'pending',
+      meta_tracking_data: fullMetaTrackingData,
+    })
+    .select()
+    .single();
+
+  if (orderError || !order) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'order-creation-error',
+      message: 'Failed to create order in database',
+      metadata: { 
+        userId,
+        productIds,
+        totalPrice,
+        error: orderError?.message,
+        errorCode: orderError?.code
+      }
+    });
+    throw new Error('Erro ao criar pedido: ' + (orderError?.message || 'Erro desconhecido'));
+  }
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'order-creation-success',
+    message: 'Order created successfully',
+    metadata: { 
+      orderId: order.id,
+      userId,
+      totalPrice,
+      status: order.status
+    }
+  });
+
+  return order as OrderData;
+}
+
+// ==================== ASAAS SERVICE ====================
+async function updateOrderWithPaymentId(orderId: string, asaasPaymentId: string, supabase: any): Promise<void> {
+  const { error: orderUpdateError } = await supabase
+    .from('orders')
+    .update({ asaas_payment_id: asaasPaymentId })
+    .eq('id', orderId);
+
+  if (orderUpdateError) {
+    await supabase.from('logs').insert({
+      level: 'warning',
+      context: 'order-payment-id-update-error',
+      message: 'Failed to update order with payment ID, but payment was created',
+      metadata: { 
+        orderId,
+        asaasPaymentId,
+        error: orderUpdateError.message,
+        errorCode: orderUpdateError.code
+      }
+    });
+  } else {
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'order-payment-id-updated',
+      message: 'Order updated successfully with payment ID',
+      metadata: { orderId, asaasPaymentId }
+    });
+  }
+}
+
+async function processPixPayment(order: OrderData, customerData: RequestPayload, supabase: any): Promise<any> {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'pix-payment-start',
+    message: 'Starting PIX payment processing with Asaas',
+    metadata: { 
+      orderId: order.id,
+      totalPrice: order.total_price
+    }
+  });
+
+  const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+  const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
+
+  if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'pix-payment-config-error',
+      message: 'Asaas API credentials not configured',
+      metadata: { 
+        hasApiKey: !!ASAAS_API_KEY,
+        hasBaseUrl: !!ASAAS_BASE_URL
+      }
+    });
+    throw new Error('Configuração de pagamento não encontrada');
+  }
+
+  const asaasPayload = {
+    customer: {
+      name: customerData.name,
+      email: customerData.email,
+      cpfCnpj: customerData.cpf,
+      phone: customerData.whatsapp,
+    },
+    value: parseFloat(order.total_price.toFixed(2)),
+    description: `Order #${order.id} payment`,
+    dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    billingType: 'PIX',
+  };
+
+  const asaasHeaders = {
+    'Content-Type': 'application/json',
+    'access_token': ASAAS_API_KEY,
+  };
+
+  const asaasResponse = await fetch(`${ASAAS_BASE_URL}/payments`, {
+    method: 'POST',
+    headers: asaasHeaders,
+    body: JSON.stringify(asaasPayload)
+  });
+
+  if (!asaasResponse.ok) {
+    const errorData = await asaasResponse.json();
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'pix-payment-creation-error',
+      message: 'Failed to create PIX payment with Asaas',
+      metadata: { 
+        orderId: order.id,
+        asaasError: errorData,
+        httpStatus: asaasResponse.status,
+        httpStatusText: asaasResponse.statusText
+      }
+    });
+    throw new Error('Erro ao criar pagamento PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
+  }
+
+  const pixPaymentData = await asaasResponse.json();
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'pix-payment-created',
+    message: 'PIX payment created successfully with Asaas',
+    metadata: { 
+      orderId: order.id,
+      asaasPaymentId: pixPaymentData.id,
+      status: pixPaymentData.status
+    }
+  });
+
+  const pixQrCodeResponse = await fetch(`${ASAAS_BASE_URL}/payments/${pixPaymentData.id}/pixQrCode`, {
+    method: 'GET',
+    headers: asaasHeaders
+  });
+
+  if (!pixQrCodeResponse.ok) {
+    const errorData = await pixQrCodeResponse.json();
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'pix-qrcode-fetch-error',
+      message: 'Failed to fetch PIX QR Code from Asaas',
+      metadata: { 
+        orderId: order.id,
+        asaasPaymentId: pixPaymentData.id,
+        asaasError: errorData,
+        httpStatus: pixQrCodeResponse.status
+      }
+    });
+    throw new Error('Erro ao gerar QR Code PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
+  }
+
+  const pixQrCodeData = await pixQrCodeResponse.json();
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'pix-qrcode-success',
+    message: 'PIX QR Code fetched successfully',
+    metadata: { 
+      orderId: order.id,
+      asaasPaymentId: pixPaymentData.id,
+      hasPayload: !!pixQrCodeData.payload,
+      hasEncodedImage: !!pixQrCodeData.encodedImage
+    }
+  });
+
+  await updateOrderWithPaymentId(order.id, pixPaymentData.id, supabase);
+
+  return {
+    id: pixPaymentData.id,
+    orderId: order.id,
+    payload: pixQrCodeData.payload,
+    encodedImage: pixQrCodeData.encodedImage,
+  };
+}
+
+async function processCreditCardPayment(order: OrderData, customerData: RequestPayload, creditCardData: any, clientIpAddress: string, supabase: any): Promise<any> {
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'credit-card-payment-start',
+    message: 'Starting credit card payment processing with Asaas',
+    metadata: { 
+      orderId: order.id,
+      totalPrice: order.total_price,
+      installmentCount: creditCardData.installmentCount || 1
+    }
+  });
+
+  const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+  const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
+
+  if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'credit-card-payment-config-error',
+      message: 'Asaas API credentials not configured',
+      metadata: { 
+        hasApiKey: !!ASAAS_API_KEY,
+        hasBaseUrl: !!ASAAS_BASE_URL
+      }
+    });
+    throw new Error('Configuração de pagamento não encontrada');
+  }
+
+  const asaasPayload: any = {
+    customer: {
+      name: customerData.name,
+      email: customerData.email,
+      cpfCnpj: customerData.cpf,
+      phone: customerData.whatsapp,
+    },
+    value: parseFloat(order.total_price.toFixed(2)),
+    description: `Order #${order.id} payment`,
+    dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    billingType: 'CREDIT_CARD',
+    creditCard: {
+      holderName: creditCardData.holderName,
+      number: creditCardData.cardNumber.replace(/\s/g, ''),
+      expiryMonth: creditCardData.expiryMonth,
+      expiryYear: creditCardData.expiryYear,
+      ccv: creditCardData.ccv,
+    },
+    creditCardHolderInfo: {
+      name: customerData.name,
+      email: customerData.email,
+      cpfCnpj: customerData.cpf,
+      phone: customerData.whatsapp,
+      postalCode: creditCardData.postalCode.replace(/\D/g, ''),
+      addressNumber: creditCardData.addressNumber,
+    },
+    remoteIp: clientIpAddress,
+  };
+
+  if (creditCardData.installmentCount && creditCardData.installmentCount > 1) {
+    asaasPayload.installmentCount = creditCardData.installmentCount;
+    asaasPayload.installmentValue = parseFloat((order.total_price / creditCardData.installmentCount).toFixed(2));
+  }
+
+  const asaasHeaders = {
+    'Content-Type': 'application/json',
+    'access_token': ASAAS_API_KEY,
+  };
+
+  const asaasResponse = await fetch(`${ASAAS_BASE_URL}/payments`, {
+    method: 'POST',
+    headers: asaasHeaders,
+    body: JSON.stringify(asaasPayload),
+  });
+
+  if (!asaasResponse.ok) {
+    const errorData = await asaasResponse.json();
+    await supabase.from('logs').insert({
+      level: 'error',
+      context: 'credit-card-payment-creation-error',
+      message: 'Failed to create credit card payment with Asaas',
+      metadata: { 
+        orderId: order.id,
+        asaasError: errorData,
+        httpStatus: asaasResponse.status,
+        installmentCount: creditCardData.installmentCount || 1
+      }
+    });
+    throw new Error('Erro ao processar pagamento com cartão: ' + (errorData.message || 'Erro na comunicação com gateway'));
+  }
+
+  const paymentData = await asaasResponse.json();
+
+  await supabase.from('logs').insert({
+    level: 'info',
+    context: 'credit-card-payment-success',
+    message: 'Credit card payment processed successfully',
+    metadata: { 
+      orderId: order.id,
+      asaasPaymentId: paymentData.id,
+      status: paymentData.status,
+      authorizationCode: paymentData.authorizationCode
+    }
+  });
+
+  await updateOrderWithPaymentId(order.id, paymentData.id, supabase);
+
+  return { ...paymentData, orderId: order.id };
+}
+
+// ==================== MAIN HANDLER ====================
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Função principal - Orquestrador limpo
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -41,25 +816,18 @@ serve(async (req) => {
       }
     });
 
-    // ETAPA 1: Validar dados de entrada
     const validatedPayload = await validateRequestData(requestBody, supabase);
-
-    // ETAPA 2: Gerenciar usuário (existente ou novo)
     const userData = await handleUserManagement(validatedPayload, supabase);
     userId = userData.id;
 
-    // ETAPA 3: Validar produtos
     const products = await validateProducts(validatedPayload.productIds, supabase);
     const originalTotal = products.reduce((sum, product) => sum + parseFloat(product.price.toString()), 0);
 
-    // ETAPA 4: Aplicar cupom (se fornecido)
     const { finalTotal, couponData } = await applyCoupon(validatedPayload.coupon_code, originalTotal, supabase);
 
-    // ETAPA 5: Criar pedido
     const order = await createOrder(userId, validatedPayload.productIds, finalTotal, validatedPayload.metaTrackingData, req, supabase);
     orderId = order.id;
 
-    // ETAPA 6: Processar pagamento baseado no método escolhido
     let paymentResult: any;
     const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
 
@@ -73,7 +841,6 @@ serve(async (req) => {
       throw new Error('Método de pagamento não suportado');
     }
 
-    // ETAPA 7: Log final de sucesso
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-success',
@@ -113,7 +880,6 @@ serve(async (req) => {
       }
     });
 
-    // Retornar erro mais amigável para o usuário
     let userFriendlyMessage = 'Erro interno do servidor. Tente novamente em alguns minutos.';
     
     if (error.message.includes('Campos obrigatórios ausentes')) {
