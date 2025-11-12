@@ -1,560 +1,596 @@
-"use client";
-
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Product, Coupon } from "@/types";
-import { showError, showSuccess } from "@/utils/toast";
-import { Loader2, ChevronDown, ChevronUp, Download, FileText } from "lucide-react";
-import CheckoutHeader from "@/components/checkout/CheckoutHeader";
-import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
-import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
-import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditCardForm";
-import OrderBumpCard from "@/components/checkout/OrderBumpCard";
-import OrderSummaryAccordion from "@/components/checkout/OrderSummaryAccordion";
-import FixedBottomBar from "@/components/checkout/FixedBottomBar";
-import PixPaymentModal from "@/components/checkout/PixPaymentModal";
-import { useSession } from "@/components/SessionContextProvider";
-import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
-import { trackInitiateCheckout } from "@/utils/metaPixel";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, CreditCard, Smartphone, Shield, ArrowLeft, Download, Copy, Check } from "lucide-react";
+import { formatCurrency } from "@/utils/formatters";
+import { usePixelEvents } from "@/hooks/use-pixel-initialization";
 
-declare global {
-  interface Window {
-    fbq: (...args: any[]) => void;
-  }
-}
-
-// Função para extrair primeiro e último nome
-const extractNameParts = (fullName: string | null | undefined): { firstName: string | null; lastName: string | null } => {
-  if (!fullName || typeof fullName !== 'string') {
-    return { firstName: null, lastName: null };
-  }
-  
-  const nameParts = fullName.trim().split(/\s+/);
-  if (nameParts.length === 0) {
-    return { firstName: null, lastName: null };
-  }
-  
-  const firstName = nameParts[0];
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;  
-  return { firstName, lastName };
-};
-
-// Função para limpar WhatsApp (remover formatação)
-const cleanWhatsApp = (whatsapp: string | null | undefined): string | null => {
-  if (!whatsapp) return null;
-  return whatsapp.replace(/\D/g, ''); // Remove tudo que não é dígito
-};
-
-const Checkout = () => {
-  const { productId } = useParams<{ productId: string }>();
+export default function Checkout() {
+  const { productId } = useParams();
   const navigate = useNavigate();
-  const { user } = useSession();
-  const metaTrackingData = useMetaTrackingData();
+  const { toast } = useToast();
+  const { trackPurchaseInit, trackPaymentInfo, trackPurchase } = usePixelEvents();
 
-  const [mainProduct, setMainProduct] = useState<Product | null>(null);
-  const [orderBumps, setOrderBumps] = useState<Product[]>([]);
-  const [selectedOrderBumps, setSelectedOrderBumps] = useState<string[]>([]);
+  // Estados do formulário
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
-  const [isPixModalOpen, setIsPixModalOpen] = useState(false);
-  const [pixDetails, setPixDetails] = useState<any>(null);
-  const [asaasPaymentId, setAsaasPaymentId] = useState<string | null>(null);
-  const [isLoadingProduct, setIsLoadingProduct] = useState(true);
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [productAssets, setProductAssets] = useState<any[]>([]);
-  const [isMaterialsExpanded, setIsMaterialsExpanded] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [applyCoupon, setApplyCoupon] = useState(false);
+  const [installments, setInstallments] = useState<any[]>([]);
+  const [selectedInstallment, setSelectedInstallment] = useState<number>(1);
 
-  const checkoutFormRef = useRef<CheckoutFormRef>(null);
-  const creditCardFormRef = useRef<CreditCardFormRef>(null);
+  // Estados do produto e carregamento
+  const [product, setProduct] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [pixData, setPixData] = useState<any>(null);
+  const [copiedPix, setCopiedPix] = useState(false);
 
+  // Estados do cartão de crédito
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [expiryMonth, setExpiryMonth] = useState("");
+  const [expiryYear, setExpiryYear] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [addressNumber, setAddressNumber] = useState("");
+
+  // Carregar produto
   useEffect(() => {
-    const fetchProductData = async () => {
-      if (!productId) {
-        showError("ID do produto não fornecido.");
-        navigate("/");
-        return;
-      }
-
-      setIsLoadingProduct(true);
-      
+    const loadProduct = async () => {
       try {
-        // Executar ambas as consultas em paralelo com Promise.all
-        const [productResult, bumpsResult, assetsResult] = await Promise.all([
-          // Consulta 1: Buscar o produto principal
-          supabase
-            .from("products")
-            .select("*")
-            .eq("id", productId)
-            .eq("status", "ativo")
-            .single(),
-          
-          // Consulta 2: Buscar os order bumps (se existirem)
-          supabase
-            .from("products")
-            .select("id, name, price")
-            .eq("status", "ativo")
-            .in("id", [productId]) // Placeholder, será atualizado abaixo
-          ,
-          
-          // Consulta 3: Buscar os materiais do produto
-          supabase
-            .from("product_assets")
-            .select("id, file_name, storage_path")
-            .eq("product_id", productId)
-            .order("created_at", { ascending: false })
-        ]);
-        
-        const { data: product, error: productError } = productResult;
-        
-        if (productError || !product) {
-          showError("Produto não encontrado ou não está disponível.");
-          console.error("Error fetching product:", productError);
-          navigate("/");
-          return;
-        }
+        const { data, error } = await supabase
+          .from("products")
+          .select("*")
+          .eq("id", productId)
+          .single();
 
-        // Configurar o produto principal imediatamente
-        setMainProduct(product);
-
-        // Buscar os order bumps em paralelo (se existirem)
-        if (product.orderbumps && product.orderbumps.length > 0) {
-          const { data: bumps, error: bumpsError } = await supabase
-            .from("products")
-            .select("*")
-            .in("id", product.orderbumps)
-            .eq("status", "ativo");
-
-          if (bumpsError) {
-            console.error("Error fetching order bumps:", bumpsError);
-          } else {
-            setOrderBumps(bumps || []);
-          }
-        } else {
-          setOrderBumps([]);
-        }
-
-        // Configurar os materiais do produto
-        if (!assetsResult.error && assetsResult.data) {
-          // Gerar URLs assinadas para os materiais
-          const assetsWithUrls = await Promise.all(
-            assetsResult.data.map(async (asset) => {
-              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                .from('product-assets')
-                .createSignedUrl(asset.storage_path, 3600); // 1 hora
-
-              if (signedUrlError) {
-                console.error(`Error generating signed URL for asset ${asset.id}:`, signedUrlError.message);
-                return { ...asset, signed_url: null };
-              }
-              return { ...asset, signed_url: signedUrlData?.signedUrl || null };
-            })
-          );
-          setProductAssets(assetsWithUrls);
-        } else {
-          setProductAssets([]);
-        }
-        
-      } catch (error: any) {
-        console.error("Unexpected error in fetchProductData:", error);
-        showError("Erro ao carregar dados do produto.");
-        navigate("/");
+        if (error) throw error;
+        setProduct(data);
+      } catch (error) {
+        console.error("Erro ao carregar produto:", error);
+        toast({
+          title: "Erro",
+          description: "Não foi possível carregar o produto",
+          variant: "destructive",
+        });
       } finally {
-        setIsLoadingProduct(false);
+        setLoading(false);
       }
     };
 
-    fetchProductData();
-  }, [productId, navigate]);
+    if (productId) {
+      loadProduct();
+    }
+  }, [productId]);
 
+  // Calcular parcelas
   useEffect(() => {
-    if (mainProduct && window.fbq) {
-      // Extrair dados do usuário logado
-      let customerData = {
-        email: user?.email || null,
-        phone: user?.user_metadata?.whatsapp ? cleanWhatsApp(user.user_metadata.whatsapp) : null,
-        firstName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).firstName : null,
-        lastName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
-      };
+    const calculateInstallments = async () => {
+      if (!product) return;
 
-      // Se não há usuário logado, usar dados vazios
-      if (!user) {
-        customerData = {
-          email: null,
-          phone: null,
-          firstName: null,
-          lastName: null,
-        };
+      try {
+        const response = await fetch(
+          "https://hsxhmpxrtfvydnfxtcbx.supabase.co/functions/v1/calculate-installments",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ totalPrice: product.price }),
+          }
+        );
+
+        const data = await response.json();
+        if (data.installments) {
+          setInstallments(data.installments);
+        }
+      } catch (error) {
+        console.error("Erro ao calcular parcelas:", error);
       }
-
-      trackInitiateCheckout(
-        mainProduct.price,
-        "BRL",
-        [mainProduct.id],
-        1,
-        customerData
-      );
-    }
-  }, [mainProduct, user]);
-
-  const selectedOrderBumpsDetails = useMemo(() => {
-    return orderBumps.filter((bump) => selectedOrderBumps.includes(bump.id));
-  }, [orderBumps, selectedOrderBumps]);
-
-  const originalTotalPrice = useMemo(() => {
-    if (!mainProduct) return 0;
-    const bumpsTotal = selectedOrderBumpsDetails.reduce((sum, bump) => sum + bump.price, 0);
-    return mainProduct.price + bumpsTotal;
-  }, [mainProduct, selectedOrderBumpsDetails]);
-
-  const currentTotalPrice = useMemo(() => {
-    let total = originalTotalPrice;
-    if (appliedCoupon) {
-      if (appliedCoupon.discount_type === "percentage") {
-        total = total * (1 - appliedCoupon.value / 100);
-      } else if (appliedCoupon.discount_type === "fixed") {
-        total = Math.max(0, total - appliedCoupon.value);
-      }
-    }
-    return total;
-  }, [originalTotalPrice, appliedCoupon]);
-
-  const handleOrderBumpToggle = (bumpId: string, isSelected: boolean) => {
-    setSelectedOrderBumps((prev) =>
-      isSelected ? [...prev, bumpId] : prev.filter((id) => id !== bumpId)
-    );
-  };
-
-  const handleCouponApplied = (coupon: Coupon | null) => {
-    console.log("🎯 Cupom recebido no Checkout:", coupon);
-    setAppliedCoupon(coupon);
-  };
-
-  const handleSubmit = async () => {
-    if (!mainProduct) {
-      showError("Produto não carregado.");
-      return;
-    }
-
-    const checkoutFormValid = await checkoutFormRef.current?.submitForm();
-    if (!checkoutFormValid) {
-      showError("Por favor, preencha todos os campos obrigatórios do formulário.");
-      return;
-    }
-
-    const checkoutFormData = checkoutFormRef.current?.getValues();
-    if (!checkoutFormData) {
-      showError("Erro ao obter dados do formulário.");
-      return;
-    }
-
-    // Extrair dados do formulário para Meta Pixel
-    const formDataCustomerData = {
-      email: checkoutFormData.email,
-      phone: cleanWhatsApp(checkoutFormData.whatsapp),
-      firstName: extractNameParts(checkoutFormData.name).firstName,
-      lastName: extractNameParts(checkoutFormData.name).lastName,
     };
 
-    // Disparar evento InitiateCheckout com dados do formulário
-    if (window.fbq) {
-      trackInitiateCheckout(
-        currentTotalPrice,
-        "BRL",
-        [mainProduct.id, ...selectedOrderBumps],
-        1 + selectedOrderBumps.length,
-        formDataCustomerData
-      );
+    calculateInstallments();
+  }, [product]);
+
+  // Formatar CPF
+  const formatCPF = (value: string) => {
+    const cleaned = value.replace(/\D/g, "");
+    const match = cleaned.match(/^(\d{3})(\d{3})(\d{3})(\d{2})$/);
+    if (match) {
+      return `${match[1]}.${match[2]}.${match[3]}-${match[4]}`;
+    }
+    return cleaned;
+  };
+
+  // Formatar WhatsApp
+  const formatWhatsApp = (value: string) => {
+    const cleaned = value.replace(/\D/g, "");
+    const match = cleaned.match(/^(\d{2})(\d{5})(\d{4})$/);
+    if (match) {
+      return `(${match[1]}) ${match[2]}-${match[3]}`;
+    }
+    return cleaned;
+  };
+
+  // Formatar número do cartão
+  const formatCardNumber = (value: string) => {
+    const cleaned = value.replace(/\D/g, "");
+    const match = cleaned.match(/^(\d{4})(\d{4})(\d{4})(\d{4})$/);
+    if (match) {
+      return `${match[1]} ${match[2]} ${match[3]} ${match[4]}`;
+    }
+    return cleaned.replace(/(\d{4})/g, "$1 ").trim();
+  };
+
+  // Copiar código PIX
+  const copyPixCode = () => {
+    if (pixData?.payload) {
+      navigator.clipboard.writeText(pixData.payload);
+      setCopiedPix(true);
+      setTimeout(() => setCopiedPix(false), 2000);
+    }
+  };
+
+  // Baixar comprovante PIX
+  const downloadPixImage = () => {
+    if (pixData?.encodedImage) {
+      const link = document.createElement("a");
+      link.href = `data:image/png;base64,${pixData.encodedImage}`;
+      link.download = "qrcode-pix.png";
+      link.click();
+    }
+  };
+
+  // Processar pagamento
+  const handleSubmit = async () => {
+    if (!product) return;
+
+    // Validar campos
+    if (!name || !email || !cpf || !whatsapp) {
+      toast({
+        title: "Campos obrigatórios",
+        description: "Preencha todos os campos obrigatórios",
+        variant: "destructive",
+      });
+      return;
     }
 
-    let creditCardData = null;
-    if (paymentMethod === "CREDIT_CARD") {
-      const creditCardFormValid = await creditCardFormRef.current?.submitForm();
-      if (!creditCardFormValid) {
-        showError("Por favor, preencha todos os campos do cartão de crédito.");
-        return;
-      }
-      creditCardData = creditCardFormRef.current?.getValues();
-    }
-
-    setIsSubmitting(true);
+    setProcessing(true);
 
     try {
-      const productIds = [mainProduct.id, ...selectedOrderBumps];
-
       const payload: any = {
-        name: checkoutFormData.name,
-        email: checkoutFormData.email,
-        cpf: checkoutFormData.cpf,
-        whatsapp: checkoutFormData.whatsapp,
-        productIds,
-        coupon_code: appliedCoupon?.code || null,
+        name,
+        email,
+        cpf: cpf.replace(/\D/g, ""),
+        whatsapp: whatsapp.replace(/\D/g, ""),
+        productIds: [product.id],
         paymentMethod,
         metaTrackingData: {
-          ...metaTrackingData,
+          fbc: document.cookie.includes("_fbc") ? document.cookie.split("_fbc=")[1]?.split(";")[0] : null,
+          fbp: document.cookie.includes("_fbp") ? document.cookie.split("_fbp=")[1]?.split(";")[0] : null,
           event_source_url: window.location.href,
         },
       };
 
-      if (paymentMethod === "CREDIT_CARD" && creditCardData) {
-        payload.creditCard = creditCardData;
+      if (applyCoupon && couponCode) {
+        payload.coupon_code = couponCode;
       }
 
-      console.log("🚀 Enviando payload com cupom:", {
-        coupon_code: appliedCoupon?.code || null,
-        coupon_applied: !!appliedCoupon,
-        coupon_value: appliedCoupon?.value,
-        coupon_type: appliedCoupon?.discount_type,
-        original_total: originalTotalPrice,
-        final_total: currentTotalPrice
-      });
+      if (paymentMethod === "CREDIT_CARD") {
+        if (!cardNumber || !cardName || !expiryMonth || !expiryYear || !cvv || !postalCode || !addressNumber) {
+          toast({
+            title: "Dados do cartão incompletos",
+            description: "Preencha todos os dados do cartão de crédito",
+            variant: "destructive",
+          });
+          setProcessing(false);
+          return;
+        }
 
-      const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
-        body: payload,
-      });
+        payload.creditCard = {
+          holderName: cardName,
+          cardNumber: cardNumber.replace(/\s/g, ""),
+          expiryMonth,
+          expiryYear,
+          ccv: cvv,
+          postalCode: postalCode.replace(/\D/g, ""),
+          addressNumber,
+          installmentCount: selectedInstallment,
+        };
+      }
 
-      if (error) {
-        showError("Falha ao finalizar o checkout: " + error.message);
-        console.error("Edge function error:", error);
-        return;
+      const response = await fetch(
+        "https://hsxhmpxrtfvydnfxtcbx.supabase.co/functions/v1/create-asaas-payment",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
       }
 
       if (paymentMethod === "PIX") {
-        setPixDetails(data);
-        setAsaasPaymentId(data.id);
-        setOrderId(data.orderId);
-        setIsPixModalOpen(true);
-      } else if (paymentMethod === "CREDIT_CARD") {
-        if (data.status === "CONFIRMED" || data.status === "RECEIVED") {
-          showSuccess("Pagamento confirmado!");
-          navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } });
-        } else {
-          showSuccess("Pedido criado! Aguardando confirmação do pagamento.");
-          navigate("/processando-pagamento");
-        }
+        setPixData(data);
+        trackPaymentInfo();
+      } else {
+        trackPurchase();
+        navigate("/confirmacao");
       }
-    } catch (err: any) {
-      showError("Erro inesperado: " + err.message);
-      console.error("Checkout error:", err);
+    } catch (error: any) {
+      console.error("Erro no pagamento:", error);
+      toast({
+        title: "Erro no pagamento",
+        description: error.message,
+        variant: "destructive",
+      });
     } finally {
-      setIsSubmitting(false);
+      setProcessing(false);
     }
   };
 
-  // Detectar se é mobile
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-
-  if (isLoadingProduct) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex justify-center items-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
-  if (!mainProduct) {
+  if (!product) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <p className="text-xl text-gray-600">Produto não encontrado.</p>
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardContent className="p-6 text-center">
+            <p className="text-muted-foreground">Produto não encontrado</p>
+            <Button onClick={() => navigate("/")} className="mt-4">
+              Voltar para a página inicial
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <CheckoutHeader backUrl={mainProduct.checkout_return_url || undefined} />
+    <div className="container mx-auto p-6 max-w-4xl">
+      <Button
+        variant="ghost"
+        onClick={() => navigate("/")}
+        className="mb-6"
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" />
+        Voltar
+      </Button>
 
-      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-2xl pb-32">
-        <div className="space-y-6">
-          <MainProductDisplayCard product={mainProduct} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Formulário de pagamento */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Informações de Pagamento</CardTitle>
+            <CardDescription>
+              Preencha seus dados para completar a compra
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome completo *</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Seu nome completo"
+              />
+            </div>
 
-          {/* Anúncio Personalizado */}
-          <Card className="bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200">
+            <div className="space-y-2">
+              <Label htmlFor="email">E-mail *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cpf">CPF *</Label>
+              <Input
+                id="cpf"
+                value={cpf}
+                onChange={(e) => setCpf(formatCPF(e.target.value))}
+                placeholder="000.000.000-00"
+                maxLength={14}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="whatsapp">WhatsApp *</Label>
+              <Input
+                id="whatsapp"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(formatWhatsApp(e.target.value))}
+                placeholder="(00) 00000-0000"
+                maxLength={15}
+              />
+            </div>
+
+            {/* Método de pagamento */}
+            <div className="space-y-2">
+              <Label>Método de Pagamento</Label>
+              <RadioGroup
+                value={paymentMethod}
+                onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="PIX" id="pix" />
+                  <Label htmlFor="pix" className="flex items-center gap-2 cursor-pointer">
+                    <Smartphone className="h-4 w-4" />
+                    PIX
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="CREDIT_CARD" id="card" />
+                  <Label htmlFor="card" className="flex items-center gap-2 cursor-pointer">
+                    <CreditCard className="h-4 w-4" />
+                    Cartão de Crédito
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Dados do cartão */}
+            {paymentMethod === "CREDIT_CARD" && (
+              <div className="space-y-4 border-t pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cardNumber">Número do Cartão *</Label>
+                  <Input
+                    id="cardNumber"
+                    value={cardNumber}
+                    onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                    placeholder="0000 0000 0000 0000"
+                    maxLength={19}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cardName">Nome no Cartão *</Label>
+                  <Input
+                    id="cardName"
+                    value={cardName}
+                    onChange={(e) => setCardName(e.target.value)}
+                    placeholder="Nome igual no cartão"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="expiryMonth">Mês *</Label>
+                    <Input
+                      id="expiryMonth"
+                      value={expiryMonth}
+                      onChange={(e) => setExpiryMonth(e.target.value)}
+                      placeholder="MM"
+                      maxLength={2}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expiryYear">Ano *</Label>
+                    <Input
+                      id="expiryYear"
+                      value={expiryYear}
+                      onChange={(e) => setExpiryYear(e.target.value)}
+                      placeholder="AA"
+                      maxLength={2}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cvv">CVV *</Label>
+                    <Input
+                      id="cvv"
+                      value={cvv}
+                      onChange={(e) => setCvv(e.target.value)}
+                      placeholder="000"
+                      maxLength={3}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="postalCode">CEP *</Label>
+                  <Input
+                    id="postalCode"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="00000-000"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="addressNumber">Número do Endereço *</Label>
+                  <Input
+                    id="addressNumber"
+                    value={addressNumber}
+                    onChange={(e) => setAddressNumber(e.target.value)}
+                    placeholder="Número"
+                  />
+                </div>
+
+                {/* Parcelas */}
+                {installments.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Parcelas</Label>
+                    <Select
+                      value={selectedInstallment.toString()}
+                      onValueChange={(value) => setSelectedInstallment(parseInt(value))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a quantidade de parcelas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {installments.map((installment) => (
+                          <SelectItem
+                            key={installment.installmentNumber}
+                            value={installment.installmentNumber.toString()}
+                          >
+                            {installment.installmentNumber}x de {formatCurrency(installment.installmentValue)} 
+                            {installment.installmentNumber > 1 && ` (juros: ${installment.interestPercentage}%)`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Cupom de desconto */}
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="applyCoupon"
+                  checked={applyCoupon}
+                  onCheckedChange={(checked) => setApplyCoupon(checked as boolean)}
+                />
+                <Label htmlFor="applyCoupon" className="cursor-pointer">
+                  Tenho um cupom de desconto
+                </Label>
+              </div>
+              {applyCoupon && (
+                <Input
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  placeholder="Código do cupom"
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Resumo do pedido */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Resumo do Pedido</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {product && (
+              <>
+                <div className="flex justify-between">
+                  <span className="font-medium">{product.name}</span>
+                  <span>{formatCurrency(product.price)}</span>
+                </div>
+                <div className="border-t pt-4">
+                  <div className="flex justify-between font-bold">
+                    <span>Total</span>
+                    <span>{formatCurrency(product.price)}</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* PIX Modal */}
+      {pixData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50">
+          <Card className="max-w-md w-full">
             <CardHeader>
-              <CardTitle className="text-xl font-bold text-orange-800">
-                🎯 Oferta Especial por Tempo Limitado!
+              <CardTitle className="flex items-center gap-2">
+                <Smartphone className="h-5 w-5" />
+                Pagamento via PIX
               </CardTitle>
+              <CardDescription>
+                Escaneie o QR Code ou copie o código para pagar
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-orange-700 mb-4">
-                Adquira agora {mainProduct.name} e tenha acesso imediato aos materiais exclusivos!
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4 items-center">
-                <Badge className="bg-green-100 text-green-800 text-sm px-3 py-1">
-                  ✅ Entrega Imediata
-                </Badge>
-                <Badge className="bg-blue-100 text-blue-800 text-sm px-3 py-1">
-                  📚 Materiais Exclusivos
-                </Badge>
-                <Badge className="bg-purple-100 text-purple-800 text-sm px-3 py-1">
-                  🎓 Suporte Premium
-                </Badge>
+            <CardContent className="space-y-4">
+              {pixData.encodedImage && (
+                <div className="flex justify-center">
+                  <img
+                    src={`data:image/png;base64,${pixData.encodedImage}`}
+                    alt="QR Code PIX"
+                    className="w-48 h-48"
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>Código PIX</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={pixData.payload}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={copyPixCode}
+                  >
+                    {copiedPix ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={downloadPixImage}
+                  className="flex-1"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Baixar QR Code
+                </Button>
+                <Button
+                  onClick={() => {
+                    setPixData(null);
+                    navigate("/confirmacao");
+                  }}
+                  className="flex-1"
+                >
+                  Já paguei
+                </Button>
               </div>
             </CardContent>
           </Card>
-
-          {orderBumps.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-gray-800">Aproveite também:</h2>
-              {orderBumps.map((bump) => (
-                <OrderBumpCard
-                  key={bump.id}
-                  product={bump}
-                  isSelected={selectedOrderBumps.includes(bump.id)}
-                  onToggle={handleOrderBumpToggle}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Acordeon de Materiais */}
-          {productAssets.length > 0 && (
-            <Card className="bg-white rounded-xl shadow-lg">
-              <CardHeader 
-                className="cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => setIsMaterialsExpanded(!isMaterialsExpanded)}
-              >
-                <CardTitle className="flex items-center justify-between text-lg">
-                  <span className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-blue-600" />
-                    Materiais do Produto ({productAssets.length})
-                  </span>
-                  {isMaterialsExpanded ? (
-                    <ChevronUp className="h-5 w-5" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5" />
-                  )}
-                </CardTitle>
-              </CardHeader>
-              {isMaterialsExpanded && (
-                <CardContent className="pt-0">
-                  <div className="space-y-3">
-                    {productAssets.map((asset) => (
-                      <div key={asset.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm font-medium text-gray-700">{asset.file_name}</span>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (asset.signed_url) {
-                              const link = document.createElement('a');
-                              link.href = asset.signed_url;
-                              link.download = asset.file_name;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              showSuccess(`Download de "${asset.file_name}" iniciado!`);
-                            }
-                          }}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          <Download className="h-4 w-4 mr-1" />
-                          Baixar
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                    <h4 className="font-semibold text-blue-800 mb-2">Como baixar os materiais:</h4>
-                    <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                      <li>Clique no botão "Baixar" ao lado de cada material</li>
-                      <li>Após a compra, você terá acesso vitalício a todos os materiais</li>
-                      <li>Os materiais ficam disponíveis na sua área de membros</li>
-                    </ol>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )}
-
-          <OrderSummaryAccordion
-            mainProduct={mainProduct}
-            selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-            originalTotalPrice={originalTotalPrice}
-            currentTotalPrice={currentTotalPrice}
-            appliedCoupon={appliedCoupon}
-            onCouponApplied={handleCouponApplied}
-          />
-
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
-            <CheckoutForm
-              ref={checkoutFormRef}
-              onSubmit={() => {}}
-              isLoading={isSubmitting}
-            />
-
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
-              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="PIX">PIX</TabsTrigger>
-                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
-                </TabsList>
-                <TabsContent value="PIX" className="mt-4">
-                  <p className="text-sm text-gray-600">
-                    Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
-                  </p>
-                </TabsContent>
-                <TabsContent value="CREDIT_CARD" className="mt-4">
-                  <CreditCardForm
-                    ref={creditCardFormRef}
-                    isLoading={isSubmitting}
-                    totalPrice={currentTotalPrice}
-                  />
-                </TabsContent>
-              </Tabs>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Barra fixa apenas para mobile */}
-      {isMobile && (
-        <FixedBottomBar
-          totalPrice={currentTotalPrice}
-          isSubmitting={isSubmitting}
-          onSubmit={handleSubmit}
-        />
-      )}
-
-      {/* Botão no corpo da página para desktop */}
-      {!isMobile && (
-        <div className="fixed bottom-8 right-8 z-40">
-          <Button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 text-lg font-semibold shadow-lg rounded-full"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Processando...
-              </>
-            ) : (
-              "Finalizar Compra Agora"
-            )}
-          </Button>
         </div>
       )}
 
-      <PixPaymentModal
-        isOpen={isPixModalOpen}
-        onClose={() => setIsPixModalOpen(false)}
-        orderId={orderId || ""}
-        pixDetails={pixDetails}
-        totalPrice={currentTotalPrice}
-        asaasPaymentId={asaasPaymentId || ""}
-      />
+      {/* Botão de submit fixo */}
+      <div className="fixed bottom-8 right-8 z-40">
+        <Button
+          onClick={handleSubmit}
+          disabled={processing}
+          size="lg"
+          className="shadow-lg"
+        >
+          {processing ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Processando...
+            </>
+          ) : (
+            <>
+              <Shield className="h-4 w-4 mr-2" />
+              {paymentMethod === "PIX" ? "Gerar PIX" : `Pagar ${formatCurrency(product?.price || 0)}`}
+            </>
+          )}
+        </Button>
+      </div>
     </div>
   );
-};
-
-export default Checkout;
+}
