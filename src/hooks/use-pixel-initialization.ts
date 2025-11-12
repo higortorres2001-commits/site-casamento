@@ -1,56 +1,87 @@
-"use client";
-
 import { useEffect } from 'react';
-import { useSession } from '@/components/SessionContextProvider';
-import { initializePixelWithUserData } from '@/utils/metaPixel';
 
-// Função para extrair primeiro e último nome
-const extractNameParts = (fullName: string | null | undefined): { firstName: string | null; lastName: string | null } => {
-  if (!fullName || typeof fullName !== 'string') {
-    return { firstName: null, lastName: null };
-  }
-  
-  const nameParts = fullName.trim().split(/\s+/);
-  if (nameParts.length === 0) {
-    return { firstName: null, lastName: null };
-  }
-  
-  const firstName = nameParts[0];
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
-  
-  return { firstName, lastName };
-};
-
-// Função para limpar WhatsApp (remover formatação)
-const cleanWhatsApp = (whatsapp: string | null | undefined): string | null => {
-  if (!whatsapp) return null;
-  return whatsapp.replace(/\D/g, ''); // Remove tudo que não é dígito
-};
-
-export const usePixelInitialization = () => {
-  const { user } = useSession();
-
+// Hook para inicialização do Pixel
+export function usePixelInitialization() {
   useEffect(() => {
-    // Aguardar um pouco para garantir que o fbq esteja disponível
-    const timer = setTimeout(() => {
-      if (typeof window !== 'undefined' && window.fbq) {
-        if (user) {
-          // Usuário logado - inicializar com dados avançados
-          const customerData = {
-            email: user.email || null,
-            phone: user.user_metadata?.whatsapp ? cleanWhatsApp(user.user_metadata.whatsapp) : null,
-            firstName: user.user_metadata?.name ? extractNameParts(user.user_metadata.name).firstName : null,
-            lastName: user.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
-          };
-
-          initializePixelWithUserData('1028226016169295', customerData);
-        } else {
-          // Usuário não logado - inicialização padrão
-          initializePixelWithUserData('1028226016169295');
-        }
+    // Inicialização do Meta Pixel
+    const initializePixel = () => {
+      // Verificar se o Pixel já foi inicializado
+      if (window.fbq) {
+        return;
       }
-    }, 1000); // Aguardar 1 segundo para garantir que o Pixel esteja carregado
 
-    return () => clearTimeout(timer);
-  }, [user]);
-};
+      // Inicializar o Pixel
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      
+      // Configurar o Pixel
+      fbq('init', 'YOUR_PIXEL_ID'); // Substituir pelo ID real do Pixel
+      fbq('track', 'PageView');
+    };
+
+    initializePixel();
+  }, []);
+}
+
+// Hook para tracking de eventos do Pixel
+export function usePixelEvents() {
+  const trackPurchaseInit = () => {
+    if (window.fbq) {
+      fbq('track', 'InitiateCheckout');
+    }
+  };
+
+  const trackPaymentInfo = () => {
+    if (window.fbq) {
+      fbq('track', 'AddPaymentInfo');
+    }
+  };
+
+  const trackPurchase = (value?: number, currency?: string) => {
+    if (window.fbq) {
+      fbq('track', 'Purchase', {
+        value: value || 0,
+        currency: currency || 'BRL'
+      });
+    }
+  };
+
+  const trackViewContent = (contentName?: string, contentCategory?: string) => {
+    if (window.fbq) {
+      fbq('track', 'ViewContent', {
+        content_name: contentName,
+        content_category: contentCategory
+      });
+    }
+  };
+
+  const trackAddToCart = (value?: number, currency?: string) => {
+    if (window.fbq) {
+      fbq('track', 'AddToCart', {
+        value: value || 0,
+        currency: currency || 'BRL'
+      });
+    }
+  };
+
+  return {
+    trackPurchaseInit,
+    trackPaymentInfo,
+    trackPurchase,
+    trackViewContent,
+    trackAddToCart
+  };
+}
+
+// Declaração global para o Facebook Pixel
+declare global {
+  interface Window {
+    fbq: any;
+  }
+}
