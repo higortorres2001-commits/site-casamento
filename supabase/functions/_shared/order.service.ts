@@ -12,7 +12,7 @@ export async function validateRequestData(requestBody: any, supabase: any): Prom
       hasCpf: !!requestBody.cpf,
       hasWhatsapp: !!requestBody.whatsapp,
       hasProductIds: !!requestBody.productIds,
-      productIdsCount: requestBody.productIds?.length || 0,
+      productCount: requestBody.productIds?.length || 0,
       paymentMethod: requestBody.paymentMethod
     }
   });
