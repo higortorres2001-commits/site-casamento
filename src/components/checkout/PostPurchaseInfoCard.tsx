@@ -78,6 +78,13 @@ const PostPurchaseInfoCard = () => {
             💡 Dica: Recomendamos trocar sua senha no primeiro acesso para maior segurança
           </p>
         </div>
+
+        {/* CNPJ Information */}
+        <div className="mt-4 pt-4 border-t border-blue-200">
+          <p className="text-xs text-gray-500 text-center">
+            CNPJ: 44.962.282/0001-83
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

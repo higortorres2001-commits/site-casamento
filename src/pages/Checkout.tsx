@@ -197,11 +197,14 @@ const Checkout = () => {
   };
 
   const handleSubmit = async () => {
+    console.log("🚀 Iniciando processo de checkout...");
+    
     if (!mainProduct) {
       showError("Produto não carregado.");
       return;
     }
 
+    // Validar formulário de checkout
     const checkoutFormValid = await checkoutFormRef.current?.submitForm();
     if (!checkoutFormValid) {
       showError("Por favor, preencha todos os campos obrigatórios do formulário.");
@@ -213,6 +216,13 @@ const Checkout = () => {
       showError("Erro ao obter dados do formulário.");
       return;
     }
+
+    console.log("✅ Dados do formulário validados:", {
+      name: checkoutFormData.name,
+      email: checkoutFormData.email,
+      cpf: checkoutFormData.cpf?.substring(0, 3) + "***", // Log parcial por segurança
+      whatsapp: checkoutFormData.whatsapp?.substring(0, 5) + "***"
+    });
 
     // Extrair dados do formulário para Meta Pixel
     const formDataCustomerData = {
@@ -233,6 +243,7 @@ const Checkout = () => {
       );
     }
 
+    // Validar cartão de crédito se necessário
     let creditCardData = null;
     if (paymentMethod === "CREDIT_CARD") {
       const creditCardFormValid = await creditCardFormRef.current?.submitForm();
@@ -241,6 +252,7 @@ const Checkout = () => {
         return;
       }
       creditCardData = creditCardFormRef.current?.getValues();
+      console.log("✅ Dados do cartão validados");
     }
 
     setIsSubmitting(true);
@@ -248,7 +260,7 @@ const Checkout = () => {
     try {
       const productIds = [mainProduct.id, ...selectedOrderBumps];
 
-      const payload: any = {
+      const payload = {
         name: checkoutFormData.name,
         email: checkoutFormData.email,
         cpf: checkoutFormData.cpf,
@@ -256,32 +268,47 @@ const Checkout = () => {
         productIds,
         coupon_code: appliedCoupon?.code || null,
         paymentMethod,
+        creditCard: creditCardData,
         metaTrackingData: {
           ...metaTrackingData,
           event_source_url: window.location.href,
         },
       };
 
-      if (paymentMethod === "CREDIT_CARD" && creditCardData) {
-        payload.creditCard = creditCardData;
-      }
+      console.log("📤 Enviando payload para create-asaas-payment:", {
+        ...payload,
+        cpf: payload.cpf?.substring(0, 3) + "***", // Log parcial por segurança
+        whatsapp: payload.whatsapp?.substring(0, 5) + "***",
+        creditCard: creditCardData ? "DADOS_FORNECIDOS" : null
+      });
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: payload,
       });
 
+      console.log("📥 Resposta da edge function:", { data, error });
+
       if (error) {
+        console.error("❌ Erro da edge function:", error);
         showError("Falha ao finalizar o checkout: " + error.message);
-        console.error("Edge function error:", error);
+        return;
+      }
+
+      if (!data) {
+        console.error("❌ Nenhum dado retornado da edge function");
+        showError("Erro inesperado: nenhum dado retornado do servidor.");
         return;
       }
 
       if (paymentMethod === "PIX") {
+        console.log("💳 Processando pagamento PIX...");
         setPixDetails(data);
         setAsaasPaymentId(data.id);
         setOrderId(data.orderId);
         setIsPixModalOpen(true);
+        console.log("✅ Modal PIX aberto com sucesso");
       } else if (paymentMethod === "CREDIT_CARD") {
+        console.log("💰 Processando pagamento com cartão...");
         if (data.status === "CONFIRMED" || data.status === "RECEIVED") {
           showSuccess("Pagamento confirmado!");
           navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } });
@@ -291,8 +318,8 @@ const Checkout = () => {
         }
       }
     } catch (err: any) {
+      console.error("❌ Erro inesperado no checkout:", err);
       showError("Erro inesperado: " + err.message);
-      console.error("Checkout error:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -359,7 +386,7 @@ const Checkout = () => {
               />
             )}
 
-            {/* 6. Box Informativo Pós-Compra */}
+            {/* 6. Box Informativo Pós-Compra (ÚLTIMO) */}
             <PostPurchaseInfoCard />
           </div>
 
