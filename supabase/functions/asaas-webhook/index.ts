@@ -82,7 +82,7 @@ serve(async (req) => {
     userId = order.user_id;
 
     // 4. Update order status to 'paid' if it's not already paid
-    const newStatus = requestBody.event === 'PAYMENT_RECEIVED' ? 'paid' : 'paid';
+    const newStatus = 'paid';
     
     if (order.status !== 'paid') {
       const { error: updateOrderError } = await supabase
@@ -129,76 +129,139 @@ serve(async (req) => {
       });
     }
 
-    // 5. Fetch user profile to get current access and contact info
-    const { data: profile, error: profileError } = await supabase
+    // 5. Verificar se o perfil do usuário já existe
+    const { data: existingProfile, error: profileCheckError } = await supabase
       .from('profiles')
       .select('id, access, name, email, cpf, whatsapp')
       .eq('id', userId)
       .single();
 
-    if (profileError || !profile) {
+    let profileExists = !profileCheckError && existingProfile;
+    
+    // 6. Se o perfil não existir, criar um novo
+    if (!profileExists) {
       await supabase.from('logs').insert({
-        level: 'error',
-        context: 'asaas-webhook',
-        message: 'User profile not found.',
-        metadata: { userId, orderId, asaasPaymentId, error: profileError?.message }
+        level: 'info',
+        context: 'asaas-webhook-profile-creation',
+        message: 'User profile does not exist, creating new profile',
+        metadata: { userId, orderId }
       });
-      return new Response(JSON.stringify({ message: 'User profile not found, but order updated.' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 6. Merge ordered_product_ids with existing 'access' array without duplicates
-    const orderedProductIds = order.ordered_product_ids;
-    const existingAccess = profile.access || [];
-    const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
-
-    // 7. Update 'profiles' table with new 'access' array
-    // IMPORTANT: Don't force has_changed_password to false if user has already changed password
-    const { error: updateProfileError } = await supabase
-      .from('profiles')
-      .update({ access: newAccess })
-      .eq('id', userId);
-
-    if (updateProfileError) {
+      
+      // Buscar dados do usuário no auth
+      const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+      
+      if (userError || !userData?.user) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'asaas-webhook-user-fetch-error',
+          message: 'Failed to fetch user data from auth',
+          metadata: { userId, error: userError?.message }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to fetch user data.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Extrair dados do user_metadata
+      const userMetadata = userData.user.user_metadata || {};
+      
+      // Criar perfil
+      const { error: createProfileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          name: userMetadata.name || userData.user.email?.split('@')[0] || 'Usuário',
+          cpf: userMetadata.cpf || '',
+          email: userData.user.email,
+          whatsapp: userMetadata.whatsapp || '',
+          access: order.ordered_product_ids || [],
+          primeiro_acesso: true,
+          has_changed_password: false,
+          is_admin: false,
+          created_at: new Date().toISOString()
+        });
+        
+      if (createProfileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'asaas-webhook-profile-creation-error',
+          message: 'Failed to create user profile',
+          metadata: { 
+            userId, 
+            orderId, 
+            error: createProfileError.message 
+          }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to create user profile.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
       await supabase.from('logs').insert({
-        level: 'error',
+        level: 'info',
+        context: 'asaas-webhook-profile-created',
+        message: 'User profile created successfully',
+        metadata: { userId, orderId }
+      });
+    } else {
+      // 7. Se o perfil existir, atualizar o acesso
+      const orderedProductIds = order.ordered_product_ids || [];
+      const existingAccess = existingProfile.access || [];
+      const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
+
+      const { error: updateProfileError } = await supabase
+        .from('profiles')
+        .update({ access: newAccess })
+        .eq('id', userId);
+
+      if (updateProfileError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'asaas-webhook',
+          message: 'Failed to update user profile access',
+          metadata: { 
+            userId, 
+            orderId, 
+            asaasPaymentId, 
+            orderedProductIds, 
+            error: updateProfileError.message 
+          }
+        });
+        return new Response(JSON.stringify({ error: 'Failed to update user profile access.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      await supabase.from('logs').insert({
+        level: 'info',
         context: 'asaas-webhook',
-        message: 'Failed to update user profile access',
+        message: `Profile ${userId} access updated successfully.`,
         metadata: { 
           userId, 
           orderId, 
           asaasPaymentId, 
-          orderedProductIds, 
-          error: updateProfileError.message 
+          newAccess,
+          previousAccessCount: existingAccess.length,
+          newAccessCount: newAccess.length
         }
       });
-      return new Response(JSON.stringify({ error: 'Failed to update user profile access.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
     }
-    
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'asaas-webhook',
-      message: `Profile ${userId} access updated successfully.`,
-      metadata: { 
-        userId, 
-        orderId, 
-        asaasPaymentId, 
-        newAccess,
-        previousAccessCount: existingAccess.length,
-        newAccessCount: newAccess.length
-      }
-    });
 
     // --- Meta CAPI Purchase Event ---
     const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
     const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
 
-    if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN && process.env.NODE_ENV === 'production') {
+    if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN) {
+      // Buscar dados do perfil atualizado
+      const { data: updatedProfile } = await supabase
+        .from('profiles')
+        .select('email, whatsapp')
+        .eq('id', userId)
+        .single();
+        
       const capiPayload = {
         data: [
           {
@@ -207,8 +270,8 @@ serve(async (req) => {
             event_source_url: order.meta_tracking_data?.event_source_url || '',
             action_source: 'website',
             user_data: {
-              em: profile.email,
-              ph: profile.whatsapp,
+              em: updatedProfile?.email || '',
+              ph: updatedProfile?.whatsapp || '',
               fbc: order.meta_tracking_data?.fbc,
               fbp: order.meta_tracking_data?.fbp,
               client_ip_address: order.meta_tracking_data?.client_ip_address,
@@ -260,7 +323,15 @@ serve(async (req) => {
 
     // 8. Send "Acesso Liberado" email with login details
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    if (RESEND_API_KEY && profile.email && profile.cpf) {
+    
+    // Buscar dados do perfil atualizado para o email
+    const { data: emailProfile } = await supabase
+      .from('profiles')
+      .select('email, cpf')
+      .eq('id', userId)
+      .single();
+      
+    if (RESEND_API_KEY && emailProfile?.email && emailProfile?.cpf) {
       const emailSubject = "Seu acesso foi liberado!";
       // Assuming client application URL is derived from SUPABASE_URL for now, 
       // but ideally this should be a separate environment variable (e.g., APP_URL)
@@ -271,8 +342,8 @@ serve(async (req) => {
         Parabéns! Seu pagamento foi confirmado. Para acessar seus produtos, use os dados abaixo na nossa página de login:
 
         Login: ${loginUrl}
-        Email: ${profile.email}
-        Senha: ${profile.cpf} (os números do seu CPF)
+        Email: ${emailProfile.email}
+        Senha: ${emailProfile.cpf} (os números do seu CPF)
 
         Recomendamos trocar sua senha no primeiro acesso.
       `;
@@ -285,7 +356,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           from: 'onboarding@resend.dev',
-          to: profile.email,
+          to: emailProfile.email,
           subject: emailSubject,
           html: emailBody.replace(/\n/g, '<br/>'),
         }),
@@ -301,7 +372,7 @@ serve(async (req) => {
             userId, 
             orderId, 
             asaasPaymentId, 
-            email: profile.email, 
+            email: emailProfile.email, 
             resendError: errorData 
           }
         });
@@ -309,12 +380,12 @@ serve(async (req) => {
         await supabase.from('logs').insert({
           level: 'info',
           context: 'asaas-webhook',
-          message: `Access liberation email sent to ${profile.email}.`,
+          message: `Access liberation email sent to ${emailProfile.email}.`,
           metadata: { 
             userId, 
             orderId, 
             asaasPaymentId, 
-            email: profile.email 
+            email: emailProfile.email 
           }
         });
       }
