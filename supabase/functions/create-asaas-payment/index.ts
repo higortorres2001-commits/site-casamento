@@ -40,188 +40,257 @@ interface CouponData {
   active: boolean;
 }
 
-// ==================== USER SERVICE ====================
-async function handleUserManagement(payload: RequestPayload, supabase: any): Promise<UserData> {
+// ==================== FAILSAFE USER SERVICE ====================
+async function handleUserManagementFailsafe(payload: RequestPayload, supabase: any): Promise<UserData> {
   await supabase.from('logs').insert({
     level: 'info',
-    context: 'user-management-start',
-    message: 'Starting user management process (checkout flow)',
+    context: 'user-management-failsafe-start',
+    message: 'Starting FAILSAFE user management - sale will NOT be lost',
     metadata: { 
       email: payload.email,
       cpfLength: payload.cpf.length,
-      flow: 'checkout'
+      flow: 'checkout-failsafe'
     }
   });
 
-  // ETAPA 1: Verificar se usuário já existe no Auth
-  const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
+  try {
+    // ETAPA 1: Verificar se usuário já existe no Auth
+    const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
 
-  if (listUsersError) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'user-management-lookup-error',
-      message: 'Failed to list users from Auth',
-      metadata: { 
-        email: payload.email,
-        error: listUsersError.message,
-        errorType: listUsersError.name
-      }
-    });
-    throw new Error('Erro ao verificar usuário existente: ' + listUsersError.message);
-  }
-
-  const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === payload.email.toLowerCase());
-
-  if (existingUser) {
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'user-management-existing-found',
-      message: 'Existing user found in Auth, updating profile',
-      metadata: { 
-        userId: existingUser.id,
-        email: payload.email,
-        existingUserCreated: existingUser.created_at
-      }
-    });
-
-    // ETAPA 2A: Atualizar perfil do usuário existente (sem tocar no access)
-    const { error: updateProfileError } = await supabase
-      .from('profiles')
-      .update({ 
-        name: payload.name, 
-        cpf: payload.cpf, 
-        email: payload.email, 
-        whatsapp: payload.whatsapp,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', existingUser.id);
-
-    if (updateProfileError) {
+    if (listUsersError) {
       await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'user-management-profile-update-error',
-        message: 'Failed to update existing user profile, but continuing',
+        level: 'error',
+        context: 'user-management-lookup-error',
+        message: 'Failed to list users from Auth - proceeding with fallback',
         metadata: { 
-          userId: existingUser.id,
-          error: updateProfileError.message,
-          errorCode: updateProfileError.code
+          email: payload.email,
+          error: listUsersError.message,
+          errorType: listUsersError.name
         }
       });
+      // NÃO FALHAR - continuar com criação
     } else {
+      const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === payload.email.toLowerCase());
+
+      if (existingUser) {
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'user-management-existing-found',
+          message: 'Existing user found in Auth, checking profile',
+          metadata: { 
+            userId: existingUser.id,
+            email: payload.email,
+            existingUserCreated: existingUser.created_at
+          }
+        });
+
+        // Verificar se perfil já existe
+        const { data: existingProfile, error: profileCheckError } = await supabase
+          .from('profiles')
+          .select('id, name, email, cpf, whatsapp, access, created_at')
+          .eq('id', existingUser.id)
+          .single();
+
+        if (!profileCheckError && existingProfile) {
+          // Perfil existe - atualizar se necessário
+          const needsUpdate = 
+            existingProfile.name !== payload.name ||
+            existingProfile.email !== payload.email ||
+            existingProfile.cpf !== payload.cpf ||
+            existingProfile.whatsapp !== payload.whatsapp;
+
+          if (needsUpdate) {
+            await supabase
+              .from('profiles')
+              .update({ 
+                name: payload.name, 
+                cpf: payload.cpf, 
+                email: payload.email, 
+                whatsapp: payload.whatsapp,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingUser.id);
+          }
+
+          return { id: existingUser.id, isExisting: true };
+        } else {
+          // Perfil não existe - tentar criar
+          try {
+            await supabase
+              .from('profiles')
+              .insert({
+                id: existingUser.id,
+                name: payload.name,
+                cpf: payload.cpf,
+                email: payload.email,
+                whatsapp: payload.whatsapp,
+                access: [],
+                primeiro_acesso: false,
+                has_changed_password: false,
+                is_admin: false,
+                created_at: new Date().toISOString()
+              });
+
+            return { id: existingUser.id, isExisting: true };
+          } catch (profileError: any) {
+            await supabase.from('logs').insert({
+              level: 'warning',
+              context: 'user-management-profile-creation-failed',
+              message: 'Failed to create profile for existing user - continuing with sale',
+              metadata: { 
+                userId: existingUser.id,
+                error: profileError.message
+              }
+            });
+            // CONTINUAR COM A VENDA mesmo se falhar
+            return { id: existingUser.id, isExisting: true };
+          }
+        }
+      }
+    }
+
+    // ETAPA 2: Tentar criar novo usuário
+    let newUserId: string | null = null;
+    
+    try {
+      const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+        email: payload.email,
+        password: payload.cpf,
+        email_confirm: true,
+        user_metadata: { 
+          name: payload.name, 
+          cpf: payload.cpf, 
+          whatsapp: payload.whatsapp,
+          created_via: 'checkout-failsafe',
+          created_at_checkout: new Date().toISOString()
+        },
+      });
+
+      if (createUserError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'user-management-auth-creation-failed',
+          message: 'Failed to create Auth user - will use fallback ID',
+          metadata: { 
+            email: payload.email,
+            error: createUserError.message,
+            errorType: createUserError?.name,
+            errorCode: createUserError?.code
+          }
+        });
+        // NÃO FALHAR - usar ID gerado
+      } else if (newUser?.user) {
+        newUserId = newUser.user.id;
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'user-management-auth-created',
+          message: 'Auth user created successfully',
+          metadata: { 
+            userId: newUserId,
+            email: payload.email
+          }
+        });
+      }
+    } catch (authError: any) {
       await supabase.from('logs').insert({
-        level: 'info',
-        context: 'user-management-profile-updated',
-        message: 'Existing user profile updated successfully',
-        metadata: { userId: existingUser.id }
+        level: 'error',
+        context: 'user-management-auth-exception',
+        message: 'Exception creating Auth user - will use fallback',
+        metadata: { 
+          email: payload.email,
+          error: authError.message
+        }
       });
     }
 
-    return { id: existingUser.id, isExisting: true };
-  }
-
-  // ETAPA 2B: Criar NOVO usuário (Auth + Profile) IMEDIATAMENTE
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'user-management-creating-new',
-    message: 'Creating new user account (Auth + Profile) in checkout flow',
-    metadata: { 
-      email: payload.email,
-      cpfLength: payload.cpf.length,
-      flow: 'checkout-immediate'
+    // ETAPA 3: Se não conseguiu criar no Auth, gerar ID único para continuar a venda
+    if (!newUserId) {
+      // Gerar UUID único para garantir que a venda continue
+      newUserId = crypto.randomUUID();
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'user-management-fallback-id',
+        message: 'Using fallback UUID for user - SALE WILL CONTINUE',
+        metadata: { 
+          fallbackUserId: newUserId,
+          email: payload.email,
+          reason: 'auth_creation_failed'
+        }
+      });
     }
-  });
 
-  // Criar usuário no Auth
-  const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-    email: payload.email,
-    password: payload.cpf, // Senha = CPF (números)
-    email_confirm: true, // Email já confirmado
-    user_metadata: { 
-      name: payload.name, 
-      cpf: payload.cpf, 
-      whatsapp: payload.whatsapp,
-      created_via: 'checkout',
-      created_at_checkout: new Date().toISOString()
-    },
-  });
+    // ETAPA 4: Tentar criar perfil (com fallback em caso de erro)
+    try {
+      await supabase
+        .from('profiles')
+        .insert({
+          id: newUserId,
+          name: payload.name,
+          cpf: payload.cpf,
+          email: payload.email,
+          whatsapp: payload.whatsapp,
+          access: [],
+          primeiro_acesso: true,
+          has_changed_password: false,
+          is_admin: false,
+          created_at: new Date().toISOString()
+        });
 
-  if (createUserError || !newUser?.user) {
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'user-management-profile-created',
+        message: 'Profile created successfully',
+        metadata: { 
+          userId: newUserId,
+          email: payload.email
+        }
+      });
+    } catch (profileError: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'user-management-profile-creation-failed',
+        message: 'CRITICAL: Profile creation failed but SALE WILL CONTINUE',
+        metadata: { 
+          userId: newUserId,
+          email: payload.email,
+          error: profileError.message,
+          errorCode: profileError.code,
+          customerData: {
+            name: payload.name,
+            email: payload.email,
+            cpf: payload.cpf,
+            whatsapp: payload.whatsapp
+          }
+        }
+      });
+      // NÃO FALHAR - continuar com a venda
+    }
+
+    return { id: newUserId, isExisting: false };
+
+  } catch (error: any) {
+    // ÚLTIMO RECURSO: Gerar ID único e continuar a venda
+    const fallbackUserId = crypto.randomUUID();
+    
     await supabase.from('logs').insert({
       level: 'error',
-      context: 'user-management-auth-creation-error',
-      message: 'CRITICAL: Failed to create Auth user in checkout',
+      context: 'user-management-total-failure',
+      message: 'CRITICAL: Complete user management failure - using emergency fallback',
       metadata: { 
+        fallbackUserId,
         email: payload.email,
-        error: createUserError?.message,
-        errorType: createUserError?.name,
-        errorCode: createUserError?.code,
-        flow: 'checkout'
+        error: error.message,
+        customerData: {
+          name: payload.name,
+          email: payload.email,
+          cpf: payload.cpf,
+          whatsapp: payload.whatsapp
+        }
       }
     });
-    throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
+
+    return { id: fallbackUserId, isExisting: false };
   }
-
-  const userId = newUser.user.id;
-
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'user-management-auth-created',
-    message: 'Auth user created successfully in checkout',
-    metadata: { 
-      userId,
-      email: payload.email,
-      flow: 'checkout'
-    }
-  });
-
-  // Criar perfil IMEDIATAMENTE (sem acesso aos produtos ainda)
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .insert({
-      id: userId,
-      name: payload.name,
-      cpf: payload.cpf,
-      email: payload.email,
-      whatsapp: payload.whatsapp,
-      access: [], // ⚠️ VAZIO - acesso será liberado pelo webhook
-      primeiro_acesso: true,
-      has_changed_password: false,
-      is_admin: false,
-      created_at: new Date().toISOString()
-    });
-
-  if (profileError) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'user-management-profile-creation-error',
-      message: 'CRITICAL: Failed to create profile for new user in checkout',
-      metadata: { 
-        userId,
-        email: payload.email,
-        error: profileError.message,
-        errorCode: profileError.code,
-        flow: 'checkout'
-      }
-    });
-    
-    // Tentar deletar o usuário do Auth para evitar inconsistência
-    await supabase.auth.admin.deleteUser(userId);
-    
-    throw new Error('Erro ao criar perfil do usuário: ' + profileError.message);
-  }
-
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'user-management-profile-created',
-    message: 'Profile created successfully for new user in checkout (access empty, will be granted by webhook)',
-    metadata: { 
-      userId,
-      email: payload.email,
-      flow: 'checkout'
-    }
-  });
-
-  return { id: userId, isExisting: false };
 }
 
 // ==================== ORDER SERVICE ====================
@@ -243,6 +312,7 @@ async function validateRequestData(requestBody: any, supabase: any): Promise<Req
 
   const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = requestBody;
 
+  // Validação de campos obrigatórios
   const missingFields = [];
   if (!name) missingFields.push('name');
   if (!email) missingFields.push('email');
@@ -261,6 +331,7 @@ async function validateRequestData(requestBody: any, supabase: any): Promise<Req
     throw new Error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
   }
 
+  // Validação de método de pagamento
   if (!['PIX', 'CREDIT_CARD'].includes(paymentMethod)) {
     await supabase.from('logs').insert({
       level: 'error',
@@ -357,6 +428,7 @@ async function validateProducts(productIds: string[], supabase: any): Promise<Pr
     throw new Error(`Produtos não encontrados: ${missingIds.join(', ')}`);
   }
 
+  // Verificar se todos os produtos estão ativos
   const inactiveProducts = products.filter(p => p.status !== 'ativo');
   if (inactiveProducts.length > 0) {
     await supabase.from('logs').insert({
@@ -384,79 +456,76 @@ async function validateProducts(productIds: string[], supabase: any): Promise<Pr
 
 async function applyCoupon(couponCode: string | undefined, originalTotal: number, supabase: any): Promise<{ finalTotal: number; couponData?: CouponData }> {
   if (!couponCode) {
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'coupon-application-skipped',
-      message: 'No coupon code provided, skipping coupon validation',
-      metadata: { originalTotal }
-    });
     return { finalTotal: originalTotal };
   }
 
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'coupon-application-start',
-    message: 'Starting coupon validation and application',
-    metadata: { 
-      couponCode: couponCode.toUpperCase().trim(),
-      originalTotal
+  try {
+    const { data: coupon, error: couponError } = await supabase
+      .from('coupons')
+      .select('code, discount_type, value, active')
+      .eq('code', couponCode.toUpperCase().trim())
+      .eq('active', true)
+      .single();
+
+    if (couponError || !coupon) {
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'coupon-application-invalid',
+        message: 'Invalid coupon - continuing without discount',
+        metadata: { 
+          couponCode: couponCode.toUpperCase().trim(),
+          error: couponError?.message
+        }
+      });
+      return { finalTotal: originalTotal };
     }
-  });
 
-  const { data: coupon, error: couponError } = await supabase
-    .from('coupons')
-    .select('code, discount_type, value, active')
-    .eq('code', couponCode.toUpperCase().trim())
-    .eq('active', true)
-    .single();
+    let finalTotal = originalTotal;
+    let discountAmount = 0;
 
-  if (couponError || !coupon) {
+    if (coupon.discount_type === 'percentage') {
+      discountAmount = originalTotal * (parseFloat(coupon.value) / 100);
+      finalTotal = originalTotal - discountAmount;
+    } else if (coupon.discount_type === 'fixed') {
+      discountAmount = parseFloat(coupon.value);
+      finalTotal = Math.max(0, originalTotal - discountAmount);
+    }
+
     await supabase.from('logs').insert({
-      level: 'error',
-      context: 'coupon-application-invalid',
-      message: 'Invalid or inactive coupon code provided',
+      level: 'info',
+      context: 'coupon-application-success',
+      message: 'Coupon applied successfully',
       metadata: { 
-        couponCode: couponCode.toUpperCase().trim(),
-        error: couponError?.message,
-        errorCode: couponError?.code
+        couponCode: coupon.code,
+        discountType: coupon.discount_type,
+        discountValue: coupon.value,
+        originalTotal,
+        discountAmount,
+        finalTotal
       }
     });
-    throw new Error(`Cupom inválido ou inativo: ${couponCode}`);
+
+    return { finalTotal, couponData: coupon as CouponData };
+  } catch (error: any) {
+    await supabase.from('logs').insert({
+      level: 'warning',
+      context: 'coupon-application-exception',
+      message: 'Exception applying coupon - continuing without discount',
+      metadata: { 
+        couponCode,
+        error: error.message,
+        originalTotal
+      }
+    });
+    return { finalTotal: originalTotal };
   }
-
-  let finalTotal = originalTotal;
-  let discountAmount = 0;
-
-  if (coupon.discount_type === 'percentage') {
-    discountAmount = originalTotal * (parseFloat(coupon.value) / 100);
-    finalTotal = originalTotal - discountAmount;
-  } else if (coupon.discount_type === 'fixed') {
-    discountAmount = parseFloat(coupon.value);
-    finalTotal = Math.max(0, originalTotal - discountAmount);
-  }
-
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'coupon-application-success',
-    message: 'Coupon applied successfully',
-    metadata: { 
-      couponCode: coupon.code,
-      discountType: coupon.discount_type,
-      discountValue: coupon.value,
-      originalTotal,
-      discountAmount,
-      finalTotal
-    }
-  });
-
-  return { finalTotal, couponData: coupon as CouponData };
 }
 
-async function createOrder(userId: string, productIds: string[], totalPrice: number, metaTrackingData: any, req: Request, supabase: any): Promise<OrderData> {
+async function createOrderFailsafe(userId: string, productIds: string[], totalPrice: number, metaTrackingData: any, req: Request, supabase: any): Promise<OrderData> {
   await supabase.from('logs').insert({
     level: 'info',
-    context: 'order-creation-start',
-    message: 'Starting order creation',
+    context: 'order-creation-failsafe-start',
+    message: 'Starting FAILSAFE order creation - order WILL be created',
     metadata: { 
       userId,
       productIds,
@@ -474,74 +543,127 @@ async function createOrder(userId: string, productIds: string[], totalPrice: num
     client_user_agent: clientUserAgent,
   };
 
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .insert({
-      user_id: userId,
-      ordered_product_ids: productIds,
-      total_price: totalPrice,
-      status: 'pending',
-      meta_tracking_data: fullMetaTrackingData,
-    })
-    .select()
-    .single();
+  // Tentar criar o pedido com retry
+  let order: OrderData | null = null;
+  let orderAttempts = 0;
+  const maxOrderAttempts = 3;
 
-  if (orderError || !order) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'order-creation-error',
-      message: 'Failed to create order in database',
-      metadata: { 
-        userId,
-        productIds,
-        totalPrice,
-        error: orderError?.message,
-        errorCode: orderError?.code
+  while (orderAttempts < maxOrderAttempts && !order) {
+    orderAttempts++;
+    
+    try {
+      const { data: createdOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          user_id: userId,
+          ordered_product_ids: productIds,
+          total_price: totalPrice,
+          status: 'pending',
+          meta_tracking_data: fullMetaTrackingData,
+        })
+        .select()
+        .single();
+
+      if (orderError) {
+        await supabase.from('logs').insert({
+          level: 'error',
+          context: 'order-creation-error',
+          message: `Failed to create order (attempt ${orderAttempts}/${maxOrderAttempts})`,
+          metadata: { 
+            userId,
+            productIds,
+            totalPrice,
+            error: orderError.message,
+            errorCode: orderError.code,
+            attempt: orderAttempts
+          }
+        });
+
+        if (orderAttempts < maxOrderAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        
+        throw new Error('Erro ao criar pedido: ' + orderError.message);
       }
-    });
-    throw new Error('Erro ao criar pedido: ' + (orderError?.message || 'Erro desconhecido'));
+
+      order = createdOrder as OrderData;
+      
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'order-creation-success',
+        message: 'Order created successfully',
+        metadata: { 
+          orderId: order.id,
+          userId,
+          totalPrice,
+          status: order.status,
+          attempt: orderAttempts
+        }
+      });
+    } catch (error: any) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'order-creation-exception',
+        message: `Exception creating order (attempt ${orderAttempts}/${maxOrderAttempts})`,
+        metadata: { 
+          userId,
+          error: error.message,
+          attempt: orderAttempts
+        }
+      });
+
+      if (orderAttempts >= maxOrderAttempts) {
+        throw error;
+      }
+    }
   }
 
-  await supabase.from('logs').insert({
-    level: 'info',
-    context: 'order-creation-success',
-    message: 'Order created successfully',
-    metadata: { 
-      orderId: order.id,
-      userId,
-      totalPrice,
-      status: order.status
-    }
-  });
+  if (!order) {
+    throw new Error('Falha ao criar pedido após múltiplas tentativas');
+  }
 
-  return order as OrderData;
+  return order;
 }
 
 // ==================== ASAAS SERVICE ====================
 async function updateOrderWithPaymentId(orderId: string, asaasPaymentId: string, supabase: any): Promise<void> {
-  const { error: orderUpdateError } = await supabase
-    .from('orders')
-    .update({ asaas_payment_id: asaasPaymentId })
-    .eq('id', orderId);
+  try {
+    const { error: orderUpdateError } = await supabase
+      .from('orders')
+      .update({ asaas_payment_id: asaasPaymentId })
+      .eq('id', orderId);
 
-  if (orderUpdateError) {
+    if (orderUpdateError) {
+      await supabase.from('logs').insert({
+        level: 'warning',
+        context: 'order-payment-id-update-error',
+        message: 'Failed to update order with payment ID, but payment was created',
+        metadata: { 
+          orderId,
+          asaasPaymentId,
+          error: orderUpdateError.message,
+          errorCode: orderUpdateError.code
+        }
+      });
+    } else {
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'order-payment-id-updated',
+        message: 'Order updated successfully with payment ID',
+        metadata: { orderId, asaasPaymentId }
+      });
+    }
+  } catch (error: any) {
     await supabase.from('logs').insert({
       level: 'warning',
-      context: 'order-payment-id-update-error',
-      message: 'Failed to update order with payment ID, but payment was created',
+      context: 'order-payment-id-update-exception',
+      message: 'Exception updating order with payment ID - payment still created',
       metadata: { 
         orderId,
         asaasPaymentId,
-        error: orderUpdateError.message,
-        errorCode: orderUpdateError.code
+        error: error.message
       }
-    });
-  } else {
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'order-payment-id-updated',
-      message: 'Order updated successfully with payment ID',
-      metadata: { orderId, asaasPaymentId }
     });
   }
 }
@@ -591,6 +713,7 @@ async function processPixPayment(order: OrderData, customerData: RequestPayload,
     'access_token': ASAAS_API_KEY,
   };
 
+  // Criar pagamento PIX
   const asaasResponse = await fetch(`${ASAAS_BASE_URL}/payments`, {
     method: 'POST',
     headers: asaasHeaders,
@@ -607,7 +730,13 @@ async function processPixPayment(order: OrderData, customerData: RequestPayload,
         orderId: order.id,
         asaasError: errorData,
         httpStatus: asaasResponse.status,
-        httpStatusText: asaasResponse.statusText
+        httpStatusText: asaasResponse.statusText,
+        customerData: {
+          name: customerData.name,
+          email: customerData.email,
+          cpf: customerData.cpf,
+          whatsapp: customerData.whatsapp
+        }
       }
     });
     throw new Error('Erro ao criar pagamento PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
@@ -626,6 +755,7 @@ async function processPixPayment(order: OrderData, customerData: RequestPayload,
     }
   });
 
+  // Buscar QR Code do PIX
   const pixQrCodeResponse = await fetch(`${ASAAS_BASE_URL}/payments/${pixPaymentData.id}/pixQrCode`, {
     method: 'GET',
     headers: asaasHeaders
@@ -661,6 +791,7 @@ async function processPixPayment(order: OrderData, customerData: RequestPayload,
     }
   });
 
+  // Atualizar pedido com ID do pagamento (não falhar se der erro)
   await updateOrderWithPaymentId(order.id, pixPaymentData.id, supabase);
 
   return {
@@ -728,6 +859,7 @@ async function processCreditCardPayment(order: OrderData, customerData: RequestP
     remoteIp: clientIpAddress,
   };
 
+  // Adicionar parcelas se especificado
   if (creditCardData.installmentCount && creditCardData.installmentCount > 1) {
     asaasPayload.installmentCount = creditCardData.installmentCount;
     asaasPayload.installmentValue = parseFloat((order.total_price / creditCardData.installmentCount).toFixed(2));
@@ -754,7 +886,13 @@ async function processCreditCardPayment(order: OrderData, customerData: RequestP
         orderId: order.id,
         asaasError: errorData,
         httpStatus: asaasResponse.status,
-        installmentCount: creditCardData.installmentCount || 1
+        installmentCount: creditCardData.installmentCount || 1,
+        customerData: {
+          name: customerData.name,
+          email: customerData.email,
+          cpf: customerData.cpf,
+          whatsapp: customerData.whatsapp
+        }
       }
     });
     throw new Error('Erro ao processar pagamento com cartão: ' + (errorData.message || 'Erro na comunicação com gateway'));
@@ -774,6 +912,7 @@ async function processCreditCardPayment(order: OrderData, customerData: RequestP
     }
   });
 
+  // Atualizar pedido com ID do pagamento (não falhar se der erro)
   await updateOrderWithPaymentId(order.id, paymentData.id, supabase);
 
   return { ...paymentData, orderId: order.id };
@@ -799,6 +938,7 @@ serve(async (req) => {
   let userId: string | undefined;
   let orderId: string | undefined;
   let asaasPaymentId: string | undefined;
+  let customerData: RequestPayload | undefined;
 
   try {
     requestBody = await req.json();
@@ -806,7 +946,7 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-start',
-      message: 'Payment creation process started',
+      message: 'FAILSAFE Payment creation process started - SALE WILL NOT BE LOST',
       metadata: { 
         paymentMethod: requestBody.paymentMethod,
         hasProductIds: !!requestBody.productIds,
@@ -816,18 +956,26 @@ serve(async (req) => {
       }
     });
 
+    // ETAPA 1: Validar dados da requisição
     const validatedPayload = await validateRequestData(requestBody, supabase);
-    const userData = await handleUserManagement(validatedPayload, supabase);
-    userId = userData.id;
+    customerData = validatedPayload;
 
+    // ETAPA 2: Validar produtos
     const products = await validateProducts(validatedPayload.productIds, supabase);
     const originalTotal = products.reduce((sum, product) => sum + parseFloat(product.price.toString()), 0);
 
+    // ETAPA 3: Aplicar cupom (não falhar se der erro)
     const { finalTotal, couponData } = await applyCoupon(validatedPayload.coupon_code, originalTotal, supabase);
 
-    const order = await createOrder(userId, validatedPayload.productIds, finalTotal, validatedPayload.metaTrackingData, req, supabase);
+    // ETAPA 4: Gerenciar usuário (FAILSAFE - nunca falha)
+    const userData = await handleUserManagementFailsafe(validatedPayload, supabase);
+    userId = userData.id;
+
+    // ETAPA 5: Criar pedido (FAILSAFE - com retry)
+    const order = await createOrderFailsafe(userId, validatedPayload.productIds, finalTotal, validatedPayload.metaTrackingData, req, supabase);
     orderId = order.id;
 
+    // ETAPA 6: Processar pagamento (PRIORIDADE MÁXIMA)
     let paymentResult: any;
     const clientIpAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
 
@@ -844,7 +992,7 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-success',
-      message: 'Payment creation process completed successfully',
+      message: 'FAILSAFE Payment creation process completed successfully - SALE SECURED',
       metadata: { 
         orderId,
         userId,
@@ -865,10 +1013,11 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
+    // CRÍTICO: Salvar todos os dados do cliente para contato manual
     await supabase.from('logs').insert({
       level: 'error',
-      context: 'create-asaas-payment-unhandled-error',
-      message: `Payment creation failed: ${error.message}`,
+      context: 'create-asaas-payment-CRITICAL-FAILURE',
+      message: `CRITICAL SALE FAILURE: ${error.message}`,
       metadata: {
         errorMessage: error.message,
         errorStack: error.stack,
@@ -876,11 +1025,28 @@ serve(async (req) => {
         orderId,
         asaasPaymentId,
         paymentMethod: requestBody?.paymentMethod,
-        requestBodyKeys: requestBody ? Object.keys(requestBody) : []
+        CUSTOMER_CONTACT_DATA: customerData ? {
+          name: customerData.name,
+          email: customerData.email,
+          cpf: customerData.cpf,
+          whatsapp: customerData.whatsapp,
+          productIds: customerData.productIds,
+          coupon_code: customerData.coupon_code
+        } : {
+          name: requestBody?.name,
+          email: requestBody?.email,
+          cpf: requestBody?.cpf,
+          whatsapp: requestBody?.whatsapp,
+          productIds: requestBody?.productIds,
+          coupon_code: requestBody?.coupon_code
+        },
+        requestBodyKeys: requestBody ? Object.keys(requestBody) : [],
+        timestamp: new Date().toISOString(),
+        MANUAL_FOLLOW_UP_REQUIRED: true
       }
     });
 
-    let userFriendlyMessage = 'Erro interno do servidor. Tente novamente em alguns minutos.';
+    let userFriendlyMessage = 'Erro interno do servidor. Entraremos em contato em breve.';
     
     if (error.message.includes('Campos obrigatórios ausentes')) {
       userFriendlyMessage = 'Dados incompletos. Verifique se todos os campos foram preenchidos.';
@@ -890,15 +1056,16 @@ serve(async (req) => {
       userFriendlyMessage = 'Um ou mais produtos não estão disponíveis.';
     } else if (error.message.includes('Cupom inválido')) {
       userFriendlyMessage = error.message;
-    } else if (error.message.includes('Erro ao criar conta')) {
-      userFriendlyMessage = 'Erro ao processar seus dados. Verifique as informações e tente novamente.';
+    } else if (error.message.includes('Erro ao criar conta') || error.message.includes('duplicate')) {
+      userFriendlyMessage = 'Erro no processamento dos dados. Entraremos em contato para finalizar sua compra.';
     } else if (error.message.includes('Erro ao criar pagamento') || error.message.includes('Erro ao processar pagamento')) {
-      userFriendlyMessage = 'Erro no processamento do pagamento. Verifique os dados do cartão e tente novamente.';
+      userFriendlyMessage = 'Erro no processamento do pagamento. Entraremos em contato para finalizar sua compra.';
     }
 
     return new Response(JSON.stringify({ 
       error: userFriendlyMessage,
-      details: error.message 
+      details: 'Seus dados foram salvos e entraremos em contato para finalizar sua compra.',
+      contact_saved: true
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

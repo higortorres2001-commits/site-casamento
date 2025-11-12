@@ -2,22 +2,22 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, ShoppingCart } from 'lucide-react'; // Added ShoppingCart icon
+import { Package, Home, LogOut, Tag, BookOpen, ScrollText, Users, ShoppingCart, AlertTriangle } from 'lucide-react'; // Added AlertTriangle icon
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { showError, showSuccess } from '@/utils/toast';
-import { useSession } from '@/components/SessionContextProvider'; // Import useSession
+import { useSession } from '@/components/SessionContextProvider';
 
 interface SidebarProps {
   isMobile: boolean;
   onCloseMobileMenu?: () => void;
 }
 
-const ADMIN_EMAIL = "higor.torres8@gmail.com"; // Definir o email do administrador
+const ADMIN_EMAIL = "higor.torres8@gmail.com";
 
 const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
-  const { user } = useSession(); // Obter o usuário da sessão
-  const isAdmin = user?.email === ADMIN_EMAIL; // Verificar se é administrador
+  const { user } = useSession();
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -33,11 +33,11 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border p-4">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-sidebar-primary-foreground">
-          {isAdmin ? "Admin" : "Minha Conta"} {/* Título dinâmico */}
+          {isAdmin ? "Admin" : "Minha Conta"}
         </h2>
         {isMobile && (
           <Button variant="ghost" size="icon" onClick={onCloseMobileMenu}>
-            <Home className="h-5 w-5" /> {/* Using Home icon as a close button for simplicity */}
+            <Home className="h-5 w-5" />
           </Button>
         )}
       </div>
@@ -50,7 +50,7 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
           <BookOpen className="h-4 w-4" />
           Meus Produtos
         </Link>
-        {isAdmin && ( // Admin links
+        {isAdmin && (
           <>
             <Link to="/admin/products" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <Package className="h-4 w-4" />
@@ -67,6 +67,10 @@ const Sidebar = ({ isMobile, onCloseMobileMenu }: SidebarProps) => {
             <Link to="/admin/sales" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <ShoppingCart className="h-4 w-4" />
               Vendas
+            </Link>
+            <Link to="/admin/failed-sales" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
+              <AlertTriangle className="h-4 w-4" />
+              Vendas Perdidas
             </Link>
             <Link to="/admin/logs" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-sidebar-primary hover:bg-sidebar-accent" onClick={onCloseMobileMenu}>
               <ScrollText className="h-4 w-4" />
