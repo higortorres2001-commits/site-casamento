@@ -9,7 +9,8 @@ import Login from "./pages/Login";
 import Products from "./pages/admin/Products";
 import Coupons from "./pages/admin/Coupons";
 import Customers from "./pages/admin/Customers";
-import Sales from "./pages/admin/Sales"; // Importar página de vendas
+import Sales from "./pages/admin/Sales";
+import UserDiagnosis from "./pages/admin/UserDiagnosis";
 import Checkout from "./pages/Checkout";
 import MyProducts from "./pages/MyProducts";
 import ProductDetails from "./pages/ProductDetails";
@@ -17,13 +18,13 @@ import Confirmation from "./pages/Confirmation";
 import ProcessingPayment from "./pages/ProcessingPayment";
 import Logs from "./pages/admin/Logs";
 import UpdatePassword from "./pages/UpdatePassword";
-import ResetPassword from "./pages/ResetPassword"; // Importar a nova página
+import ResetPassword from "./pages/ResetPassword";
 import AdminLayout from "./components/layout/AdminLayout";
 import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import WhatsAppButton from "./components/WhatsAppButton";
 import ProductTags from "./pages/admin/ProductTags";
-import { usePixelInitialization } from "./hooks/use-pixel-initialization"; // Importar o hook
+import { usePixelInitialization } from "./hooks/use-pixel-initialization";
 
 const queryClient = new QueryClient();
 
@@ -36,13 +37,14 @@ const AppContent = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/checkout/:productId" element={<Checkout />} />
       <Route path="/primeira-senha" element={<UpdatePassword />} />
-      <Route path="/update-password" element={<ResetPassword />} /> {/* Nova rota */}
+      <Route path="/update-password" element={<ResetPassword />} />
 
       <Route element={<AdminLayout />}>
         <Route path="/admin/products" element={<Products />} />
         <Route path="/admin/cupons" element={<Coupons />} />
         <Route path="/admin/customers" element={<Customers />} />
-        <Route path="/admin/sales" element={<Sales />} /> {/* Nova rota de vendas */}
+        <Route path="/admin/sales" element={<Sales />} />
+        <Route path="/admin/user-diagnosis" element={<UserDiagnosis />} />
         <Route path="/admin/logs" element={<Logs />} />
         <Route path="/admin/product-tags" element={<ProductTags />} />
       </Route>
