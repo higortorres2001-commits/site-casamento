@@ -5,22 +5,21 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon } from "@/types";
 import { showError, showSuccess } from "@/utils/toast";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2, ChevronDown, ChevronUp, Download, FileText } from "lucide-react";
 import CheckoutHeader from "@/components/checkout/CheckoutHeader";
-import ProductCard from "@/components/checkout/ProductCard";
-import CustomerDataCard from "@/components/checkout/CustomerDataCard";
-import PaymentMethodCard from "@/components/checkout/PaymentMethodCard";
-import OrderBumpsCard from "@/components/checkout/OrderBumpsCard";
-import OrderSummaryCard from "@/components/checkout/OrderSummaryCard";
-import PostPurchaseInfoCard from "@/components/checkout/PostPurchaseInfoCard";
+import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
+import CheckoutForm, { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
+import CreditCardForm, { CreditCardFormRef } from "@/components/checkout/CreditCardForm";
+import OrderBumpCard from "@/components/checkout/OrderBumpCard";
+import OrderSummaryAccordion from "@/components/checkout/OrderSummaryAccordion";
 import FixedBottomBar from "@/components/checkout/FixedBottomBar";
 import PixPaymentModal from "@/components/checkout/PixPaymentModal";
-import { CheckoutFormRef } from "@/components/checkout/CheckoutForm";
-import { CreditCardFormRef } from "@/components/checkout/CreditCardForm";
 import { useSession } from "@/components/SessionContextProvider";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 declare global {
   interface Window {
@@ -56,26 +55,23 @@ const Checkout = () => {
   const { user } = useSession();
   const metaTrackingData = useMetaTrackingData();
 
-  // Estados principais
   const [mainProduct, setMainProduct] = useState<Product | null>(null);
   const [orderBumps, setOrderBumps] = useState<Product[]>([]);
   const [selectedOrderBumps, setSelectedOrderBumps] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"PIX" | "CREDIT_CARD">("PIX");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
-  const [isLoadingProduct, setIsLoadingProduct] = useState(true);
-
-  // Estados do modal PIX
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [pixDetails, setPixDetails] = useState<any>(null);
   const [asaasPaymentId, setAsaasPaymentId] = useState<string | null>(null);
+  const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [productAssets, setProductAssets] = useState<any[]>([]);
+  const [isMaterialsExpanded, setIsMaterialsExpanded] = useState(false);
 
-  // Refs para formulários
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
 
-  // Carregar dados do produto
   useEffect(() => {
     const fetchProductData = async () => {
       if (!productId) {
@@ -87,13 +83,33 @@ const Checkout = () => {
       setIsLoadingProduct(true);
       
       try {
-        // Buscar produto principal
-        const { data: product, error: productError } = await supabase
-          .from("products")
-          .select("*")
-          .eq("id", productId)
-          .eq("status", "ativo")
-          .single();
+        // Executar ambas as consultas em paralelo com Promise.all
+        const [productResult, bumpsResult, assetsResult] = await Promise.all([
+          // Consulta 1: Buscar o produto principal
+          supabase
+            .from("products")
+            .select("*")
+            .eq("id", productId)
+            .eq("status", "ativo")
+            .single(),
+          
+          // Consulta 2: Buscar os order bumps (se existirem)
+          supabase
+            .from("products")
+            .select("id, name, price")
+            .eq("status", "ativo")
+            .in("id", [productId]) // Placeholder, será atualizado abaixo
+          ,
+          
+          // Consulta 3: Buscar os materiais do produto
+          supabase
+            .from("product_assets")
+            .select("id, file_name, storage_path")
+            .eq("product_id", productId)
+            .order("created_at", { ascending: false })
+        ]);
+        
+        const { data: product, error: productError } = productResult;
         
         if (productError || !product) {
           showError("Produto não encontrado ou não está disponível.");
@@ -102,9 +118,10 @@ const Checkout = () => {
           return;
         }
 
+        // Configurar o produto principal imediatamente
         setMainProduct(product);
 
-        // Buscar order bumps se existirem
+        // Buscar os order bumps em paralelo (se existirem)
         if (product.orderbumps && product.orderbumps.length > 0) {
           const { data: bumps, error: bumpsError } = await supabase
             .from("products")
@@ -120,6 +137,27 @@ const Checkout = () => {
         } else {
           setOrderBumps([]);
         }
+
+        // Configurar os materiais do produto
+        if (!assetsResult.error && assetsResult.data) {
+          // Gerar URLs assinadas para os materiais
+          const assetsWithUrls = await Promise.all(
+            assetsResult.data.map(async (asset) => {
+              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                .from('product-assets')
+                .createSignedUrl(asset.storage_path, 3600); // 1 hora
+
+              if (signedUrlError) {
+                console.error(`Error generating signed URL for asset ${asset.id}:`, signedUrlError.message);
+                return { ...asset, signed_url: null };
+              }
+              return { ...asset, signed_url: signedUrlData?.signedUrl || null };
+            })
+          );
+          setProductAssets(assetsWithUrls);
+        } else {
+          setProductAssets([]);
+        }
         
       } catch (error: any) {
         console.error("Unexpected error in fetchProductData:", error);
@@ -133,9 +171,9 @@ const Checkout = () => {
     fetchProductData();
   }, [productId, navigate]);
 
-  // Tracking do Meta Pixel
   useEffect(() => {
     if (mainProduct && window.fbq) {
+      // Extrair dados do usuário logado
       let customerData = {
         email: user?.email || null,
         phone: user?.user_metadata?.whatsapp ? cleanWhatsApp(user.user_metadata.whatsapp) : null,
@@ -143,6 +181,7 @@ const Checkout = () => {
         lastName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
       };
 
+      // Se não há usuário logado, usar dados vazios
       if (!user) {
         customerData = {
           email: null,
@@ -162,7 +201,6 @@ const Checkout = () => {
     }
   }, [mainProduct, user]);
 
-  // Cálculos de preço
   const selectedOrderBumpsDetails = useMemo(() => {
     return orderBumps.filter((bump) => selectedOrderBumps.includes(bump.id));
   }, [orderBumps, selectedOrderBumps]);
@@ -185,7 +223,6 @@ const Checkout = () => {
     return total;
   }, [originalTotalPrice, appliedCoupon]);
 
-  // Handlers
   const handleOrderBumpToggle = (bumpId: string, isSelected: boolean) => {
     setSelectedOrderBumps((prev) =>
       isSelected ? [...prev, bumpId] : prev.filter((id) => id !== bumpId)
@@ -193,18 +230,16 @@ const Checkout = () => {
   };
 
   const handleCouponApplied = (coupon: Coupon | null) => {
+    console.log("🎯 Cupom recebido no Checkout:", coupon);
     setAppliedCoupon(coupon);
   };
 
   const handleSubmit = async () => {
-    console.log("🚀 Iniciando processo de checkout...");
-    
     if (!mainProduct) {
       showError("Produto não carregado.");
       return;
     }
 
-    // Validar formulário de checkout
     const checkoutFormValid = await checkoutFormRef.current?.submitForm();
     if (!checkoutFormValid) {
       showError("Por favor, preencha todos os campos obrigatórios do formulário.");
@@ -216,13 +251,6 @@ const Checkout = () => {
       showError("Erro ao obter dados do formulário.");
       return;
     }
-
-    console.log("✅ Dados do formulário validados:", {
-      name: checkoutFormData.name,
-      email: checkoutFormData.email,
-      cpf: checkoutFormData.cpf?.substring(0, 3) + "***", // Log parcial por segurança
-      whatsapp: checkoutFormData.whatsapp?.substring(0, 5) + "***"
-    });
 
     // Extrair dados do formulário para Meta Pixel
     const formDataCustomerData = {
@@ -243,7 +271,6 @@ const Checkout = () => {
       );
     }
 
-    // Validar cartão de crédito se necessário
     let creditCardData = null;
     if (paymentMethod === "CREDIT_CARD") {
       const creditCardFormValid = await creditCardFormRef.current?.submitForm();
@@ -252,7 +279,6 @@ const Checkout = () => {
         return;
       }
       creditCardData = creditCardFormRef.current?.getValues();
-      console.log("✅ Dados do cartão validados");
     }
 
     setIsSubmitting(true);
@@ -260,7 +286,7 @@ const Checkout = () => {
     try {
       const productIds = [mainProduct.id, ...selectedOrderBumps];
 
-      const payload = {
+      const payload: any = {
         name: checkoutFormData.name,
         email: checkoutFormData.email,
         cpf: checkoutFormData.cpf,
@@ -268,47 +294,41 @@ const Checkout = () => {
         productIds,
         coupon_code: appliedCoupon?.code || null,
         paymentMethod,
-        creditCard: creditCardData,
         metaTrackingData: {
           ...metaTrackingData,
           event_source_url: window.location.href,
         },
       };
 
-      console.log("📤 Enviando payload para create-asaas-payment:", {
-        ...payload,
-        cpf: payload.cpf?.substring(0, 3) + "***", // Log parcial por segurança
-        whatsapp: payload.whatsapp?.substring(0, 5) + "***",
-        creditCard: creditCardData ? "DADOS_FORNECIDOS" : null
+      if (paymentMethod === "CREDIT_CARD" && creditCardData) {
+        payload.creditCard = creditCardData;
+      }
+
+      console.log("🚀 Enviando payload com cupom:", {
+        coupon_code: appliedCoupon?.code || null,
+        coupon_applied: !!appliedCoupon,
+        coupon_value: appliedCoupon?.value,
+        coupon_type: appliedCoupon?.discount_type,
+        original_total: originalTotalPrice,
+        final_total: currentTotalPrice
       });
 
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: payload,
       });
 
-      console.log("📥 Resposta da edge function:", { data, error });
-
       if (error) {
-        console.error("❌ Erro da edge function:", error);
         showError("Falha ao finalizar o checkout: " + error.message);
-        return;
-      }
-
-      if (!data) {
-        console.error("❌ Nenhum dado retornado da edge function");
-        showError("Erro inesperado: nenhum dado retornado do servidor.");
+        console.error("Edge function error:", error);
         return;
       }
 
       if (paymentMethod === "PIX") {
-        console.log("💳 Processando pagamento PIX...");
         setPixDetails(data);
         setAsaasPaymentId(data.id);
         setOrderId(data.orderId);
         setIsPixModalOpen(true);
-        console.log("✅ Modal PIX aberto com sucesso");
       } else if (paymentMethod === "CREDIT_CARD") {
-        console.log("💰 Processando pagamento com cartão...");
         if (data.status === "CONFIRMED" || data.status === "RECEIVED") {
           showSuccess("Pagamento confirmado!");
           navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } });
@@ -318,8 +338,8 @@ const Checkout = () => {
         }
       }
     } catch (err: any) {
-      console.error("❌ Erro inesperado no checkout:", err);
       showError("Erro inesperado: " + err.message);
+      console.error("Checkout error:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -345,91 +365,152 @@ const Checkout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
+    <div className="min-h-screen bg-gray-100 flex flex-col">
       <CheckoutHeader backUrl={mainProduct.checkout_return_url || undefined} />
 
-      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-4xl pb-32">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Coluna Principal - Cards em ordem */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* 1. Card do Produto */}
-            <ProductCard product={mainProduct} />
+      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-2xl pb-32">
+        <div className="space-y-6">
+          <MainProductDisplayCard product={mainProduct} />
 
-            {/* 2. Dados do Cliente */}
-            <CustomerDataCard ref={checkoutFormRef} isLoading={isSubmitting} />
+          {/* Anúncio Personalizado */}
+          <Card className="bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200">
+            <CardHeader>
+              <CardTitle className="text-xl font-bold text-orange-800">
+                🎯 Oferta Especial por Tempo Limitado!
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-orange-700 mb-4">
+                Adquira agora {mainProduct.name} e tenha acesso imediato aos materiais exclusivos!
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <Badge className="bg-green-100 text-green-800 text-sm px-3 py-1">
+                  ✅ Entrega Imediata
+                </Badge>
+                <Badge className="bg-blue-100 text-blue-800 text-sm px-3 py-1">
+                  📚 Materiais Exclusivos
+                </Badge>
+                <Badge className="bg-purple-100 text-purple-800 text-sm px-3 py-1">
+                  🎓 Suporte Premium
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* 3. Método de Pagamento */}
-            <PaymentMethodCard
-              ref={creditCardFormRef}
-              paymentMethod={paymentMethod}
-              onPaymentMethodChange={setPaymentMethod}
-              isLoading={isSubmitting}
-              totalPrice={currentTotalPrice}
-            />
-
-            {/* 4. Order Bumps */}
-            <OrderBumpsCard
-              orderBumps={orderBumps}
-              selectedOrderBumps={selectedOrderBumps}
-              onOrderBumpToggle={handleOrderBumpToggle}
-            />
-
-            {/* 5. Resumo do Pedido (mobile) */}
-            {isMobile && (
-              <OrderSummaryCard
-                mainProduct={mainProduct}
-                selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-                originalTotalPrice={originalTotalPrice}
-                currentTotalPrice={currentTotalPrice}
-                appliedCoupon={appliedCoupon}
-                onCouponApplied={handleCouponApplied}
-              />
-            )}
-
-            {/* 6. Box Informativo Pós-Compra (ÚLTIMO) */}
-            <PostPurchaseInfoCard />
-          </div>
-
-          {/* Coluna Lateral - Resumo do Pedido (desktop) */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-24">
-              {!isMobile && (
-                <OrderSummaryCard
-                  mainProduct={mainProduct}
-                  selectedOrderBumpsDetails={selectedOrderBumpsDetails}
-                  originalTotalPrice={originalTotalPrice}
-                  currentTotalPrice={currentTotalPrice}
-                  appliedCoupon={appliedCoupon}
-                  onCouponApplied={handleCouponApplied}
+          {orderBumps.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-gray-800">Aproveite também:</h2>
+              {orderBumps.map((bump) => (
+                <OrderBumpCard
+                  key={bump.id}
+                  product={bump}
+                  isSelected={selectedOrderBumps.includes(bump.id)}
+                  onToggle={handleOrderBumpToggle}
                 />
-              )}
+              ))}
+            </div>
+          )}
 
-              {/* Botão de Finalizar para Desktop */}
-              {!isMobile && (
-                <div className="mt-6">
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting}
-                    className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white py-4 text-lg font-semibold shadow-lg rounded-lg transition-all duration-200 transform hover:scale-105"
-                    size="lg"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        Processando...
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-xl mr-2">🚀</span>
-                        Finalizar Compra Agora
-                      </>
-                    )}
-                  </Button>
-                  <p className="text-xs text-gray-500 text-center mt-2">
-                    Pagamento 100% seguro e protegido
-                  </p>
-                </div>
+          {/* Acordeon de Materiais */}
+          {productAssets.length > 0 && (
+            <Card className="bg-white rounded-xl shadow-lg">
+              <CardHeader 
+                className="cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setIsMaterialsExpanded(!isMaterialsExpanded)}
+              >
+                <CardTitle className="flex items-center justify-between text-lg">
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-blue-600" />
+                    Materiais do Produto ({productAssets.length})
+                  </span>
+                  {isMaterialsExpanded ? (
+                    <ChevronUp className="h-5 w-5" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5" />
+                  )}
+                </CardTitle>
+              </CardHeader>
+              {isMaterialsExpanded && (
+                <CardContent className="pt-0">
+                  <div className="space-y-3">
+                    {productAssets.map((asset) => (
+                      <div key={asset.id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-blue-500" />
+                          <span className="text-sm font-medium text-gray-700">{asset.file_name}</span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (asset.signed_url) {
+                              const link = document.createElement('a');
+                              link.href = asset.signed_url;
+                              link.download = asset.file_name;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              showSuccess(`Download de "${asset.file_name}" iniciado!`);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Baixar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                    <h4 className="font-semibold text-blue-800 mb-2">Como baixar os materiais:</h4>
+                    <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                      <li>Clique no botão "Baixar" ao lado de cada material</li>
+                      <li>Após a compra, você terá acesso vitalício a todos os materiais</li>
+                      <li>Os materiais ficam disponíveis na sua área de membros</li>
+                    </ol>
+                  </div>
+                </CardContent>
               )}
+            </Card>
+          )}
+
+          <OrderSummaryAccordion
+            mainProduct={mainProduct}
+            selectedOrderBumpsDetails={selectedOrderBumpsDetails}
+            originalTotalPrice={originalTotalPrice}
+            currentTotalPrice={currentTotalPrice}
+            appliedCoupon={appliedCoupon}
+            onCouponApplied={handleCouponApplied}
+          />
+
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
+            <CheckoutForm
+              ref={checkoutFormRef}
+              onSubmit={() => {}}
+              isLoading={isSubmitting}
+            />
+
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
+              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="PIX">PIX</TabsTrigger>
+                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
+                </TabsList>
+                <TabsContent value="PIX" className="mt-4">
+                  <p className="text-sm text-gray-600">
+                    Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
+                  </p>
+                </TabsContent>
+                <TabsContent value="CREDIT_CARD" className="mt-4">
+                  <CreditCardForm
+                    ref={creditCardFormRef}
+                    isLoading={isSubmitting}
+                    totalPrice={currentTotalPrice}
+                  />
+                </TabsContent>
+              </Tabs>
             </div>
           </div>
         </div>
@@ -442,6 +523,26 @@ const Checkout = () => {
           isSubmitting={isSubmitting}
           onSubmit={handleSubmit}
         />
+      )}
+
+      {/* Botão no corpo da página para desktop */}
+      {!isMobile && (
+        <div className="fixed bottom-8 right-8 z-40">
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 text-lg font-semibold shadow-lg rounded-full"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Processando...
+              </>
+            ) : (
+              "Finalizar Compra Agora"
+            )}
+          </Button>
+        </div>
       )}
 
       <PixPaymentModal
