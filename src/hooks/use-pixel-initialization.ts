@@ -4,13 +4,6 @@ import { useEffect } from 'react';
 import { useSession } from '@/components/SessionContextProvider';
 import { initializePixelWithUserData } from '@/utils/metaPixel';
 
-// Declaração global para fbq
-declare global {
-  interface Window {
-    fbq: any;
-  }
-}
-
 // Função para extrair primeiro e último nome
 const extractNameParts = (fullName: string | null | undefined): { firstName: string | null; lastName: string | null } => {
   if (!fullName || typeof fullName !== 'string') {
@@ -60,13 +53,4 @@ export const usePixelInitialization = () => {
 
     return () => clearTimeout(timer);
   }, [user]);
-};
-
-// Exportando funções vazias para manter compatibilidade
-export const usePixelEvents = () => {
-  return {
-    trackPurchaseInit: () => {},
-    trackPaymentInfo: () => {},
-    trackPurchase: () => {}
-  };
 };

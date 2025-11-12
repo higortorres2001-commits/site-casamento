@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Copy, CheckCircle, AlertTriangle, XCircle, Info } from "lucide-react";
-import { Log } from "@/types/log";
+import { Log } from "@/pages/admin/Logs";
 
 interface LogMetadataModalProps {
   open: boolean;
@@ -31,17 +31,15 @@ const LogMetadataModal = ({ open, onClose, log }: LogMetadataModalProps) => {
   };
 
   const getLevelBadge = (level: string) => {
-    const colors = {
-      error: "bg-red-100 text-red-800 border-red-200",
-      warning: "bg-yellow-100 text-yellow-800 border-yellow-200",
-      info: "bg-blue-100 text-blue-800 border-blue-200"
-    };
-    
-    return (
-      <Badge className={colors[level as keyof typeof colors] || "bg-gray-100 text-gray-800"}>
-        {level}
-      </Badge>
-    );
+    switch (level) {
+      case "error":
+        return <Badge className="bg-red-100 text-red-800 border-red-200">ERRO</Badge>;
+      case "warning":
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">AVISO</Badge>;
+      case "info":
+      default:
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">INFO</Badge>;
+    }
   };
 
   const getContextColor = (context: string) => {
