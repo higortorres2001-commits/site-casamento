@@ -6,6 +6,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Função para hash SHA-256
+async function sha256Hash(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text.toLowerCase().trim());
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // Função auxiliar para aguardar (sleep)
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -359,37 +368,54 @@ serve(async (req) => {
       }
     }
 
-    // ETAPA 7: Meta CAPI Purchase Event
+    // ETAPA 7: Meta CAPI Purchase Event (COM HASH CORRETO)
     const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
     const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
 
     if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN) {
-      const capiPayload = {
-        data: [
-          {
-            event_name: 'Purchase',
-            event_time: Math.floor(Date.now() / 1000),
-            event_source_url: order.meta_tracking_data?.event_source_url || '',
-            action_source: 'website',
-            user_data: {
-              em: profile.email,
-              ph: profile.whatsapp,
-              fbc: order.meta_tracking_data?.fbc,
-              fbp: order.meta_tracking_data?.fbp,
-              client_ip_address: order.meta_tracking_data?.client_ip_address,
-              client_user_agent: order.meta_tracking_data?.client_user_agent,
-            },
-            custom_data: {
-              value: order.total_price.toFixed(2),
-              currency: 'BRL',
-              order_id: order.id,
-            },
-            event_id: `purchase_capi_${order.id}_${Date.now()}`,
-          },
-        ],
-      };
-
       try {
+        // Hash dos dados do usuário
+        const hashedEmail = profile.email ? await sha256Hash(profile.email) : undefined;
+        const hashedPhone = profile.whatsapp ? await sha256Hash(profile.whatsapp) : undefined;
+
+        const capiPayload = {
+          data: [
+            {
+              event_name: 'Purchase',
+              event_time: Math.floor(Date.now() / 1000),
+              event_source_url: order.meta_tracking_data?.event_source_url || '',
+              action_source: 'website',
+              user_data: {
+                em: hashedEmail,
+                ph: hashedPhone,
+                fbc: order.meta_tracking_data?.fbc,
+                fbp: order.meta_tracking_data?.fbp,
+                client_ip_address: order.meta_tracking_data?.client_ip_address,
+                client_user_agent: order.meta_tracking_data?.client_user_agent,
+              },
+              custom_data: {
+                value: order.total_price.toFixed(2),
+                currency: 'BRL',
+                order_id: order.id,
+              },
+              event_id: `purchase_capi_${order.id}_${Date.now()}`,
+            },
+          ],
+        };
+
+        await supabase.from('logs').insert({
+          level: 'info',
+          context: 'webhook-meta-capi-payload',
+          message: 'Sending Purchase event to Meta CAPI with hashed data',
+          metadata: { 
+            orderId, 
+            userId,
+            hasHashedEmail: !!hashedEmail,
+            hasHashedPhone: !!hashedPhone,
+            eventId: `purchase_capi_${order.id}_${Date.now()}`
+          }
+        });
+
         const metaResponse = await fetch(
           `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?access_token=${META_CAPI_ACCESS_TOKEN}`,
           {
@@ -405,14 +431,24 @@ serve(async (req) => {
             level: 'error',
             context: 'webhook-meta-capi-error',
             message: 'Failed to send Purchase event to Meta CAPI',
-            metadata: { orderId, userId, metaError: errorData }
+            metadata: { 
+              orderId, 
+              userId, 
+              metaError: errorData,
+              httpStatus: metaResponse.status
+            }
           });
         } else {
+          const responseData = await metaResponse.json();
           await supabase.from('logs').insert({
             level: 'info',
             context: 'webhook-meta-capi-success',
             message: 'Purchase event sent to Meta CAPI successfully',
-            metadata: { orderId, userId }
+            metadata: { 
+              orderId, 
+              userId,
+              metaResponse: responseData
+            }
           });
         }
       } catch (metaError: any) {
@@ -420,7 +456,12 @@ serve(async (req) => {
           level: 'error',
           context: 'webhook-meta-capi-exception',
           message: 'Exception sending Purchase event to Meta CAPI',
-          metadata: { orderId, userId, error: metaError.message }
+          metadata: { 
+            orderId, 
+            userId, 
+            error: metaError.message,
+            errorStack: metaError.stack
+          }
         });
       }
     }
