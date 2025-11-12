@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // Added missing Card imports
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Loader2, 
@@ -36,7 +36,7 @@ import {
   User,
   Filter,
   RefreshCw,
-  Timeline,
+  Timeline, // Added missing Timeline icon
   Mail,
   ScrollText
 } from "lucide-react";
@@ -905,7 +905,6 @@ const Logs = () => {
                   <li>• Analisa inconsistências entre os dados</li>
                   <li>• Mostra histórico de pedidos e status de pagamento</li>
                   <li>• Identifica problemas específicos e sugere soluções</li>
-                  <li>• Exibe logs recentes relacionados ao usuário</li>
                 </ul>
               </div>
             </CardContent>
