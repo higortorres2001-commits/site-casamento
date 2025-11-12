@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // Added missing Card imports
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Loader2, 
@@ -271,6 +271,7 @@ const Logs = () => {
       .from("logs")
       .delete()
       .neq("id", "00000000-0000-0000-0000-000000000000");
+
     if (error) {
       showError("Erro ao limpar logs: " + error.message);
       console.error("Error clearing logs:", error);
@@ -785,7 +786,7 @@ const Logs = () => {
                             
                             <p className="text-sm text-gray-800 mb-2">{event.message}</p>
                             
-                            {/* Informações extraídas dos metadados */}
+                            {/* Informações extras dos metadados */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                               {event.relatedUserId && (
                                 <div className="flex items-center gap-1">
@@ -850,8 +851,8 @@ const Logs = () => {
                       <span className="text-gray-600">Período analisado:</span>
                       <span className="font-medium ml-2">
                         {timelineDateRange === "1h" ? "1 hora" : 
-                         timelineDateRange === "24h" ? "24 horas" :
-                         timelineDateRange === "7d" ? "7 dias" : "30 dias"}
+                           timelineDateRange === "24h" ? "24 horas" :
+                           timelineDateRange === "7d" ? "7 dias" : "30 dias"}
                       </span>
                     </div>
                   </div>
