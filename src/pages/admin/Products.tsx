@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Edit, Trash2, Loader2, FileText, Copy, Settings } from "lucide-react";
+import { Edit, Trash2, Loader2, FileText, Copy } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -26,14 +26,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 type ProductWithAssets = Product & { assets?: ProductAsset[]; assetCount?: number };
 
-// Meta Pixel options
-const META_PIXEL_OPTIONS = [
-  { id: '1028226016169295', name: 'Principal (SemEstress)', description: 'Pixel principal da plataforma' },
-  { id: '1234567890123456', name: 'Produto Específico', description: 'Pixel para produto específico' },
-  { id: '9876543210987654', name: 'Campanha de Vendas', description: 'Pixel para campanhas' },
-  { id: '5555666677778888', name: 'Teste A/B', description: 'Pixel para testes A/B' },
-];
-
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
   price: z.coerce.number().min(0.01, "O preço deve ser maior que zero"),
@@ -45,7 +37,6 @@ const formSchema = z.object({
   internal_tag: z.string().optional(),
   checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
   also_buy: z.boolean().default(false),
-  meta_pixel_id: z.string().optional(),
 });
 
 const Products = () => {
@@ -59,14 +50,14 @@ const Products = () => {
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [assetManagementProduct, setAssetManagementProduct] = useState<Product | null>(null);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
   // Modal de tag do produto
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [tagModalProduct, setTagModalProduct] = useState<Product | null>(null);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchProducts = useCallback(async () => {
     if (!user?.id) {
@@ -101,7 +92,7 @@ const Products = () => {
     } else if (!isSessionLoading && !user) {
       setIsLoadingProducts(false);
     }
-  }, [isSessionLoading, user, fetchProducts]);
+  }, [user, isSessionLoading, fetchProducts]);
 
   const handleCreateProduct = () => {
     setEditingProduct(undefined);
@@ -126,6 +117,7 @@ const Products = () => {
   };
 
   const handleCancelEdit = () => {
+    // Simplesmente fecha o modal sem fazer nada
     setIsModalOpen(false);
     setEditingProduct(undefined);
   };
@@ -145,6 +137,10 @@ const Products = () => {
     setIsSubmitting(true);
     let hasErrors = false;
     const errorMessages: string[] = [];
+
+    // Log para debug do also_buy
+    console.log("Products - Form data received:", formData);
+    console.log("Products - also_buy value:", formData.also_buy);
 
     const productData = { ...formData, user_id: user?.id };
 
@@ -179,6 +175,19 @@ const Products = () => {
     }
     (productData as any).image_url = newImageUrl;
 
+    // Log para debug do also_buy
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'product-save-debug',
+      message: 'Saving product with also_buy field',
+      metadata: { 
+        productId: currentProductId,
+        also_buy: formData.also_buy,
+        formData: JSON.stringify(formData),
+        isEditing: !!editingProduct
+      }
+    });
+
     if (editingProduct) {
       const { error } = await supabase.from("products").update(productData).eq("id", editingProduct.id);
       if (error) {
@@ -191,12 +200,18 @@ const Products = () => {
     } else {
       const { data, error } = await supabase.from("products").insert(productData).select("id").single();
       if (error || !data) {
-        errorMessages.push("Erro ao criar produto: " + (error?.message || 'Erro desconhecido'));
+        errorMessages.push("Erro ao criar produto: " + error?.message);
         hasErrors = true;
       } else {
         showSuccess("Produto criado com sucesso!");
         currentProductId = data.id;
       }
+    }
+
+    if (hasErrors && !currentProductId) {
+      setIsSubmitting(false);
+      showError("Ocorreram erros durante o salvamento:\n" + errorMessages.join("\n"));
+      return;
     }
 
     if (files.length > 0 && currentProductId && user?.id) {
@@ -223,9 +238,7 @@ const Products = () => {
       const assetsToDeletePaths: string[] = [];
       for (const assetId of deletedAssetIds) {
         const asset = editingProduct.assets?.find((a) => a.id === assetId);
-        if (asset) {
-          assetsToDeletePaths.push(asset.storage_path);
-        }
+        if (asset) assetsToDeletePaths.push(asset.storage_path);
       }
       if (assetsToDeletePaths.length > 0) {
         await supabase.storage.from("product-assets").remove(assetsToDeletePaths);
@@ -242,7 +255,6 @@ const Products = () => {
     await fetchProducts();
     setIsModalOpen(false);
     setIsSubmitting(false);
-    setEditingProduct(undefined);
   };
 
   const openTagModalForProduct = (product: Product) => {
@@ -250,10 +262,11 @@ const Products = () => {
     setIsTagModalOpen(true);
   };
 
+  // Atualiza somente o item alterado (sem refetch)
   const handleTagSaved = (newTag: string | null) => {
     if (!tagModalProduct) return;
     setProducts((prev) =>
-      prev.map((p) => (p.id === tagModalProduct.id ? { ...p, meta_pixel_id: newTag } as ProductWithAssets : p))
+      prev.map((p) => (p.id === tagModalProduct.id ? { ...p, internal_tag: newTag ?? undefined } as ProductWithAssets : p))
     );
   };
 
@@ -300,40 +313,17 @@ const Products = () => {
     setProductToDelete(null);
   };
 
-  const handleCopyCheckoutLink = async (productId: string, metaPixelId?: string) => {
+  const handleCopyCheckoutLink = async (productId: string) => {
     try {
-      // Construir URL com parâmetros UTM se houver Meta Pixel
-      let baseUrl = `${window.location.origin}/checkout/${productId}`;
-      
-      if (metaPixelId) {
-        const utmParams = new URLSearchParams({
-          utm_source: 'meta_pixel',
-          utm_medium: 'product_page',
-          utm_campaign: 'product_' + productId,
-          utm_content: metaPixel_id,
-        });
-        baseUrl += `?${utmParams.toString()}`;
-      }
-      
-      await navigator.clipboard.writeText(baseUrl);
+      const link = `${window.location.origin}/checkout/${productId}`;
+      await navigator.clipboard.writeText(link);
       showSuccess("Link de checkout copiado!");
     } catch {
       showError("Não foi possível copiar o link.");
     }
   };
 
-  const getMetaPixelBadge = (metaPixelId?: string) => {
-    if (!metaPixelId) {
-      return <Badge variant="outline">Sem Pixel</Badge>;
-    }
-    
-    const pixelOption = META_PIXEL_OPTIONS.find(p => p.id === metaPixelId);
-    if (pixelOption) {
-      return <Badge className="bg-blue-100 text-blue-800 border-blue-200">{pixelOption.name}</Badge>;
-    }
-    
-    return <Badge variant="outline">Pixel Desconhecido</Badge>;
-  };
+  const tagPlaceholder = "Sem tag";
 
   const getStatusBadge = (status: Product["status"]) => {
     switch (status) {
@@ -378,7 +368,6 @@ const Products = () => {
                 <TableHead>Produto</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Meta Pixel</TableHead>
                 <TableHead>Tag Interna</TableHead>
                 <TableHead>Compre Também</TableHead>
                 <TableHead>Bumps</TableHead>
@@ -409,41 +398,14 @@ const Products = () => {
 
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {getMetaPixelBadge(product.meta_pixel_id)}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-gray-600 hover:text-blue-600"
-                            title="Configurar Meta Pixel"
-                          >
-                            <Settings className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">Configurar Meta Pixel:</p>
-                            <p className="text-xs text-gray-600">
-                              • ID: {product.meta_pixel_id || 'Não configurado'}
-                            </p>
-                            <p className="text-xs text-gray-600">
-                              • URL: ${window.location.origin}/checkout/${product.id}${product.meta_pixel_id ? `?utm_source=meta_pixel&utm_medium=product_page&utm_campaign=product_${product.id}&utm_content=${product.meta_pixel_id}` : ''}
-                            </p>
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
+                      <button
+                        className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
+                        onClick={() => openTagModalForProduct(product)}
+                        title={product.internal_tag ? "Editar tag deste produto" : "Criar tag para este produto"}
+                      >
+                        {product.internal_tag ?? "CRIAR TAG"}
+                      </button>
                     </div>
-                  </TableCell>
-
-                  <TableCell>
-                    <button
-                      className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
-                      onClick={() => openTagModalForProduct(product)}
-                      title={product.internal_tag || "Criar tag"}
-                    >
-                      {product.internal_tag || "Criar tag"}
-                    </button>
                   </TableCell>
 
                   <TableCell>
@@ -467,49 +429,39 @@ const Products = () => {
                   </TableCell>
 
                   <TableCell className="text-right">
-                    <div className="flex gap-1">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleCopyCheckoutLink(product.id, product.meta_pixel_id)}
-                            className="text-gray-600 hover:text-blue-600"
-                            title="Copiar link com UTM"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Link com UTM:</p>
-                            <p className="text-xs text-gray-600 break-all">
-                              {window.location.origin}/checkout/${product.id}{product.meta_pixel_id ? `?utm_source=meta_pixel&utm_medium=product_page&utm_campaign=product_${product.id}&utm_content=${product.meta_pixel_id}` : ''}
-                            </p>
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleCopyCheckoutLink(product.id)}
+                          className="mr-1 text-gray-600 hover:text-blue-600"
+                          title="Copiar link de checkout"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Copiar link do checkout</TooltipContent>
+                    </Tooltip>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditProduct(product.id)}
-                        className="text-gray-600 hover:text-orange-500"
-                        title="Editar Produto"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleConfirmDelete(product.id)}
-                        className="text-red-500 hover:text-red-700"
-                        title="Excluir Produto"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleEditProduct(product.id)}
+                      className="mr-1 text-gray-600 hover:text-orange-500"
+                      title="Editar Produto"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleConfirmDelete(product.id)}
+                      className="text-red-500 hover:text-red-700"
+                      title="Excluir Produto"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -550,69 +502,14 @@ const Products = () => {
         isDestructive
       />
 
-      <Dialog open={isTagModalOpen} onOpenChange={(open) => !open && setTagModalProduct(null)}>
-        <DialogContent className="sm:max-w-md p-6">
-          <h3 className="text-lg font-semibold mb-4">Configurar Meta Pixel</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Selecione qual Meta Pixel será usado para rastrear conversões deste produto.
-          </p>
-          
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Meta Pixel:</label>
-            <select
-              className="w-full p-2 border rounded-md"
-              value={tagModalProduct?.meta_pixel_id || ''}
-              onChange={(e) => {
-                if (tagModalProduct) {
-                  const updatedProduct = { ...tagModalProduct, meta_pixel_id: e.target.value };
-                  setTagModalProduct(updatedProduct);
-                  
-                  // Atualizar localmente
-                  setProducts(prev => 
-                    prev.map(p => p.id === tagModalProduct.id ? updatedProduct : p)
-                  );
-                }
-              }}
-            >
-              <option value="">Nenhum</option>
-              {META_PIXEL_OPTIONS.map(pixel => (
-                <option key={pixel.id} value={pixel.id}>
-                  {pixel.name} - {pixel.description}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsTagModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={() => {
-                if (tagModalProduct) {
-                  // Salvar no banco de dados
-                  supabase
-                    .from('products')
-                    .update({ meta_pixel_id: tagModalProduct.meta_pixel_id })
-                    .eq('id', tagModalProduct.id)
-                    .then(() => {
-                      showSuccess('Meta Pixel atualizado com sucesso!');
-                      setIsTagModalOpen(false);
-                      setTagModalProduct(null);
-                      fetchProducts();
-                    })
-                    .catch(error => {
-                      showError('Erro ao atualizar Meta Pixel: ' + error.message);
-                    });
-                }
-              }}
-              className="bg-blue-600 text-white"
-            >
-              Salvar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {tagModalProduct && (
+        <ProductTagModal
+          open={isTagModalOpen}
+          onClose={() => setIsTagModalOpen(false)}
+          product={tagModalProduct}
+          onSaved={handleTagSaved}
+        />
+      )}
     </div>
   );
 };
