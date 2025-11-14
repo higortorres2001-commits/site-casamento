@@ -385,7 +385,7 @@ serve(async (req) => {
           'Authorization': `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: 'contato@medsemestress.com',
+          from: 'onboarding',
           to: profile.email,
           subject: emailSubject,
           html: emailBody,
