@@ -518,6 +518,10 @@ serve(async (req) => {
       throw new Error('Configuração de pagamento não encontrada');
     }
 
+    // Extrair os 8 primeiros dígitos de cada ID de produto
+    const productShortIds = productIds.map((id: string) => id.substring(0, 8));
+    const productShortIdsString = productShortIds.join('-');
+
     const asaasPayload: any = {
       customer: {
         name,
@@ -526,7 +530,7 @@ serve(async (req) => {
         phone: whatsapp.replace(/\D/g, ''),
       },
       value: parseFloat(finalTotal.toFixed(2)),
-      description: `Order #${order.id} payment`,
+      description: `Order #${order.id} payment - Products: ${productShortIdsString}`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
       billingType: paymentMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD',
     };
@@ -617,7 +621,8 @@ serve(async (req) => {
         asaasPaymentId: paymentData.id,
         paymentMethod,
         finalTotal,
-        originalTotal
+        originalTotal,
+        productShortIds: productShortIdsString
       }
     });
 
