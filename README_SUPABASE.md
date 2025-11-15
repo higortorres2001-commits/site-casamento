@@ -1,91 +1,102 @@
-# CORE FUNCTIONS REFERENCE - AI OPTIMIZED
+# Core Functions Documentation - AI Optimized
 
-## PAYMENT FLOW
+## Payment Flow Core Functions
 
-### create-asaas-payment
-PURPOSE: Main payment entry point
-INPUT: customer data, productIds, paymentMethod, coupon
-OUTPUT: Asaas payment + orderId
-CONNECTIONS: Creates user(Auth+Profile) → Creates order → Calls Asaas API
-COMMON ISSUES: Foreign key violations, duplicate emails, Asaas API failures
+### `create-asaas-payment`
+**Purpose**: Main payment creation entry point
+**Input**: Customer data, product IDs, payment method (PIX/CREDIT_CARD), coupon
+**Output**: Asaas payment object + order ID
+**Connections**: Creates user (Auth+Profile), creates order, calls Asaas API
+**Common Issues**: Foreign key violations (user creation), Asaas API failures, duplicate emails
 
-### asaas-webhook
-PURPOSE: Process payment confirmations
-INPUT: webhook payload (PAYMENT_CONFIRMED/PAYMENT_RECEIVED)
-OUTPUT: Order status updated + User access granted + Email sent
-CONNECTIONS: Updates order → Grants product access → Sends Resend email → Meta CAPI
-COMMON ISSUES: Missing profiles, duplicate webhooks, email template failures
+### `asaas-webhook`
+**Purpose**: Process payment confirmations from Asaas
+**Input**: Webhook payload (PAYMENT_CONFIRMED/PAYMENT_RECEIVED)
+**Output**: Order status update + user access grant + email sending
+**Connections**: Updates order status, grants product access, sends Resend email, Meta CAPI tracking
+**Common Issues**: Missing user profiles, duplicate webhook processing, email template failures
 
-## USER MANAGEMENT
+## User Management Core Functions
 
-### create-customer
-PURPOSE: Manual user creation (admin)
-INPUT: name, email, cpf, whatsapp
-OUTPUT: New Auth user + Profile
-CONNECTIONS: Validates duplicates → Creates Auth → Creates Profile
-COMMON ISSUES: Email/CPF duplicates, Auth-Profile sync failures
+### `create-customer`
+**Purpose**: Manual user creation (admin use)
+**Input**: name, email, cpf, whatsapp
+**Output**: New Auth user + Profile
+**Connections**: Creates Auth user first, then Profile, validates duplicates
+**Common Issues**: Email/CPF duplicates, Auth-Profile sync failures
 
-### admin-update-user
-PURPOSE: Admin user updates
-INPUT: userId + update fields + admin token
-OUTPUT: Updated profile + optional Auth email update
-CONNECTIONS: Validates admin → Updates Profile → Updates Auth if email changed
-COMMON ISSUES: Unauthorized attempts, Auth update failures
+### `admin-update-user`
+**Purpose**: Admin user profile updates
+**Input**: userId + update fields + admin auth token
+**Output**: Updated profile + optional Auth email update
+**Connections**: Validates admin permissions, updates Profile table, updates Auth if email changed
+**Common Issues**: Unauthorized access attempts, Auth update failures
 
-### admin-delete-user
-PURPOSE: Complete user deletion (admin)
-INPUT: userId + admin token
-OUTPUT: Deleted user (Auth + Profile + Orders)
-CONNECTIONS: Deletes orders → Deletes profile → Deletes Auth user
-COMMON ISSUES: Foreign key constraints, incomplete cleanup
+### `admin-delete-user`
+**Purpose**: Complete user deletion (admin use)
+**Input**: userId + admin auth token
+**Output**: Deleted user (Auth + Profile + Orders)
+**Connections**: Deletes orders, profile, then Auth user
+**Common Issues**: Foreign key constraints, incomplete cleanup
 
-## UTILITIES
+## Utility Core Functions
 
-### calculate-installments
-PURPOSE: Calculate payment installments
-INPUT: totalPrice
-OUTPUT: Installment options array
-CONNECTIONS: Pure calculation, no DB
-COMMON ISSUES: Invalid prices, minimum installment validation
+### `calculate-installments`
+**Purpose**: Calculate payment installments with fallback
+**Input**: totalPrice
+**Output**: Array of installment options
+**Connections**: Pure calculation, no DB calls
+**Common Issues**: Invalid price values, minimum installment validation
 
-### check-payment-status
-PURPOSE: Query Asaas payment status
-INPUT: payment_id
-OUTPUT: Payment status string
-CONNECTIONS: Asaas API only
-COMMON ISSUES: Invalid IDs, API downtime
+### `check-payment-status`
+**Purpose**: Query Asaas payment status
+**Input**: payment_id
+**Output**: Payment status string
+**Connections**: Asaas API only
+**Common Issues**: Invalid payment IDs, Asaas API downtime
 
-## DIAGNOSTICS
+## Diagnostic Functions
 
-### diagnose-user-issue
-PURPOSE: User troubleshooting
-INPUT: email, userId
-OUTPUT: Full diagnostic report
-CONNECTIONS: Queries Auth, Profiles, Logs
-COMMON ISSUES: Data inconsistencies, missing records
+### `diagnose-user-issue`
+**Purpose**: Comprehensive user troubleshooting
+**Input**: email, userId
+**Output**: Full diagnostic report
+**Connections**: Queries Auth, Profiles, Logs tables
+**Common Issues**: Data inconsistencies, missing records
 
-### force-create-user
-PURPOSE: Emergency user creation
-INPUT: user data + forceMode
-OUTPUT: User via multiple strategies
-CONNECTIONS: UPSERT → Raw SQL → Timestamp UUID
-COMMON ISSUES: Supabase bugs, constraint violations
+### `force-create-user`
+**Purpose**: Emergency user creation bypassing normal flow
+**Input**: user data + forceMode flag
+**Output**: User created via multiple strategies
+**Connections**: Uses UPSERT, raw SQL, timestamp UUID generation
+**Common Issues**: Supabase bugs, constraint violations, timing issues
 
-## SHARED SERVICES
+## Shared Services
 
-### _shared/user.service
-STRATEGY: Auth-first for foreign key compliance
-FEATURES: User creation/lookup with retry logic
+### `_shared/user.service`
+**Purpose**: User creation/lookup logic
+**Strategy**: Auth-first approach for foreign key compliance
+**Features**: User creation/lookup with retry logic
 
-### _shared/order.service
-FEATURES: Product validation, coupon application, order creation
+### `_shared/order.service`
+**Purpose**: Order validation and creation
+**Features**: Product validation, coupon application, order creation
 
-### _shared/asaas.service
-FEATURES: PIX/credit card processing, QR code generation
+### `_shared/asaas.service`
+**Purpose**: Asaas API integration
+**Features**: PIX and credit card processing, QR code generation
 
-## ERROR PATTERNS
+## Error Patterns
 
-FOREIGN KEY: User creation race conditions
-AUTH-PROFILE SYNC: Check both tables
-ASAAS API: Network issues, invalid formats
-WEBHOOK IDEMPOTENCY: Always check current status first
+**Foreign Key Violations**: Usually user creation race conditions
+**Auth-Profile Sync**: Check both tables for consistency
+**Asaas API**: Network issues, invalid data formats
+**Webhook Idempotency**: Always check current status before updates
+
+## Deployment Notes
+
+- All functions use TypeScript with proper type definitions
+- Comprehensive logging for debugging and monitoring
+- Proper error handling with meaningful error messages
+- CORS headers configured for web access
+- Environment variables for API keys and configuration
