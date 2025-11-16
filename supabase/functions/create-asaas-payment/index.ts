@@ -652,8 +652,7 @@ serve(async (req) => {
         paymentMethod,
         finalTotal,
         originalTotal,
-        descriptionLength: safeDescription.length,
-        descriptionTruncated: safeDescription.length < fullDescription.length
+        descriptionLength: safeDescription.length
       }
     });
 
