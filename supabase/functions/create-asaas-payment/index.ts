@@ -371,37 +371,6 @@ async function createUserCorrect(payload: any, supabase: any): Promise<string> {
   return finalUserId;
 }
 
-// ==================== FUNÇÃO PARA GERAR DESCRIÇÃO SEGURA ====================
-function generateSafeDescription(orderId: string, productIds: string[]): string {
-  try {
-    // Extrair os 3 primeiros dígitos de cada ID de produto
-    const productShortIds = productIds
-      .filter(id => id && typeof id === 'string') // Filtrar IDs válidos
-      .map((id: string) => id.substring(0, 3))
-      .filter(id => id.length > 0); // Remover strings vazias
-
-    // Juntar com hífen
-    const productShortIdsString = productShortIds.join('-');
-
-    // Construir descrição completa
-    const fullDescription = `Order #${orderId} payment - Products: ${productShortIdsString}`;
-
-    // Limitar a 450 caracteres para garantir compatibilidade com API
-    const maxLength = 450;
-    if (fullDescription.length <= maxLength) {
-      return fullDescription;
-    }
-
-    // Se for maior, cortar e adicionar "..." no final
-    return fullDescription.substring(0, maxLength - 3) + '...';
-
-  } catch (error: any) {
-    // Fallback ultra-seguro em caso de qualquer erro
-    console.error('Error generating description:', error);
-    return `Order #${orderId} payment`;
-  }
-}
-
 // ==================== MAIN HANDLER ====================
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -549,9 +518,6 @@ serve(async (req) => {
       throw new Error('Configuração de pagamento não encontrada');
     }
 
-    // Gerar descrição segura com limite de 450 caracteres
-    const safeDescription = generateSafeDescription(order.id, productIds);
-
     const asaasPayload: any = {
       customer: {
         name,
@@ -560,7 +526,7 @@ serve(async (req) => {
         phone: whatsapp.replace(/\D/g, ''),
       },
       value: parseFloat(finalTotal.toFixed(2)),
-      description: safeDescription,
+      description: `Order #${order.id} payment`,
       dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
       billingType: paymentMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD',
     };
@@ -651,8 +617,7 @@ serve(async (req) => {
         asaasPaymentId: paymentData.id,
         paymentMethod,
         finalTotal,
-        originalTotal,
-        descriptionLength: safeDescription.length
+        originalTotal
       }
     });
 
