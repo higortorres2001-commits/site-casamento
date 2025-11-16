@@ -19,16 +19,25 @@ serve(async (req) => {
   try {
     const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = await req.json();
 
+    // LOG DETALHADO DO INÍCIO PARA DEBUG DA DUPLICAÇÃO
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'create-asaas-payment-start',
-      message: 'Starting CORRECTED payment creation - preventing duplicate product IDs',
+      context: 'create-asaas-payment-debug-start',
+      message: '🔍 DEBUG: Iniciando processamento com análise detalhada de duplicação',
       metadata: { 
-        email: email.toLowerCase().trim(),
+        timestamp: new Date().toISOString(),
+        email: email?.toLowerCase().trim(),
         productIds: productIds,
-        productCount: productIds.length,
-        uniqueProductIds: [...new Set(productIds)].length,
-        paymentMethod
+        productCount: productIds?.length || 0,
+        paymentMethod,
+        hasCoupon: !!coupon_code,
+        // Análise inicial de duplicatas
+        duplicateAnalysis: {
+          originalCount: productIds?.length || 0,
+          uniqueCount: [...new Set(productIds || [])].length,
+          hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length,
+          duplicates: productIds ? productIds.filter((id, index) => productIds.indexOf(id) !== index) : []
+        }
       }
     });
 
@@ -45,8 +54,17 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-validation-error',
-        message: 'Missing required fields in request',
-        metadata: { missingFields, receivedFields: Object.keys(req.body) }
+        message: '🔍 DEBUG: Campos obrigatórios ausentes',
+        metadata: { 
+          missingFields,
+          receivedFields: Object.keys(req.body),
+          productIds,
+          duplicateAnalysis: {
+            originalCount: productIds?.length || 0,
+            uniqueCount: [...new Set(productIds || [])].length,
+            hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length
+          }
+        }
       });
       throw new Error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
     }
@@ -56,8 +74,17 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-validation-error',
-        message: 'Invalid payment method',
-        metadata: { paymentMethod, validMethods: ['PIX', 'CREDIT_CARD'] }
+        message: '🔍 DEBUG: Método de pagamento inválido',
+        metadata: { 
+          paymentMethod,
+          validMethods: ['PIX', 'CREDIT_CARD'],
+          productIds,
+          duplicateAnalysis: {
+            originalCount: productIds?.length || 0,
+            uniqueCount: [...new Set(productIds || [])].length,
+            hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length
+          }
+        }
       });
       throw new Error(`Método de pagamento inválido: ${paymentMethod}`);
     }
@@ -67,8 +94,17 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-validation-error',
-        message: 'Credit card data missing for CREDIT_CARD payment',
-        metadata: { paymentMethod, hasCreditCard: !!creditCard }
+        message: '🔍 DEBUG: Dados do cartão de crédito ausentes',
+        metadata: { 
+          paymentMethod,
+          hasCreditCard: !!creditCard,
+          productIds,
+          duplicateAnalysis: {
+            originalCount: productIds?.length || 0,
+            uniqueCount: [...new Set(productIds || [])].length,
+            hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length
+          }
+        }
       });
       throw new Error('Dados do cartão de crédito são obrigatórios para pagamento com cartão');
     }
@@ -76,13 +112,59 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-validation-success',
-      message: 'Request validation completed successfully',
+      message: '🔍 DEBUG: Validação inicial concluída com sucesso',
       metadata: { 
-        email: email.toLowerCase().trim(),
+        email: email?.toLowerCase().trim(),
+        productCount: productIds?.length || 0,
         paymentMethod,
-        productCount: productIds.length,
-        uniqueProductIds: [...new Set(productIds)].length,
-        hasCoupon: !!coupon_code
+        hasCoupon: !!coupon_code,
+        duplicateAnalysis: {
+          originalCount: productIds?.length || 0,
+          uniqueCount: [...new Set(productIds || [])].length,
+          hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length,
+          duplicates: productIds ? productIds.filter((id, index) => productIds.indexOf(id) !== index) : []
+        }
+      }
+    });
+
+    // ANÁLISE DETALHADA DA DUPLICAÇÃO ANTES DE CONTINUAR
+    const duplicateAnalysis = {
+      originalCount: productIds?.length || 0,
+      uniqueCount: [...new Set(productIds || [])].length,
+      hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length,
+      duplicates: productIds ? productIds.filter((id, index) => productIds.indexOf(id) !== index) : [],
+      duplicatesRemoved: 0
+    };
+
+    if (duplicateAnalysis.hasDuplicates) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment-duplicate-error',
+        message: '🔍 DEBUG: DUPLICAÇÃO DETECTADA - IDs duplicados no array do pedido',
+        metadata: { 
+          email: email?.toLowerCase().trim(),
+          duplicateAnalysis,
+          requestedProductIds: productIds,
+          // Log completo dos IDs duplicados
+          duplicateIds: duplicateAnalysis.duplicates,
+          duplicateCount: duplicateAnalysis.duplicates.length,
+          uniqueProductIds: [...new Set(productIds || [])],
+          frontendIssue: 'Cliente está enviando IDs duplicados no array productIds'
+        }
+      });
+      
+      throw new Error(`🔍 DEBUG ERRO: IDs duplicados detectados no pedido. IDs duplicados: ${duplicateAnalysis.duplicates.join(', ')}. IDs únicos: ${[...new Set(productIds || [])].join(', ')}. O frontend precisa corrigir o array para não enviar duplicatas.`);
+    }
+
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-duplicate-check-passed',
+      message: '🔍 DEBUG: Verificação de duplicação passou - nenhum ID duplicado encontrado',
+      metadata: { 
+        email: email?.toLowerCase().trim(),
+        duplicateAnalysis,
+        uniqueProductIds: [...new Set(productIds || [])],
+        productCount: productIds?.length || 0
       }
     });
 
@@ -93,18 +175,20 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-asaas-payment-duplicates-removed',
-        message: 'Duplicate product IDs detected and removed',
+        message: '🔍 DEBUG: Duplicatas removidas pelo backend - usando Set para garantir IDs únicos',
         metadata: { 
+          email: email?.toLowerCase().trim(),
           originalCount: productIds.length,
           uniqueCount: uniqueProductIds.length,
           duplicatesRemoved: productIds.length - uniqueProductIds.length,
           originalIds: productIds,
-          uniqueIds: uniqueProductIds
+          uniqueIds: uniqueProductIds,
+          frontendIssue: 'Frontend enviou duplicatas, mas backend corrigiu automaticamente'
         }
       });
     }
 
-    // VALIDAÇÃO DE PRODUTOS
+    // VALIDAÇÃO DE PRODUTOS (usando IDs únicos)
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id, price, name, status')
@@ -114,11 +198,13 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-product-validation-error',
-        message: 'Database error while fetching products',
+        message: '🔍 DEBUG: Erro ao buscar produtos no banco',
         metadata: { 
-          requestedIds: uniqueProductIds,
-          error: productsError.message,
-          errorCode: productsError.code
+          email: email?.toLowerCase().trim(),
+          uniqueProductIds,
+          error: productsError?.message,
+          errorCode: productsError?.code,
+          duplicateAnalysis
         }
       });
       throw new Error('Produtos não encontrados: ' + (productsError?.message || 'Erro desconhecido'));
@@ -128,13 +214,15 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-product-missing-error',
-        message: 'Some requested products were not found',
+        message: '🔍 DEBUG: Alguns produtos solicitados não foram encontrados',
         metadata: { 
+          email: email?.toLowerCase().trim(),
           requestedIds: uniqueProductIds,
           foundIds: products.map(p => p.id),
-          foundCount: products.length,
           requestedCount: uniqueProductIds.length,
-          missingIds: uniqueProductIds.filter(id => !products.map(p => p.id).includes(id))
+          foundCount: products.length,
+          missingIds: uniqueProductIds.filter(id => !products.map(p => p.id).includes(id)),
+          duplicateAnalysis
         }
       });
       throw new Error(`Produtos não encontrados: ${uniqueProductIds.filter(id => !products.map(p => p.id).includes(id)).join(', ')}`);
@@ -146,9 +234,11 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-product-inactive-error',
-        message: 'Some requested products are not active',
+        message: '🔍 DEBUG: Alguns produtos solicitados não estão ativos',
         metadata: { 
-          inactiveProducts: inactiveProducts.map(p => ({ id: p.id, name: p.name, status: p.status }))
+          email: email?.toLowerCase().trim(),
+          inactiveProducts: inactiveProducts.map(p => ({ id: p.id, name: p.name, status: p.status })),
+          duplicateAnalysis
         }
       });
       throw new Error(`Produtos não disponíveis para compra: ${inactiveProducts.map(p => p.name).join(', ')}`);
@@ -157,19 +247,19 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-product-validation-success',
-      message: 'All products validated successfully',
+      message: '🔍 DEBUG: Todos os produtos validados com sucesso',
       metadata: { 
+        email: email?.toLowerCase().trim(),
         validatedProducts: products.map(p => ({ id: p.id, name: p.name, price: p.price, status: p.status })),
-        requestedCount: uniqueProductIds.length,
-        foundCount: products.length
+        validatedCount: products.length,
+        duplicateAnalysis
       }
     });
 
-    // CRIAÇÃO DO USUÁRIO (Mantendo lógica existente)
+    // CRIAÇÃO DO USUÁRIO (mantendo lógica existente)
     let userId: string;
     
     try {
-      // Verificar se usuário já existe no Auth
       const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
       const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
 
@@ -178,21 +268,21 @@ serve(async (req) => {
         await supabase.from('logs').insert({
           level: 'info',
           context: 'create-asaas-payment-existing-user-found',
-          message: 'Found existing user in Auth, updating profile',
+          message: '🔍 DEBUG: Usuário existente encontrado',
           metadata: { 
             userId,
-            email: email.toLowerCase().trim(),
-            existingUserCreated: existingUser.created_at
+            email: email?.toLowerCase().trim(),
+            existingUserCreated: existingUser.created_at,
+            duplicateAnalysis
           }
         });
 
-        // Atualizar perfil do usuário existente
         const { error: updateProfileError } = await supabase
           .from('profiles')
           .update({ 
             name, 
             cpf: cpf, 
-            email: email.toLowerCase().trim(), 
+            email: email?.toLowerCase().trim(), 
             whatsapp: whatsapp,
             updated_at: new Date().toISOString()
           })
@@ -202,43 +292,48 @@ serve(async (req) => {
           await supabase.from('logs').insert({
             level: 'warning',
             context: 'create-asaas-payment-profile-update-error',
-            message: 'Failed to update existing user profile, but continuing',
+            message: '🔍 DEBUG: Falha ao atualizar perfil do usuário existente',
             metadata: { 
               userId,
               error: updateProfileError.message,
-              errorCode: updateProfileError.code
+              errorCode: updateProfileError.code,
+              duplicateAnalysis
             }
           });
         } else {
           await supabase.from('logs').insert({
             level: 'info',
             context: 'create-asaas-payment-profile-updated',
-            message: 'Existing user profile updated successfully',
-            metadata: { userId }
+            message: '🔍 DEBUG: Perfil do usuário existente atualizado com sucesso',
+            metadata: { 
+              userId,
+              duplicateAnalysis
+            }
           });
         }
       } else {
-        // Criar NOVO usuário (Auth + Profile)
         await supabase.from('logs').insert({
           level: 'info',
           context: 'create-asaas-payment-creating-new-user',
-          message: 'Creating new user account (Auth + Profile)',
+          message: '🔍 DEBUG: Criando novo usuário (Auth + Profile)',
           metadata: { 
-            email: email.toLowerCase().trim(),
+            email: email?.toLowerCase().trim(),
             cpfLength: cpf.length,
-            flow: 'checkout'
+            flow: 'checkout',
+            duplicateAnalysis
           }
         });
 
         const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-          email: email.toLowerCase().trim(),
+          email: email?.toLowerCase().trim(),
           password: cpf,
           email_confirm: true,
           user_metadata: { 
             name, 
             cpf: cpf, 
             whatsapp: whatsapp,
-            created_via: 'checkout'
+            created_via: 'checkout',
+            created_at_checkout: new Date().toISOString()
           },
         });
 
@@ -246,12 +341,14 @@ serve(async (req) => {
           await supabase.from('logs').insert({
             level: 'error',
             context: 'create-asaas-payment-auth-creation-error',
-            message: 'CRITICAL: Failed to create Auth user in checkout',
+            message: '🔍 DEBUG: FALHA CRÍTICA ao criar usuário Auth',
             metadata: { 
-              email: email.toLowerCase().trim(),
+              email: email?.toLowerCase().trim(),
               error: createUserError?.message,
               errorType: createUserError?.name,
-              flow: 'checkout'
+              errorCode: createUserError?.code,
+              flow: 'checkout',
+              duplicateAnalysis
             }
           });
           throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
@@ -262,24 +359,24 @@ serve(async (req) => {
         await supabase.from('logs').insert({
           level: 'info',
           context: 'create-asaas-payment-auth-created',
-          message: 'Auth user created successfully in checkout',
+          message: '🔍 DEBUG: Usuário Auth criado com sucesso',
           metadata: { 
             userId,
-            email: email.toLowerCase().trim(),
-            flow: 'checkout'
+            email: email?.toLowerCase().trim(),
+            flow: 'checkout',
+            duplicateAnalysis
           }
         });
 
-        // Criar perfil IMEDIATAMENTE
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             id: userId,
             name: name,
             cpf: cpf,
-            email: email.toLowerCase().trim(),
+            email: email?.toLowerCase().trim(),
             whatsapp: whatsapp,
-            access: [], // Vazio - acesso será liberado pelo webhook
+            access: [], // ⚠️ VAZIO - acesso será liberado pelo webhook
             primeiro_acesso: true,
             has_changed_password: false,
             is_admin: false,
@@ -290,17 +387,17 @@ serve(async (req) => {
           await supabase.from('logs').insert({
             level: 'error',
             context: 'create-asaas-payment-profile-creation-error',
-            message: 'CRITICAL: Failed to create profile for new user in checkout',
+            message: '🔍 DEBUG: FALHA CRÍTICA ao criar perfil do novo usuário',
             metadata: { 
               userId,
-              email: email.toLowerCase().trim(),
+              email: email?.toLowerCase().trim(),
               error: profileError.message,
               errorCode: profileError.code,
-              flow: 'checkout'
+              flow: 'checkout',
+              duplicateAnalysis
             }
           });
           
-          // Tentar deletar o usuário do Auth para evitar inconsistência
           await supabase.auth.admin.deleteUser(userId);
           
           throw new Error('Erro ao criar perfil do usuário: ' + profileError.message);
@@ -309,11 +406,13 @@ serve(async (req) => {
         await supabase.from('logs').insert({
           level: 'info',
           context: 'create-asaas-payment-profile-created',
-          message: 'Profile created successfully for new user in checkout (access empty, will be granted by webhook)',
+          message: '🔍 DEBUG: Perfil do novo usuário criado com sucesso',
           metadata: { 
             userId,
-            email: email.toLowerCase().trim(),
-            flow: 'checkout'
+            email: email?.toLowerCase().trim(),
+            flow: 'checkout',
+            access: [], // Confirmado que está vazio
+            duplicateAnalysis
           }
         });
       }
@@ -321,28 +420,31 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-user-management-error',
-        message: `Error in user management: ${error.message}`,
+        message: `🔍 DEBUG: Erro no gerenciamento de usuário: ${error.message}`,
         metadata: { 
-          email: email.toLowerCase().trim(),
+          email: email?.toLowerCase().trim(),
           error: error.message,
-          errorStack: error.stack
+          errorStack: error.stack,
+          flow: 'checkout',
+          duplicateAnalysis
         }
       });
       throw new Error('Erro no gerenciamento de usuário: ' + error.message);
     }
 
     // CRIAÇÃO DO PEDIDO (usando IDs únicos)
-    const originalTotal = products.reduce((sum: number, product: any) => sum + parseFloat(product.price), 0);
+    const originalTotal = products.reduce((sum: number, product: any) => sum + parseFloat(product.price.toString()), 0);
 
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-order-creation',
-      message: 'Creating order with unique product IDs',
+      message: '🔍 DEBUG: Criando pedido com IDs únicos',
       metadata: { 
         userId,
-        uniqueProductIds: uniqueProductIds,
+        uniqueProductIds,
         originalTotal,
-        productCount: uniqueProductIds.length
+        productCount: uniqueProductIds.length,
+        duplicateAnalysis
       }
     });
 
@@ -350,13 +452,20 @@ serve(async (req) => {
       .from('orders')
       .insert({
         user_id: userId,
-        ordered_product_ids: uniqueProductIds, // CORREÇÃO: Usar array sem duplicatas
+        ordered_product_ids: uniqueProductIds, // ✅ USANDO ARRAY COM IDs ÚNICOS
         total_price: originalTotal,
         status: 'pending',
         meta_tracking_data: {
           ...metaTrackingData,
           client_ip_address: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1',
-          client_user_agent: req.headers.get('user-agent') || ''
+          client_user_agent: req.headers.get('user-agent') || '',
+          duplicateAnalysis: {
+            originalCount: productIds.length,
+            uniqueCount: uniqueProductIds.length,
+            duplicatesRemoved: productIds.length - uniqueProductIds.length,
+            originalIds: productIds,
+            uniqueIds: uniqueProductIds
+          }
         }
       })
       .select()
@@ -366,13 +475,14 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-order-creation-error',
-        message: 'Failed to create order in database',
+        message: '🔍 DEBUG: FALHA ao criar pedido no banco',
         metadata: { 
           userId,
           uniqueProductIds,
           originalTotal,
           error: orderError?.message,
-          errorCode: orderError?.code
+          errorCode: orderError?.code,
+          duplicateAnalysis
         }
       });
       throw new Error('Erro ao criar pedido: ' + (orderError?.message || 'Erro desconhecido'));
@@ -381,17 +491,18 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-order-created',
-      message: 'Order created successfully',
+      message: '🔍 DEBUG: Pedido criado com sucesso',
       metadata: { 
         orderId: order.id,
         userId,
         uniqueProductIds,
         originalTotal,
-        status: order.status
+        status: order.status,
+        duplicateAnalysis
       }
     });
 
-    // PROCESSAMENTO DO PAGAMENTO (mantendo lógica existente)
+    // PROCESSAMENTO DO PAGAMENTO
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
     const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
 
@@ -399,10 +510,11 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-config-error',
-        message: 'Asaas API credentials not configured',
+        message: '🔍 DEBUG: Credenciais da API Asaas não configuradas',
         metadata: { 
           hasApiKey: !!ASAAS_API_KEY,
-          hasBaseUrl: !!ASAAS_BASE_URL
+          hasBaseUrl: !!ASAAS_BASE_URL,
+          duplicateAnalysis
         }
       });
       throw new Error('Configuração de pagamento não encontrada');
@@ -421,12 +533,23 @@ serve(async (req) => {
       billingType: 'PIX',
     };
 
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-pix-start',
+      message: '🔍 DEBUG: Iniciando criação do pagamento PIX',
+      metadata: { 
+        orderId: order.id,
+        userId,
+        asaasPayload,
+        duplicateAnalysis
+      }
+    });
+
     const asaasHeaders = {
       'Content-Type': 'application/json',
       'access_token': ASAAS_API_KEY,
     };
 
-    // Criar pagamento PIX
     const asaasResponse = await fetch(`${ASAAS_BASE_URL}/payments`, {
       method: 'POST',
       headers: asaasHeaders,
@@ -438,12 +561,13 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-pix-creation-error',
-        message: 'Failed to create PIX payment with Asaas',
+        message: '🔍 DEBUG: Falha ao criar pagamento PIX com Asaas',
         metadata: { 
           orderId: order.id,
           asaasError: errorData,
           httpStatus: asaasResponse.status,
-          httpStatusText: asaasResponse.statusText
+          httpStatusText: asaasResponse.statusText,
+          duplicateAnalysis
         }
       });
       throw new Error('Erro ao criar pagamento PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
@@ -454,11 +578,12 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-pix-created',
-      message: 'PIX payment created successfully with Asaas',
+      message: '🔍 DEBUG: Pagamento PIX criado com sucesso',
       metadata: { 
         orderId: order.id,
         asaasPaymentId: pixPaymentData.id,
-        status: pixPaymentData.status
+        status: pixPaymentData.status,
+        duplicateAnalysis
       }
     });
 
@@ -473,12 +598,14 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-asaas-payment-pix-qrcode-error',
-        message: 'Failed to fetch PIX QR Code from Asaas',
+        message: '🔍 DEBUG: Falha ao buscar QR Code PIX',
         metadata: { 
           orderId: order.id,
           asaasPaymentId: pixPaymentData.id,
           asaasError: errorData,
-          httpStatus: pixQrCodeResponse.status
+          httpStatus: pixQrCodeResponse.status,
+          httpStatusText: pixQrCodeResponse.statusText,
+          duplicateAnalysis
         }
       });
       throw new Error('Erro ao gerar QR Code PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
@@ -489,12 +616,13 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-pix-qrcode-success',
-      message: 'PIX QR Code fetched successfully',
+      message: '🔍 DEBUG: QR Code PIX obtido com sucesso',
       metadata: { 
         orderId: order.id,
         asaasPaymentId: pixPaymentData.id,
         hasPayload: !!pixQrCodeData.payload,
-        hasEncodedImage: !!pixQrCodeData.encodedImage
+        hasEncodedImage: !!pixQrCodeData.encodedImage,
+        duplicateAnalysis
       }
     });
 
@@ -508,21 +636,23 @@ serve(async (req) => {
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-asaas-payment-order-update-error',
-        message: 'Failed to update order with payment ID, but payment was created',
+        message: '🔍 DEBUG: Falha ao atualizar pedido com ID do pagamento (mas pagamento foi criado)',
         metadata: { 
           orderId: order.id,
           asaasPaymentId: pixPaymentData.id,
-          error: updateOrderError.message
+          error: updateOrderError.message,
+          duplicateAnalysis
         }
       });
     } else {
       await supabase.from('logs').insert({
         level: 'info',
         context: 'create-asaas-payment-order-updated',
-        message: 'Order updated successfully with payment ID',
+        message: '🔍 DEBUG: Pedido atualizado com ID do pagamento',
         metadata: { 
           orderId: order.id,
-          asaasPaymentId: pixPaymentData.id
+          asaasPaymentId: pixPaymentData.id,
+          duplicateAnalysis
         }
       });
     }
@@ -530,14 +660,23 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'create-asaas-payment-success',
-      message: 'CORRECTED Payment creation completed successfully - DUPLICATES PREVENTED',
+      message: '🔍 DEBUG: Processo CORRETO concluído com sucesso - DUPLICAÇÃO PREVENIDA',
       metadata: { 
         orderId: order.id,
         userId,
         asaasPaymentId: pixPaymentData.id,
         originalProductCount: productIds.length,
         uniqueProductCount: uniqueProductIds.length,
-        duplicatesRemoved: productIds.length - uniqueProductIds.length
+        duplicatesRemoved: productIds.length - uniqueProductIds.length,
+        duplicateAnalysis: {
+          originalCount: productIds.length,
+          uniqueCount: uniqueProductIds.length,
+          hasDuplicates: false,
+          duplicates: [],
+          duplicatesRemoved: productIds.length - uniqueProductIds.length,
+          originalIds: productIds,
+          uniqueIds: uniqueProductIds
+        }
       }
     });
 
@@ -545,11 +684,17 @@ serve(async (req) => {
       success: true,
       orderId: order.id,
       asaasPaymentId: pixPaymentData.id,
-      message: 'Pagamento iniciado com sucesso! Use o QR Code para pagar.',
+      message: '🔍 DEBUG: Pagamento iniciado com sucesso! Duplicação prevenida no backend.',
       pixDetails: {
         id: pixPaymentData.id,
         payload: pixQrCodeData.payload,
         encodedImage: pixQrCodeData.encodedImage
+      },
+      debugInfo: {
+        duplicateAnalysis,
+        originalProductIds: productIds,
+        uniqueProductIds: uniqueProductIds,
+        duplicatesRemoved: productIds.length - uniqueProductIds.length
       }
     }), {
       status: 200,
@@ -560,21 +705,34 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'error',
       context: 'create-asaas-payment-unhandled-error',
-      message: `Unhandled error in payment creation: ${error.message}`,
+      message: `🔍 DEBUG: Erro não tratado no processamento do pagamento: ${error.message}`,
       metadata: {
         error: error.message,
         errorStack: error.stack,
         requestBody: {
           ...req.body,
-          // Remove sensitive data from logs
           password: 'REDACTED',
           creditCard: 'REDACTED'
+        },
+        duplicateAnalysis: {
+          originalCount: req.body.productIds?.length || 0,
+          uniqueCount: [...new Set(req.body.productIds || [])].length,
+          hasDuplicates: (req.body.productIds?.length || 0) !== [...new Set(req.body.productIds || [])].length,
+          duplicates: req.body.productIds ? req.body.productIds.filter((id, index) => req.body.productIds.indexOf(id) !== index) : []
         }
       }
     });
 
     return new Response(JSON.stringify({ 
-      error: 'Erro no processamento do pagamento: ' + error.message 
+      error: '🔍 DEBUG: Erro no processamento do pagamento: ' + error.message,
+      debugInfo: {
+        duplicateAnalysis: {
+          originalCount: req.body.productIds?.length || 0,
+          uniqueCount: [...new Set(req.body.productIds || [])].length,
+          hasDuplicates: (req.body.productIds?.length || 0) !== [...new Set(req.body.productIds || [])].length,
+          duplicates: req.body.productIds ? req.body.productIds.filter((id, index) => req.body.productIds.indexOf(id) !== index) : []
+        }
+      }
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
