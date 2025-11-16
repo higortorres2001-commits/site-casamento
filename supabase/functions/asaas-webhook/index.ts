@@ -73,6 +73,31 @@ async function findUserWithRetry(supabase: any, email: string, maxRetries = 3, d
   return null;
 }
 
+// ==================== CORRECTED PRODUCT DATA FUNCTION ====================
+// Função corrigida para buscar produtos com nome E preço no formato esperado pelo template
+async function getProductsWithPrice(productIds: string[], supabase: any): Promise<Array<{nome: string, preco: string}>> {
+  try {
+    const { data: products } = await supabase
+      .from('products')
+      .select('name, price')
+      .in('id', productIds);
+    
+    if (products && products.length > 0) {
+      // Retornar array de objetos no formato esperado pelo template
+      return products.map(p => ({
+        nome: p.name,
+        preco: parseFloat(p.price).toFixed(2)
+      }));
+    }
+  } catch (error) {
+    console.error('Error fetching products with price:', error);
+    // Retornar array vazio em caso de erro
+    return [];
+  }
+  
+  return [];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -310,27 +335,41 @@ serve(async (req) => {
       });
     }
 
-    // ETAPA 6: Enviar email de acesso liberado COM TEMPLATE do Resend
+    // ETAPA 6: Enviar email de acesso liberado COM TEMPLATE CORRIGIDO do Resend
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (RESEND_API_KEY && profile.email && profile.cpf) {
       const loginUrl = 'https://app.medsemestress.com/login';
       
-      // Construir lista de produtos para o template
-      const productNames = orderedProductIds.length > 0 
-        ? await getProductNames(orderedProductIds, supabase)
-        : ['Produto não identificado'];
+      // CORREÇÃO: Buscar produtos com nome E preço no formato esperado pelo template
+      const produtosComprados = await getProductsWithPrice(orderedProductIds, supabase);
 
-      // Dados para o template do Resend
+      // CORREÇÃO: Dados para o template do Resend com nomes de variáveis corretos
       const templateData = {
         userName: profile.name || 'Cliente',
         userEmail: profile.email,
         userPassword: profile.cpf,
         loginUrl: loginUrl,
-        products: productNames,
-        orderTotal: order.total_price.toFixed(2),
+        // CORREÇÃO: Usar nomes de variáveis esperados pelo template
+        produtos_comprados: produtosComprados,
+        valor_total: order.total_price.toFixed(2),
         orderId: order.id,
         whatsappContact: '5537991202425'
       };
+
+      await supabase.from('logs').insert({
+        level: 'info',
+        context: 'webhook-email-template-data',
+        message: 'Preparing email with corrected template data structure',
+        metadata: { 
+          userId, 
+          orderId, 
+          email: profile.email,
+          templateId: 'purchase-confirmation',
+          produtosComprados: produtosComprados,
+          valorTotal: order.total_price.toFixed(2),
+          templateDataStructure: Object.keys(templateData)
+        }
+      });
 
       const resendResponse = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -359,10 +398,12 @@ serve(async (req) => {
             email: profile.email, 
             templateId: 'purchase-confirmation',
             templateData,
-            resendError: errorData 
+            resendError: errorData,
+            httpStatus: resendResponse.status
           }
         });
       } else {
+        const responseData = await resendResponse.json();
         await supabase.from('logs').insert({
           level: 'info',
           context: 'webhook-email-sent',
@@ -372,7 +413,8 @@ serve(async (req) => {
             orderId, 
             email: profile.email,
             templateId: 'purchase-confirmation',
-            templateData
+            templateData,
+            resendResponse: responseData
           }
         });
       }
@@ -480,7 +522,7 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'webhook-success',
-      message: 'Webhook processed successfully - access granted with purchase-confirmation email template',
+      message: 'Webhook processed successfully - access granted with CORRECTED purchase-confirmation email template',
       metadata: { 
         orderId,
         userId,
@@ -488,7 +530,8 @@ serve(async (req) => {
         event: requestBody.event,
         productsGranted: orderedProductIds.length,
         emailTemplate: 'purchase-confirmation',
-        loginUrl: 'https://app.medsemestress.com/login'
+        loginUrl: 'https://app.medsemestress.com/login',
+        templateDataFixed: true
       }
     });
 
@@ -497,7 +540,8 @@ serve(async (req) => {
       orderId,
       userId,
       accessGranted: true,
-      emailTemplate: 'purchase-confirmation'
+      emailTemplate: 'purchase-confirmation',
+      templateDataFixed: true
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -523,20 +567,3 @@ serve(async (req) => {
     });
   }
 });
-
-// Função auxiliar para buscar nomes dos produtos
-async function getProductNames(productIds: string[], supabase: any): Promise<string[]> {
-  try {
-    const { data: products } = await supabase
-      .from('products')
-      .select('name')
-      .in('id', productIds);
-    
-    if (products && products.length > 0) {
-      return products.map(p => p.name);
-    }
-  } catch (error) {
-    console.error('Error fetching product names:', error);
-    return ['Produto não identificado'];
-  }
-}
