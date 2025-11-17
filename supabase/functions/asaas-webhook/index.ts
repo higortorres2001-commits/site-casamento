@@ -1,76 +1,154 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { grantProductAccess, updateOrderStatus } from '../_shared/database.service.ts';
+import { Logger } from '../_shared/logger.service.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, asaas-access-token',
 };
 
-// Função para hash SHA-256
-async function sha256Hash(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text.toLowerCase().trim());
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+/**
+ * Valida assinatura do webhook Asaas (se configurada)
+ */
+function validateWebhookSignature(req: Request): boolean {
+  const asaasToken = req.headers.get('asaas-access-token');
+  const expectedToken = Deno.env.get('ASAAS_WEBHOOK_TOKEN');
+  
+  // Se não houver token configurado, aceitar (para compatibilidade)
+  if (!expectedToken) {
+    return true;
+  }
+  
+  return asaasToken === expectedToken;
 }
 
-// Função auxiliar para aguardar (sleep)
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Função para buscar usuário com retry
-async function findUserWithRetry(supabase: any, email: string, maxRetries = 3, delayMs = 2000): Promise<any> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'webhook-user-lookup',
-      message: `Attempting to find user in Auth (attempt ${attempt}/${maxRetries})`,
-      metadata: { email, attempt, maxRetries }
-    });
-
-    const { data: users, error } = await supabase.auth.admin.listUsers();
-    
-    if (error) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'webhook-user-lookup-error',
-        message: `Error listing users (attempt ${attempt}/${maxRetries})`,
-        metadata: { email, attempt, error: error.message }
-      });
-      
-      if (attempt === maxRetries) {
-        throw new Error('Failed to list users after retries: ' + error.message);
-      }
-      
-      await sleep(delayMs);
-      continue;
-    }
-
-    const user = users.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
-    
-    if (user) {
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'webhook-user-found',
-        message: `User found in Auth on attempt ${attempt}`,
-        metadata: { userId: user.id, email, attempt }
-      });
-      return user;
-    }
-
-    await supabase.from('logs').insert({
-      level: 'warning',
-      context: 'webhook-user-not-found',
-      message: `User not found in Auth (attempt ${attempt}/${maxRetries}), will retry`,
-      metadata: { email, attempt, maxRetries, willRetry: attempt < maxRetries }
-    });
-
-    if (attempt < maxRetries) {
-      await sleep(delayMs);
-    }
+/**
+ * Envia email de acesso liberado
+ */
+async function sendAccessEmail(
+  email: string,
+  name: string,
+  cpf: string,
+  logger: Logger
+): Promise<void> {
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+  
+  if (!RESEND_API_KEY) {
+    logger.warning('Resend API key not configured, skipping email');
+    return;
   }
 
-  return null;
+  const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'https://seu-app.com';
+  const loginUrl = `${appUrl}/login`;
+  
+  const emailBody = `
+    <h2>Parabéns! Seu pagamento foi confirmado 🎉</h2>
+    <p>Seu acesso aos produtos foi liberado. Use os dados abaixo para fazer login:</p>
+    <ul>
+      <li><strong>Login:</strong> <a href="${loginUrl}">${loginUrl}</a></li>
+      <li><strong>Email:</strong> ${email}</li>
+      <li><strong>Senha:</strong> ${cpf} (os números do seu CPF)</li>
+    </ul>
+    <p><em>Recomendamos trocar sua senha no primeiro acesso.</em></p>
+  `;
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
+        to: email,
+        subject: 'Seu acesso foi liberado!',
+        html: emailBody,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      logger.error('Failed to send access email', { email, error: errorData });
+    } else {
+      logger.info('Access email sent successfully', { email });
+    }
+  } catch (error: any) {
+    logger.error('Exception sending email', { email, error: error.message });
+  }
+}
+
+/**
+ * Envia evento Purchase para Meta CAPI
+ */
+async function sendMetaPurchaseEvent(
+  order: any,
+  profile: any,
+  logger: Logger
+): Promise<void> {
+  const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
+  const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
+
+  if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
+    logger.warning('Meta Pixel not configured, skipping CAPI event');
+    return;
+  }
+
+  try {
+    // Hash SHA-256 dos dados
+    const hashSHA256 = async (text: string): Promise<string> => {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(text.toLowerCase().trim());
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
+    const hashedEmail = profile.email ? await hashSHA256(profile.email) : undefined;
+    const hashedPhone = profile.whatsapp ? await hashSHA256(profile.whatsapp) : undefined;
+
+    const capiPayload = {
+      data: [{
+        event_name: 'Purchase',
+        event_time: Math.floor(Date.now() / 1000),
+        event_source_url: order.meta_tracking_data?.event_source_url || '',
+        action_source: 'website',
+        user_data: {
+          em: hashedEmail,
+          ph: hashedPhone,
+          fbc: order.meta_tracking_data?.fbc,
+          fbp: order.meta_tracking_data?.fbp,
+          client_ip_address: order.meta_tracking_data?.client_ip_address,
+          client_user_agent: order.meta_tracking_data?.client_user_agent,
+        },
+        custom_data: {
+          value: parseFloat(order.total_price).toFixed(2),
+          currency: 'BRL',
+          order_id: order.id,
+        },
+        event_id: `purchase_${order.id}_${Date.now()}`,
+      }],
+    };
+
+    const response = await fetch(
+      `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?access_token=${META_CAPI_ACCESS_TOKEN}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(capiPayload),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      logger.error('Meta CAPI error', { error: errorData });
+    } else {
+      logger.info('Meta Purchase event sent successfully');
+    }
+  } catch (error: any) {
+    logger.error('Exception sending Meta event', { error: error.message });
+  }
 }
 
 serve(async (req) => {
@@ -83,57 +161,41 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  let userId: string | undefined;
-  let orderId: string | undefined;
-  let asaasPaymentId: string | undefined;
-  let requestBody: any;
+  const logger = new Logger(supabase, 'asaas-webhook');
 
   try {
-    requestBody = await req.json();
+    // Validar assinatura do webhook
+    if (!validateWebhookSignature(req)) {
+      logger.error('Invalid webhook signature');
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const payload = await req.json();
     
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'asaas-webhook-received',
-      message: 'Asaas Webhook received',
-      metadata: { 
-        event: requestBody.event,
-        paymentId: requestBody.payment?.id,
-        timestamp: new Date().toISOString()
-      }
+    logger.info('Webhook received', {
+      event: payload.event,
+      paymentId: payload.payment?.id
     });
 
-    // ETAPA 1: Verificar se é evento relevante
-    if (requestBody.event !== 'PAYMENT_CONFIRMED' && requestBody.event !== 'PAYMENT_RECEIVED') {
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'webhook-event-ignored',
-        message: 'Event not relevant, ignoring',
-        metadata: { event: requestBody.event }
-      });
-      
-      return new Response(JSON.stringify({ message: 'Event not relevant, ignored.' }), {
+    // Processar apenas eventos relevantes
+    if (!['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED'].includes(payload.event)) {
+      logger.info('Event ignored (not relevant)', { event: payload.event });
+      return new Response(JSON.stringify({ message: 'Event ignored' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    asaasPaymentId = requestBody.payment?.id;
+    const asaasPaymentId = payload.payment?.id;
     
     if (!asaasPaymentId) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'webhook-missing-payment-id',
-        message: 'Payment ID not found in webhook payload',
-        metadata: { event: requestBody.event, payload: requestBody }
-      });
-      
-      return new Response(JSON.stringify({ error: 'Payment ID not found in notification.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Payment ID not found in webhook');
     }
 
-    // ETAPA 2: Buscar pedido
+    // ==================== BUSCAR PEDIDO ====================
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('id, user_id, ordered_product_ids, status, total_price, meta_tracking_data')
@@ -141,369 +203,79 @@ serve(async (req) => {
       .single();
 
     if (orderError || !order) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'webhook-order-not-found',
-        message: 'Order not found for payment ID',
-        metadata: { 
-          asaasPaymentId, 
-          error: orderError?.message,
-          errorCode: orderError?.code
-        }
-      });
-      
-      return new Response(JSON.stringify({ message: 'Order not found, webhook acknowledged.' }), {
+      logger.warning('Order not found for payment', { asaasPaymentId });
+      return new Response(JSON.stringify({ message: 'Order not found' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    
-    orderId = order.id;
-    userId = order.user_id;
 
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'webhook-order-found',
-      message: 'Order found successfully',
-      metadata: { 
-        orderId,
-        userId,
-        asaasPaymentId,
-        currentStatus: order.status,
-        productCount: order.ordered_product_ids?.length || 0
-      }
-    });
-
-    // ETAPA 3: Atualizar status do pedido
-    const newStatus = 'paid';
-    
-    if (order.status !== 'paid') {
-      const { error: updateOrderError } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', order.id);
-
-      if (updateOrderError) {
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'webhook-order-update-error',
-          message: 'Failed to update order status',
-          metadata: { 
-            orderId, 
-            asaasPaymentId, 
-            error: updateOrderError.message,
-            errorCode: updateOrderError.code
-          }
-        });
-        
-        return new Response(JSON.stringify({ error: 'Failed to update order status.' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'webhook-order-updated',
-        message: 'Order status updated to paid',
-        metadata: { 
-          orderId, 
-          asaasPaymentId, 
-          oldStatus: order.status,
-          newStatus
-        }
+    // Verificar se já foi processado (idempotência)
+    if (order.status === 'paid') {
+      logger.info('Order already processed (idempotent)', {
+        orderId: order.id,
+        userId: order.user_id
       });
-    }
-
-    // ETAPA 4: Buscar perfil do usuário (COM RETRY)
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, access, name, email, cpf, whatsapp')
-      .eq('id', userId)
-      .single();
-
-    if (profileError || !profile) {
-      await supabase.from('logs').insert({
-        level: 'error',
-        context: 'webhook-profile-not-found',
-        message: 'CRITICAL: User profile not found - this should not happen with new flow',
-        metadata: { 
-          userId, 
-          orderId, 
-          asaasPaymentId, 
-          error: profileError?.message,
-          errorCode: profileError?.code
-        }
-      });
-      
-      // Retornar 202 para que Asaas retente
-      return new Response(JSON.stringify({ 
-        message: 'User profile not found, please retry webhook.',
-        orderId,
-        userId
-      }), {
-        status: 202, // Accepted - Asaas will retry
+      return new Response(JSON.stringify({ message: 'Already processed' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // ETAPA 5: Liberar acesso aos produtos
-    const orderedProductIds = order.ordered_product_ids || [];
-    const existingAccess = profile.access || [];
-    const newAccess = [...new Set([...existingAccess, ...orderedProductIds])];
+    // ==================== ATUALIZAR STATUS ====================
+    await updateOrderStatus(supabase, order.id, 'paid');
 
-    // Verificar se já tem acesso (idempotência)
-    const hasAllAccess = orderedProductIds.every(id => existingAccess.includes(id));
-    
-    if (hasAllAccess) {
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'webhook-access-already-granted',
-        message: 'User already has access to all products (idempotent webhook)',
-        metadata: { 
-          userId, 
-          orderId, 
-          asaasPaymentId,
-          existingAccessCount: existingAccess.length,
-          orderedProductIds
-        }
-      });
-    } else {
-      const { error: updateProfileError } = await supabase
-        .from('profiles')
-        .update({ access: newAccess })
-        .eq('id', userId);
+    logger.info('Order status updated to paid', {
+      orderId: order.id,
+      userId: order.user_id
+    });
 
-      if (updateProfileError) {
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'webhook-access-grant-error',
-          message: 'Failed to grant product access to user',
-          metadata: { 
-            userId, 
-            orderId, 
-            asaasPaymentId, 
-            orderedProductIds, 
-            error: updateProfileError.message,
-            errorCode: updateProfileError.code
-          }
-        });
-        
-        return new Response(JSON.stringify({ error: 'Failed to grant product access.' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+    // ==================== CONCEDER ACESSO ====================
+    await grantProductAccess(supabase, order.user_id, order.ordered_product_ids);
+
+    logger.info('Product access granted', {
+      orderId: order.id,
+      userId: order.user_id,
+      productCount: order.ordered_product_ids.length
+    });
+
+    // ==================== BUSCAR PERFIL PARA EMAIL ====================
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email, name, cpf, whatsapp')
+      .eq('id', order.user_id)
+      .single();
+
+    if (profile?.email && profile?.cpf) {
+      // Enviar email (não-bloqueante)
+      sendAccessEmail(profile.email, profile.name, profile.cpf, logger);
       
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'webhook-access-granted',
-        message: 'Product access granted successfully',
-        metadata: { 
-          userId, 
-          orderId, 
-          asaasPaymentId, 
-          previousAccessCount: existingAccess.length,
-          newAccessCount: newAccess.length,
-          grantedProducts: orderedProductIds
-        }
-      });
+      // Enviar evento Meta (não-bloqueante)
+      sendMetaPurchaseEvent(order, profile, logger);
     }
 
-    // ETAPA 6: Enviar email de acesso liberado
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    if (RESEND_API_KEY && profile.email && profile.cpf) {
-      const emailSubject = "Seu acesso foi liberado!";
-      const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'YOUR_APP_URL';
-      const loginUrl = `${appUrl}/login`;
-      
-      const emailBody = `
-        Parabéns! Seu pagamento foi confirmado. Para acessar seus produtos, use os dados abaixo:
-
-        Login: ${loginUrl}
-        Email: ${profile.email}
-        Senha: ${profile.cpf} (os números do seu CPF)
-
-        Recomendamos trocar sua senha no primeiro acesso.
-      `;
-
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-        },
-        body: JSON.stringify({
-          from: 'onboarding@resend.dev',
-          to: profile.email,
-          subject: emailSubject,
-          html: emailBody.replace(/\n/g, '<br/>'),
-        }),
-      });
-
-      if (!resendResponse.ok) {
-        const errorData = await resendResponse.json();
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'webhook-email-error',
-          message: 'Failed to send access email',
-          metadata: { 
-            userId, 
-            orderId, 
-            email: profile.email, 
-            resendError: errorData 
-          }
-        });
-      } else {
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'webhook-email-sent',
-          message: 'Access email sent successfully',
-          metadata: { 
-            userId, 
-            orderId, 
-            email: profile.email 
-          }
-        });
-      }
-    }
-
-    // ETAPA 7: Meta CAPI Purchase Event (COM HASH CORRETO)
-    const META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
-    const META_CAPI_ACCESS_TOKEN = Deno.env.get('META_CAPI_ACCESS_TOKEN');
-
-    if (META_PIXEL_ID && META_CAPI_ACCESS_TOKEN) {
-      try {
-        // Hash dos dados do usuário
-        const hashedEmail = profile.email ? await sha256Hash(profile.email) : undefined;
-        const hashedPhone = profile.whatsapp ? await sha256Hash(profile.whatsapp) : undefined;
-
-        const capiPayload = {
-          data: [
-            {
-              event_name: 'Purchase',
-              event_time: Math.floor(Date.now() / 1000),
-              event_source_url: order.meta_tracking_data?.event_source_url || '',
-              action_source: 'website',
-              user_data: {
-                em: hashedEmail,
-                ph: hashedPhone,
-                fbc: order.meta_tracking_data?.fbc,
-                fbp: order.meta_tracking_data?.fbp,
-                client_ip_address: order.meta_tracking_data?.client_ip_address,
-                client_user_agent: order.meta_tracking_data?.client_user_agent,
-              },
-              custom_data: {
-                value: order.total_price.toFixed(2),
-                currency: 'BRL',
-                order_id: order.id,
-              },
-              event_id: `purchase_capi_${order.id}_${Date.now()}`,
-            },
-          ],
-        };
-
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'webhook-meta-capi-payload',
-          message: 'Sending Purchase event to Meta CAPI with hashed data',
-          metadata: { 
-            orderId, 
-            userId,
-            hasHashedEmail: !!hashedEmail,
-            hasHashedPhone: !!hashedPhone,
-            eventId: `purchase_capi_${order.id}_${Date.now()}`
-          }
-        });
-
-        const metaResponse = await fetch(
-          `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?access_token=${META_CAPI_ACCESS_TOKEN}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(capiPayload),
-          }
-        );
-
-        if (!metaResponse.ok) {
-          const errorData = await metaResponse.json();
-          await supabase.from('logs').insert({
-            level: 'error',
-            context: 'webhook-meta-capi-error',
-            message: 'Failed to send Purchase event to Meta CAPI',
-            metadata: { 
-              orderId, 
-              userId, 
-              metaError: errorData,
-              httpStatus: metaResponse.status
-            }
-          });
-        } else {
-          const responseData = await metaResponse.json();
-          await supabase.from('logs').insert({
-            level: 'info',
-            context: 'webhook-meta-capi-success',
-            message: 'Purchase event sent to Meta CAPI successfully',
-            metadata: { 
-              orderId, 
-              userId,
-              metaResponse: responseData
-            }
-          });
-        }
-      } catch (metaError: any) {
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'webhook-meta-capi-exception',
-          message: 'Exception sending Purchase event to Meta CAPI',
-          metadata: { 
-            orderId, 
-            userId, 
-            error: metaError.message,
-            errorStack: metaError.stack
-          }
-        });
-      }
-    }
-
-    // ETAPA 8: Sucesso final
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'webhook-success',
-      message: 'Webhook processed successfully - access granted',
-      metadata: { 
-        orderId,
-        userId,
-        asaasPaymentId,
-        event: requestBody.event,
-        productsGranted: orderedProductIds.length
-      }
+    logger.info('Webhook processed successfully', {
+      orderId: order.id,
+      userId: order.user_id,
+      event: payload.event
     });
 
     return new Response(JSON.stringify({ 
-      message: 'Webhook processed successfully.',
-      orderId,
-      userId,
-      accessGranted: true
+      message: 'Webhook processed successfully',
+      orderId: order.id,
+      userId: order.user_id
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'webhook-unhandled-error',
-      message: `Unhandled error in webhook: ${error.message}`,
-      metadata: {
-        errorStack: error.stack,
-        asaasPaymentId,
-        orderId,
-        userId,
-        event: requestBody?.event
-      }
+    await logger.critical('Webhook processing failed', {
+      errorMessage: error.message,
+      errorStack: error.stack,
+      payload: payload || null
     });
-    
+
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

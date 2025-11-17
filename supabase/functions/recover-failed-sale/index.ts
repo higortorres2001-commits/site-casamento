@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createOrUpdateUser, createOrder, validateProducts, validateAndApplyCoupon } from '../_shared/database.service.ts';
+import { Logger } from '../_shared/logger.service.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,150 +18,49 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  try {
-    const { customerData, paymentMethod, productIds, couponCode } = await req.json();
+  const logger = new Logger(supabase, 'recover-sale');
 
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'recover-failed-sale-start',
-      message: 'Starting manual sale recovery process',
-      metadata: { 
-        customerEmail: customerData.email,
-        paymentMethod,
-        productCount: productIds?.length || 0,
-        hasCoupon: !!couponCode
-      }
+  try {
+    const { customerData, productIds, couponCode } = await req.json();
+
+    logger.info('Sale recovery started', {
+      email: customerData.email,
+      productCount: productIds?.length || 0
     });
 
-    // ETAPA 1: Criar/encontrar usuário de forma segura
-    let userId: string;
-    
-    // Tentar encontrar usuário existente primeiro
-    const { data: existingUsers } = await supabase.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find(u => u.email?.toLowerCase() === customerData.email.toLowerCase());
-    
-    if (existingUser) {
-      userId = existingUser.id;
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'recover-failed-sale-user-found',
-        message: 'Found existing user for recovery',
-        metadata: { userId, email: customerData.email }
-      });
-    } else {
-      // Criar novo usuário
-      const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
-        email: customerData.email,
-        password: customerData.cpf,
-        email_confirm: true,
-        user_metadata: { 
-          name: customerData.name, 
-          cpf: customerData.cpf, 
-          whatsapp: customerData.whatsapp,
-          created_via: 'manual-recovery'
-        },
-      });
+    // Validar produtos
+    const products = await validateProducts(supabase, productIds);
+    const originalTotal = products.reduce((sum, p) => sum + parseFloat(p.price.toString()), 0);
 
-      if (createError || !newUser?.user) {
-        // Se falhar, usar UUID gerado
-        userId = crypto.randomUUID();
-        await supabase.from('logs').insert({
-          level: 'warning',
-          context: 'recover-failed-sale-fallback-id',
-          message: 'Using fallback UUID for user creation',
-          metadata: { 
-            fallbackUserId: userId,
-            email: customerData.email,
-            error: createError?.message
-          }
-        });
-      } else {
-        userId = newUser.user.id;
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'recover-failed-sale-user-created',
-          message: 'Created new user for recovery',
-          metadata: { userId, email: customerData.email }
-        });
-      }
-    }
+    // Aplicar cupom
+    const { finalTotal } = await validateAndApplyCoupon(supabase, couponCode, originalTotal);
 
-    // ETAPA 2: Criar/atualizar perfil (não falhar se der erro)
-    try {
-      await supabase
-        .from('profiles')
-        .upsert({
-          id: userId,
-          name: customerData.name,
-          cpf: customerData.cpf,
-          email: customerData.email,
-          whatsapp: customerData.whatsapp,
-          access: [],
-          primeiro_acesso: true,
-          has_changed_password: false,
-          is_admin: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-    } catch (profileError: any) {
-      await supabase.from('logs').insert({
-        level: 'warning',
-        context: 'recover-failed-sale-profile-error',
-        message: 'Profile creation failed but continuing with sale recovery',
-        metadata: { 
-          userId,
-          error: profileError.message,
-          customerData
-        }
-      });
-    }
+    // Criar/atualizar usuário
+    const userResult = await createOrUpdateUser(supabase, {
+      name: customerData.name,
+      email: customerData.email,
+      cpf: customerData.cpf.replace(/\D/g, ''),
+      whatsapp: customerData.whatsapp.replace(/\D/g, '')
+    });
 
-    // ETAPA 3: Buscar produtos
-    const { data: products, error: productsError } = await supabase
-      .from('products')
-      .select('id, price, name, status')
-      .in('id', productIds);
+    // Criar pedido
+    const order = await createOrder(supabase, {
+      userId: userResult.userId,
+      productIds,
+      totalPrice: finalTotal,
+      metaTrackingData: { recovery: true }
+    });
 
-    if (productsError || !products) {
-      throw new Error('Produtos não encontrados: ' + (productsError?.message || 'Erro desconhecido'));
-    }
-
-    const totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price.toString()), 0);
-
-    // ETAPA 4: Criar pedido
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        user_id: userId,
-        ordered_product_ids: productIds,
-        total_price: totalPrice,
-        status: 'pending',
-        meta_tracking_data: { recovery: true, original_failure: true },
-      })
-      .select()
-      .single();
-
-    if (orderError || !order) {
-      throw new Error('Erro ao criar pedido de recuperação: ' + (orderError?.message || 'Erro desconhecido'));
-    }
-
-    await supabase.from('logs').insert({
-      level: 'info',
-      context: 'recover-failed-sale-success',
-      message: 'Sale recovery completed successfully',
-      metadata: { 
-        orderId: order.id,
-        userId,
-        totalPrice,
-        customerEmail: customerData.email,
-        productCount: productIds.length
-      }
+    logger.info('Sale recovered successfully', {
+      orderId: order.id,
+      userId: userResult.userId,
+      isNewUser: userResult.isNew
     });
 
     return new Response(JSON.stringify({
       success: true,
       orderId: order.id,
-      userId,
+      userId: userResult.userId,
       message: 'Venda recuperada com sucesso'
     }), {
       status: 200,
@@ -167,20 +68,12 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    await supabase.from('logs').insert({
-      level: 'error',
-      context: 'recover-failed-sale-error',
-      message: `Failed to recover sale: ${error.message}`,
-      metadata: {
-        error: error.message,
-        errorStack: error.stack,
-        customerData: customerData || requestBody
-      }
+    await logger.critical('Sale recovery failed', {
+      errorMessage: error.message,
+      errorStack: error.stack
     });
 
-    return new Response(JSON.stringify({ 
-      error: 'Erro na recuperação da venda: ' + error.message 
-    }), {
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
