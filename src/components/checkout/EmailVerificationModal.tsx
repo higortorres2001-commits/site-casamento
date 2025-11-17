@@ -24,7 +24,7 @@ const EmailVerificationModal = ({
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(30); // 🎯 Alterado para 30 segundos
+  const [timeLeft, setTimeLeft] = useState(30);
   const [canResend, setCanResend] = useState(false);
   const [verificationStep, setVerificationStep] = useState<'sending' | 'input' | 'verifying' | 'success'>('sending');
   
@@ -41,7 +41,7 @@ const EmailVerificationModal = ({
     }
   }, [isOpen]);
   
-  // Timer para reenvio - 🎯 Corrigido para 30 segundos
+  // Timer para reenvio
   useEffect(() => {
     if (timeLeft > 0 && verificationStep === 'input') {
       const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
@@ -50,55 +50,6 @@ const EmailVerificationModal = ({
       setCanResend(true);
     }
   }, [timeLeft, verificationStep]);
-  
-  // Persistir estado no localStorage para recuperação após troca de apps
-  useEffect(() => {
-    // Salvar estado atual
-    if (isOpen) {
-      localStorage.setItem(`otp_session_${sessionId.current}`, JSON.stringify({
-        email,
-        step: verificationStep,
-        timestamp: Date.now()
-      }));
-    }
-    
-    // Verificar se há uma sessão pendente ao montar o componente
-    const checkPendingSession = () => {
-      try {
-        const savedSession = localStorage.getItem(`otp_session_${sessionId.current}`);
-        if (savedSession) {
-          const session = JSON.parse(savedSession);
-          // Se a sessão for recente (menos de 5 minutos)
-          if (Date.now() - session.timestamp < 5 * 60 * 1000) {
-            console.log("📱 Resuming OTP session", session);
-            // Restaurar estado
-            if (session.step === 'input' || session.step === 'verifying') {
-              setVerificationStep('input');
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Error checking pending OTP session:", e);
-      }
-    };
-    
-    checkPendingSession();
-    
-    // Adicionar listener para quando o app volta ao foco
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkPendingSession();
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', checkPendingSession);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', checkPendingSession);
-    };
-  }, [isOpen, email]);
   
   // Auto-focus no primeiro input quando estiver no passo de input
   useEffect(() => {
@@ -109,25 +60,29 @@ const EmailVerificationModal = ({
     }
   }, [verificationStep]);
 
-  // Enviar código OTP
+  // Enviar código OTP usando a função específica
   const sendOtpCode = async () => {
     console.log("📧 Sending OTP to:", email);
     setIsResending(true);
     
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.toLowerCase().trim()
+      const { data, error } = await supabase.functions.invoke("send-checkout-otp", {
+        body: { email: email.toLowerCase().trim() }
       });
 
       if (error) {
         console.error("Error sending OTP:", error);
         showError("Erro ao enviar código. Tente novamente.");
         setVerificationStep('sending');
+      } else if (data?.error) {
+        console.error("Function returned error:", data.error);
+        showError(data.error);
+        setVerificationStep('sending');
       } else {
         console.log("✅ OTP sent successfully");
         showSuccess("Código enviado para seu e-mail!");
         setVerificationStep('input');
-        setTimeLeft(30); // 🎯 Reset para 30 segundos
+        setTimeLeft(30);
         setCanResend(false);
       }
     } catch (error: any) {
@@ -139,7 +94,7 @@ const EmailVerificationModal = ({
     }
   };
 
-  // Verificar código OTP
+  // Verificar código OTP usando a função específica
   const verifyOtpCode = async () => {
     const otpCode = otp.join("");
     
@@ -154,50 +109,44 @@ const EmailVerificationModal = ({
     try {
       console.log("🔐 Verifying OTP code:", otpCode);
       
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otpCode,
-        type: 'email'
+      const { data, error } = await supabase.functions.invoke("verify-checkout-otp", {
+        body: { 
+          email: email.toLowerCase().trim(),
+          token: otpCode
+        }
       });
 
       if (error) {
         console.error("OTP verification error:", error);
-        showError("Código inválido. Por favor, verifique e tente novamente.");
-        
-        // Limpa todos os campos
+        showError("Erro ao verificar código. Tente novamente.");
         setOtp(Array(6).fill(""));
         setVerificationStep('input');
         if (inputRefs.current[0]) {
           inputRefs.current[0]?.focus();
         }
-      } else if (data.user) {
+      } else if (data?.error) {
+        console.error("Function returned error:", data.error);
+        showError(data.error);
+        setOtp(Array(6).fill(""));
+        setVerificationStep('input');
+        if (inputRefs.current[0]) {
+          inputRefs.current[0]?.focus();
+        }
+      } else if (data?.success && data?.userData) {
         console.log("✅ OTP verified successfully");
         showSuccess("Código verificado com sucesso!");
         setVerificationStep('success');
         
-        // Buscar dados do usuário no perfil
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("name, cpf, whatsapp")
-          .eq("id", data.user.id)
-          .single();
-
-        if (profileError || !profile) {
-          console.error("Error fetching user profile:", profileError);
-          showError("Erro ao carregar seus dados. Por favor, tente novamente.");
-        } else {
-          // Limpar a sessão do localStorage
-          localStorage.removeItem(`otp_session_${sessionId.current}`);
-          
-          // Notificar o componente pai
-          setTimeout(() => {
-            onVerified({
-              name: profile.name || "",
-              cpf: profile.cpf || "",
-              whatsapp: profile.whatsapp || ""
-            });
-          }, 1000);
-        }
+        // Limpar a sessão do localStorage
+        localStorage.removeItem(`otp_session_${sessionId.current}`);
+        
+        // Notificar o componente pai
+        setTimeout(() => {
+          onVerified(data.userData);
+        }, 1000);
+      } else {
+        showError("Resposta inválida do servidor.");
+        setVerificationStep('input');
       }
     } catch (error: any) {
       console.error("Unexpected error during OTP verification:", error);
@@ -254,12 +203,12 @@ const EmailVerificationModal = ({
     }
   };
 
-  // 🎯 Função para reenviar código
+  // Função para reenviar código
   const handleResendCode = async () => {
     console.log("🔄 Resending OTP code");
     setCanResend(false);
-    setTimeLeft(30); // Reset timer para 30 segundos
-    setOtp(Array(6).fill("")); // Limpar campos
+    setTimeLeft(30);
+    setOtp(Array(6).fill(""));
     await sendOtpCode();
   };
 

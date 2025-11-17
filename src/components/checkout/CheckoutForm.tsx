@@ -90,7 +90,11 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
     // Verificar email quando o usuário termina de digitar
     const handleEmailBlur = async () => {
       const email = form.getValues("email");
-      if (!email || !email.includes("@")) return;
+      if (!email || !email.includes("@") || !z.string().email().safeParse(email).success) {
+        setIsExistingUser(false);
+        setIsEmailVerified(false);
+        return;
+      }
       
       setIsCheckingEmail(true);
       try {
@@ -100,13 +104,17 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         
         if (exists && !isEmailVerified) {
           setIsExistingUser(true);
-          showSuccess("E-mail encontrado! Vamos verificar sua identidade.");
+          setIsEmailVerified(false);
+          showSuccess("E-mail encontrado! Clique no botão abaixo para verificar sua identidade.");
         } else if (!exists) {
           setIsExistingUser(false);
+          setIsEmailVerified(false);
           showSuccess("Novo cliente! Preencha seus dados abaixo.");
         }
       } catch (error) {
         console.error("Error checking email:", error);
+        setIsExistingUser(false);
+        setIsEmailVerified(false);
       } finally {
         setIsCheckingEmail(false);
       }
@@ -120,6 +128,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         return;
       }
       
+      console.log("🚀 Starting email verification for:", email);
       setEmailForVerification(email);
       setIsVerificationModalOpen(true);
     };
@@ -325,7 +334,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         <EmailVerificationModal
           email={emailForVerification}
           isOpen={isVerificationModalOpen}
-          onClose={() => setIsVerificationModalOpen(false)}
+          onClose={() => {
+            setIsVerificationModalOpen(false);
+            setEmailForVerification("");
+          }}
           onVerified={handleVerificationComplete}
         />
       </>
