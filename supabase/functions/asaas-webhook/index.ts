@@ -73,31 +73,6 @@ async function findUserWithRetry(supabase: any, email: string, maxRetries = 3, d
   return null;
 }
 
-// ==================== CORRECTED PRODUCT DATA FUNCTION ====================
-// Função corrigida para buscar produtos com nome E preço no formato esperado pelo template
-async function getProductsWithPrice(productIds: string[], supabase: any): Promise<Array<{nome: string, preco: string}>> {
-  try {
-    const { data: products } = await supabase
-      .from('products')
-      .select('name, price')
-      .in('id', productIds);
-    
-    if (products && products.length > 0) {
-      // Retornar array de objetos no formato esperado pelo template
-      return products.map(p => ({
-        nome: p.name,
-        preco: parseFloat(p.price).toFixed(2)
-      }));
-    }
-  } catch (error) {
-    console.error('Error fetching products with price:', error);
-    // Retornar array vazio em caso de erro
-    return [];
-  }
-  
-  return [];
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -335,41 +310,73 @@ serve(async (req) => {
       });
     }
 
-    // ETAPA 6: Enviar email de acesso liberado COM TEMPLATE CORRIGIDO do Resend
+    // ETAPA 6: Enviar email de acesso liberado COM TEMPLATE purchase-confirmation
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (RESEND_API_KEY && profile.email && profile.cpf) {
-      const loginUrl = 'https://app.medsemestress.com/login';
+      const emailSubject = "🎉 Parabéns! Seu acesso foi liberado!";
+      const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'https://app.medsemestress.com';
+      const loginUrl = `${appUrl}/login`;
       
-      // CORREÇÃO: Buscar produtos com nome E preço no formato esperado pelo template
-      const produtosComprados = await getProductsWithPrice(orderedProductIds, supabase);
+      // Construir lista de produtos para o template
+      const productNames = orderedProductIds.length > 0 
+        ? await getProductNames(orderedProductIds, supabase)
+        : ['Produto não identificado'];
 
-      // CORREÇÃO: Dados para o template do Resend com nomes de variáveis corretos
-      const templateData = {
-        userName: profile.name || 'Cliente',
-        userEmail: profile.email,
-        userPassword: profile.cpf,
-        loginUrl: loginUrl,
-        // CORREÇÃO: Usar nomes de variáveis esperados pelo template
-        produtos_comprados: produtosComprados,
-        valor_total: order.total_price.toFixed(2),
-        orderId: order.id,
-        whatsappContact: '5537991202425'
-      };
-
-      await supabase.from('logs').insert({
-        level: 'info',
-        context: 'webhook-email-template-data',
-        message: 'Preparing email with corrected template data structure',
-        metadata: { 
-          userId, 
-          orderId, 
-          email: profile.email,
-          templateId: 'purchase-confirmation',
-          produtosComprados: produtosComprados,
-          valorTotal: order.total_price.toFixed(2),
-          templateDataStructure: Object.keys(templateData)
-        }
-      });
+      const emailBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #28a745; font-size: 28px; margin-bottom: 10px;">🎉 Compra Confirmada!</h1>
+            <p style="color: #6c757d; font-size: 16px; margin: 0;">Parabéns! Seu pagamento foi confirmado com sucesso.</p>
+          </div>
+          
+          <div style="background-color: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;">
+            <h2 style="color: #333; font-size: 20px; margin-bottom: 15px;">📦 Seus Dados de Acesso</h2>
+            
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+              <p style="margin: 0 0 10px 0; color: #666;"><strong>🌐 URL de Acesso:</strong></p>
+              <p style="margin: 0; font-size: 16px;"><a href="${loginUrl}" style="color: #007bff; text-decoration: none; font-weight: bold;">${loginUrl}</a></p>
+            </div>
+            
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 5px;">
+              <p style="margin: 0 0 10px 0; color: #666;"><strong>📧 Email:</strong></p>
+              <p style="margin: 0; font-size: 16px; color: #333;">${profile.email}</p>
+            </div>
+            
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 5px;">
+              <p style="margin: 0 0 10px 0; color: #666;"><strong>🔑 Senha:</strong></p>
+              <p style="margin: 0; font-size: 18px; color: #333; font-weight: bold; background-color: #fff3cd; padding: 10px; border-radius: 5px; text-align: center;">${profile.cpf}</p>
+            </div>
+          </div>
+          
+          <div style="background-color: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;">
+            <h2 style="color: #333; font-size: 20px; margin-bottom: 15px;">📚 Produtos Adquiridos</h2>
+            
+            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px;">
+              ${productNames.map((productName, index) => `
+                <p style="margin: ${index > 0 ? '15px' : '0'} 0; color: #333;">✅ ${productName}</p>
+              `).join('')}
+            </div>
+          </div>
+          
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 10px; border-left: 4px solid #ffc107; margin-bottom: 20px;">
+            <p style="margin: 0; color: #856404;"><strong>💡 Importante:</strong></p>
+            <p style="margin: 5px 0 0 0; color: #856404;">Guarde seus dados de acesso em local seguro. Sua senha é o seu CPF sem formatação.</p>
+          </div>
+          
+          <div style="text-align: center; margin-top: 30px;">
+            <p style="color: #6c757d; font-size: 14px;">Precisa de ajuda? Estamos aqui para você!</p>
+            <p style="margin: 10px 0;">
+              <a href="https://web.whatsapp.com/send?phone=5537991202425" style="color: #25d366; text-decoration: none; font-weight: bold;">
+                📱 Fale Conosco no WhatsApp
+              </a>
+            </p>
+          </div>
+          
+          <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+            <p style="color: #6c757d; font-size: 12px;">Enviado por SemEstress • ${new Date().toLocaleDateString('pt-BR')}</p>
+          </div>
+        </div>
+      `;
 
       const resendResponse = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -378,11 +385,10 @@ serve(async (req) => {
           'Authorization': `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: 'contato@medsemestress.com',
+          from: 'onboarding@resend.dev',
           to: profile.email,
-          subject: "🎉 Parabéns! Seu acesso foi liberado!",
-          template: 'purchase-confirmation',
-          data: templateData
+          subject: emailSubject,
+          html: emailBody,
         }),
       });
 
@@ -396,14 +402,10 @@ serve(async (req) => {
             userId, 
             orderId, 
             email: profile.email, 
-            templateId: 'purchase-confirmation',
-            templateData,
-            resendError: errorData,
-            httpStatus: resendResponse.status
+            resendError: errorData 
           }
         });
       } else {
-        const responseData = await resendResponse.json();
         await supabase.from('logs').insert({
           level: 'info',
           context: 'webhook-email-sent',
@@ -411,10 +413,7 @@ serve(async (req) => {
           metadata: { 
             userId, 
             orderId, 
-            email: profile.email,
-            templateId: 'purchase-confirmation',
-            templateData,
-            resendResponse: responseData
+            email: profile.email 
           }
         });
       }
@@ -522,16 +521,14 @@ serve(async (req) => {
     await supabase.from('logs').insert({
       level: 'info',
       context: 'webhook-success',
-      message: 'Webhook processed successfully - access granted with CORRECTED purchase-confirmation email template',
+      message: 'Webhook processed successfully - access granted with purchase-confirmation email',
       metadata: { 
         orderId,
         userId,
         asaasPaymentId,
         event: requestBody.event,
         productsGranted: orderedProductIds.length,
-        emailTemplate: 'purchase-confirmation',
-        loginUrl: 'https://app.medsemestress.com/login',
-        templateDataFixed: true
+        emailTemplate: 'purchase-confirmation'
       }
     });
 
@@ -540,8 +537,7 @@ serve(async (req) => {
       orderId,
       userId,
       accessGranted: true,
-      emailTemplate: 'purchase-confirmation',
-      templateDataFixed: true
+      emailTemplate: 'purchase-confirmation'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -567,3 +563,20 @@ serve(async (req) => {
     });
   }
 });
+
+// Função auxiliar para buscar nomes dos produtos
+async function getProductNames(productIds: string[], supabase: any): Promise<string[]> {
+  try {
+    const { data: products } = await supabase
+      .from('products')
+      .select('name')
+      .in('id', productIds);
+    
+    if (products && products.length > 0) {
+      return products.map(p => p.name);
+    }
+  } catch (error) {
+    console.error('Error fetching product names:', error);
+    return ['Produto não identificado'];
+  }
+}
