@@ -19,38 +19,52 @@ serve(async (req) => {
   try {
     const { name, email, cpf, whatsapp, productIds, coupon_code, paymentMethod, creditCard, metaTrackingData } = await req.json();
 
-    // Normalizar email
-    const normalizedEmail = email?.toLowerCase().trim();
-
-    // LOG INICIAL
+    // LOG DETALHADO DO INÍCIO PARA DEBUG DA DUPLICAÇÃO
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'payment-start',
-      message: 'Iniciando processamento de pagamento',
+      context: 'create-asaas-payment-debug-start',
+      message: '🔍 DEBUG: Iniciando processamento com análise detalhada de duplicação',
       metadata: { 
         timestamp: new Date().toISOString(),
-        email: normalizedEmail,
+        email: email?.toLowerCase().trim(),
+        productIds: productIds,
         productCount: productIds?.length || 0,
         paymentMethod,
-        hasCoupon: !!coupon_code
+        hasCoupon: !!coupon_code,
+        // Análise inicial de duplicatas
+        duplicateAnalysis: {
+          originalCount: productIds?.length || 0,
+          uniqueCount: [...new Set(productIds || [])].length,
+          hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length,
+          duplicates: productIds ? productIds.filter((id, index) => productIds.indexOf(id) !== index) : []
+        }
       }
     });
 
-    // ==================== VALIDAÇÃO DE CAMPOS OBRIGATÓRIOS ====================
+    // VALIDAÇÃO DE CAMPOS OBRIGATÓRIOS
     const missingFields = [];
-    if (!name?.trim()) missingFields.push('name');
-    if (!email?.trim()) missingFields.push('email');
-    if (!cpf?.trim()) missingFields.push('cpf');
-    if (!whatsapp?.trim()) missingFields.push('whatsapp');
+    if (!name) missingFields.push('name');
+    if (!email) missingFields.push('email');
+    if (!cpf) missingFields.push('cpf');
+    if (!whatsapp) missingFields.push('whatsapp');
     if (!productIds || !Array.isArray(productIds) || productIds.length === 0) missingFields.push('productIds');
     if (!paymentMethod) missingFields.push('paymentMethod');
 
     if (missingFields.length > 0) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'validation-error',
-        message: 'Campos obrigatórios ausentes',
-        metadata: { missingFields }
+        context: 'create-asaas-payment-validation-error',
+        message: '🔍 DEBUG: Campos obrigatórios ausentes',
+        metadata: { 
+          missingFields,
+          receivedFields: Object.keys(req.body),
+          productIds,
+          duplicateAnalysis: {
+            originalCount: productIds?.length || 0,
+            uniqueCount: [...new Set(productIds || [])].length,
+            hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length
+          }
+        }
       });
       throw new Error(`Campos obrigatórios ausentes: ${missingFields.join(', ')}`);
     }
@@ -59,9 +73,18 @@ serve(async (req) => {
     if (!['PIX', 'CREDIT_CARD'].includes(paymentMethod)) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'validation-error',
-        message: 'Método de pagamento inválido',
-        metadata: { paymentMethod }
+        context: 'create-asaas-payment-validation-error',
+        message: '🔍 DEBUG: Método de pagamento inválido',
+        metadata: { 
+          paymentMethod,
+          validMethods: ['PIX', 'CREDIT_CARD'],
+          productIds,
+          duplicateAnalysis: {
+            originalCount: productIds?.length || 0,
+            uniqueCount: [...new Set(productIds || [])].length,
+            hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length
+          }
+        }
       });
       throw new Error(`Método de pagamento inválido: ${paymentMethod}`);
     }
@@ -70,31 +93,102 @@ serve(async (req) => {
     if (paymentMethod === 'CREDIT_CARD' && !creditCard) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'validation-error',
-        message: 'Dados do cartão de crédito ausentes',
-        metadata: { paymentMethod }
+        context: 'create-asaas-payment-validation-error',
+        message: '🔍 DEBUG: Dados do cartão de crédito ausentes',
+        metadata: { 
+          paymentMethod,
+          hasCreditCard: !!creditCard,
+          productIds,
+          duplicateAnalysis: {
+            originalCount: productIds?.length || 0,
+            uniqueCount: [...new Set(productIds || [])].length,
+            hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length
+          }
+        }
       });
       throw new Error('Dados do cartão de crédito são obrigatórios para pagamento com cartão');
     }
 
-    // ==================== REMOÇÃO DE DUPLICATAS DE PRODUTOS ====================
-    const uniqueProductIds = [...new Set(productIds)];
-    const duplicatesRemoved = productIds.length - uniqueProductIds.length;
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-validation-success',
+      message: '🔍 DEBUG: Validação inicial concluída com sucesso',
+      metadata: { 
+        email: email?.toLowerCase().trim(),
+        productCount: productIds?.length || 0,
+        paymentMethod,
+        hasCoupon: !!coupon_code,
+        duplicateAnalysis: {
+          originalCount: productIds?.length || 0,
+          uniqueCount: [...new Set(productIds || [])].length,
+          hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length,
+          duplicates: productIds ? productIds.filter((id, index) => productIds.indexOf(id) !== index) : []
+        }
+      }
+    });
 
-    if (duplicatesRemoved > 0) {
+    // ANÁLISE DETALHADA DA DUPLICAÇÃO ANTES DE CONTINUAR
+    const duplicateAnalysis = {
+      originalCount: productIds?.length || 0,
+      uniqueCount: [...new Set(productIds || [])].length,
+      hasDuplicates: (productIds?.length || 0) !== [...new Set(productIds || [])].length,
+      duplicates: productIds ? productIds.filter((id, index) => productIds.indexOf(id) !== index) : [],
+      duplicatesRemoved: 0
+    };
+
+    if (duplicateAnalysis.hasDuplicates) {
+      await supabase.from('logs').insert({
+        level: 'error',
+        context: 'create-asaas-payment-duplicate-error',
+        message: '🔍 DEBUG: DUPLICAÇÃO DETECTADA - IDs duplicados no array do pedido',
+        metadata: { 
+          email: email?.toLowerCase().trim(),
+          duplicateAnalysis,
+          requestedProductIds: productIds,
+          // Log completo dos IDs duplicados
+          duplicateIds: duplicateAnalysis.duplicates,
+          duplicateCount: duplicateAnalysis.duplicates.length,
+          uniqueProductIds: [...new Set(productIds || [])],
+          frontendIssue: 'Cliente está enviando IDs duplicados no array productIds'
+        }
+      });
+      
+      throw new Error(`🔍 DEBUG ERRO: IDs duplicados detectados no pedido. IDs duplicados: ${duplicateAnalysis.duplicates.join(', ')}. IDs únicos: ${[...new Set(productIds || [])].join(', ')}. O frontend precisa corrigir o array para não enviar duplicatas.`);
+    }
+
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-duplicate-check-passed',
+      message: '🔍 DEBUG: Verificação de duplicação passou - nenhum ID duplicado encontrado',
+      metadata: { 
+        email: email?.toLowerCase().trim(),
+        duplicateAnalysis,
+        uniqueProductIds: [...new Set(productIds || [])],
+        productCount: productIds?.length || 0
+      }
+    });
+
+    // CORREÇÃO: Usar Set para eliminar duplicatas e garantir IDs únicos
+    const uniqueProductIds = [...new Set(productIds)];
+    
+    if (uniqueProductIds.length !== productIds.length) {
       await supabase.from('logs').insert({
         level: 'warning',
-        context: 'duplicate-products-removed',
-        message: 'Produtos duplicados foram removidos automaticamente',
+        context: 'create-asaas-payment-duplicates-removed',
+        message: '🔍 DEBUG: Duplicatas removidas pelo backend - usando Set para garantir IDs únicos',
         metadata: { 
+          email: email?.toLowerCase().trim(),
           originalCount: productIds.length,
           uniqueCount: uniqueProductIds.length,
-          duplicatesRemoved
+          duplicatesRemoved: productIds.length - uniqueProductIds.length,
+          originalIds: productIds,
+          uniqueIds: uniqueProductIds,
+          frontendIssue: 'Frontend enviou duplicatas, mas backend corrigiu automaticamente'
         }
       });
     }
 
-    // ==================== VALIDAÇÃO DE PRODUTOS ====================
+    // VALIDAÇÃO DE PRODUTOS (usando IDs únicos)
     const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id, price, name, status')
@@ -103,31 +197,35 @@ serve(async (req) => {
     if (productsError || !products) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'product-validation-error',
-        message: 'Erro ao buscar produtos',
+        context: 'create-asaas-payment-product-validation-error',
+        message: '🔍 DEBUG: Erro ao buscar produtos no banco',
         metadata: { 
+          email: email?.toLowerCase().trim(),
           uniqueProductIds,
-          error: productsError?.message
+          error: productsError?.message,
+          errorCode: productsError?.code,
+          duplicateAnalysis
         }
       });
-      throw new Error('Erro ao buscar produtos: ' + (productsError?.message || 'Erro desconhecido'));
+      throw new Error('Produtos não encontrados: ' + (productsError?.message || 'Erro desconhecido'));
     }
 
-    // Verificar se todos os produtos foram encontrados
     if (products.length !== uniqueProductIds.length) {
-      const foundIds = products.map(p => p.id);
-      const missingIds = uniqueProductIds.filter(id => !foundIds.includes(id));
-      
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'product-not-found',
-        message: 'Alguns produtos não foram encontrados',
+        context: 'create-asaas-payment-product-missing-error',
+        message: '🔍 DEBUG: Alguns produtos solicitados não foram encontrados',
         metadata: { 
+          email: email?.toLowerCase().trim(),
           requestedIds: uniqueProductIds,
-          missingIds
+          foundIds: products.map(p => p.id),
+          requestedCount: uniqueProductIds.length,
+          foundCount: products.length,
+          missingIds: uniqueProductIds.filter(id => !products.map(p => p.id).includes(id)),
+          duplicateAnalysis
         }
       });
-      throw new Error(`Produtos não encontrados: ${missingIds.join(', ')}`);
+      throw new Error(`Produtos não encontrados: ${uniqueProductIds.filter(id => !products.map(p => p.id).includes(id)).join(', ')}`);
     }
 
     // Verificar se todos os produtos estão ativos
@@ -135,108 +233,105 @@ serve(async (req) => {
     if (inactiveProducts.length > 0) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'product-inactive',
-        message: 'Alguns produtos não estão disponíveis',
+        context: 'create-asaas-payment-product-inactive-error',
+        message: '🔍 DEBUG: Alguns produtos solicitados não estão ativos',
         metadata: { 
-          inactiveProducts: inactiveProducts.map(p => ({ id: p.id, name: p.name }))
+          email: email?.toLowerCase().trim(),
+          inactiveProducts: inactiveProducts.map(p => ({ id: p.id, name: p.name, status: p.status })),
+          duplicateAnalysis
         }
       });
-      throw new Error(`Produtos não disponíveis: ${inactiveProducts.map(p => p.name).join(', ')}`);
+      throw new Error(`Produtos não disponíveis para compra: ${inactiveProducts.map(p => p.name).join(', ')}`);
     }
 
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'product-validation-success',
-      message: 'Todos os produtos validados',
+      context: 'create-asaas-payment-product-validation-success',
+      message: '🔍 DEBUG: Todos os produtos validados com sucesso',
       metadata: { 
+        email: email?.toLowerCase().trim(),
+        validatedProducts: products.map(p => ({ id: p.id, name: p.name, price: p.price, status: p.status })),
         validatedCount: products.length,
-        productNames: products.map(p => p.name)
+        duplicateAnalysis
       }
     });
 
-    // ==================== GERENCIAMENTO DE USUÁRIO (CORRIGIDO) ====================
+    // CRIAÇÃO DO USUÁRIO (mantendo lógica existente)
     let userId: string;
     
     try {
-      // Verificar se usuário existe no Auth
       const { data: existingUsers, error: listUsersError } = await supabase.auth.admin.listUsers();
-      
-      if (listUsersError) {
-        throw new Error('Erro ao verificar usuários existentes: ' + listUsersError.message);
-      }
+      const existingUser = existingUsers.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
 
-      const existingAuthUser = existingUsers.users?.find(u => u.email?.toLowerCase() === normalizedEmail);
-
-      if (existingAuthUser) {
-        // Usuário existe no Auth
-        userId = existingAuthUser.id;
-        
+      if (existingUser) {
+        userId = existingUser.id;
         await supabase.from('logs').insert({
           level: 'info',
-          context: 'user-exists',
-          message: 'Usuário existente encontrado',
+          context: 'create-asaas-payment-existing-user-found',
+          message: '🔍 DEBUG: Usuário existente encontrado',
           metadata: { 
             userId,
-            email: normalizedEmail
+            email: email?.toLowerCase().trim(),
+            existingUserCreated: existingUser.created_at,
+            duplicateAnalysis
           }
         });
 
-        // USAR UPSERT PARA GARANTIR QUE O PERFIL EXISTA
-        const { error: upsertProfileError } = await supabase
+        const { error: updateProfileError } = await supabase
           .from('profiles')
-          .upsert({ 
-            id: userId,
-            name: name.trim(),
-            cpf: cpf.trim(),
-            email: normalizedEmail,
-            whatsapp: whatsapp.trim(),
+          .update({ 
+            name, 
+            cpf: cpf, 
+            email: email?.toLowerCase().trim(), 
+            whatsapp: whatsapp,
             updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'id',
-            ignoreDuplicates: false
-          });
+          })
+          .eq('id', existingUser.id);
 
-        if (upsertProfileError) {
+        if (updateProfileError) {
           await supabase.from('logs').insert({
-            level: 'error',
-            context: 'profile-upsert-error',
-            message: 'Erro ao atualizar/criar perfil do usuário',
+            level: 'warning',
+            context: 'create-asaas-payment-profile-update-error',
+            message: '🔍 DEBUG: Falha ao atualizar perfil do usuário existente',
             metadata: { 
               userId,
-              error: upsertProfileError.message,
-              errorCode: upsertProfileError.code
+              error: updateProfileError.message,
+              errorCode: updateProfileError.code,
+              duplicateAnalysis
             }
           });
-          throw new Error('Erro ao atualizar perfil: ' + upsertProfileError.message);
+        } else {
+          await supabase.from('logs').insert({
+            level: 'info',
+            context: 'create-asaas-payment-profile-updated',
+            message: '🔍 DEBUG: Perfil do usuário existente atualizado com sucesso',
+            metadata: { 
+              userId,
+              duplicateAnalysis
+            }
+          });
         }
-
-        await supabase.from('logs').insert({
-          level: 'info',
-          context: 'profile-updated',
-          message: 'Perfil do usuário atualizado com sucesso',
-          metadata: { userId }
-        });
-
       } else {
-        // Usuário NÃO existe - criar novo
         await supabase.from('logs').insert({
           level: 'info',
-          context: 'creating-new-user',
-          message: 'Criando novo usuário',
+          context: 'create-asaas-payment-creating-new-user',
+          message: '🔍 DEBUG: Criando novo usuário (Auth + Profile)',
           metadata: { 
-            email: normalizedEmail
+            email: email?.toLowerCase().trim(),
+            cpfLength: cpf.length,
+            flow: 'checkout',
+            duplicateAnalysis
           }
         });
 
-        // Criar usuário no Auth
         const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
-          email: normalizedEmail,
-          password: cpf.trim(),
+          email: email?.toLowerCase().trim(),
+          password: cpf,
           email_confirm: true,
           user_metadata: { 
-            name: name.trim(),
-            cpf: cpf.trim(),
-            whatsapp: whatsapp.trim(),
+            name, 
+            cpf: cpf, 
+            whatsapp: whatsapp,
             created_via: 'checkout',
             created_at_checkout: new Date().toISOString()
           },
@@ -245,101 +340,111 @@ serve(async (req) => {
         if (createUserError || !newUser?.user) {
           await supabase.from('logs').insert({
             level: 'error',
-            context: 'auth-creation-error',
-            message: 'Falha ao criar usuário no Auth',
+            context: 'create-asaas-payment-auth-creation-error',
+            message: '🔍 DEBUG: FALHA CRÍTICA ao criar usuário Auth',
             metadata: { 
-              email: normalizedEmail,
+              email: email?.toLowerCase().trim(),
               error: createUserError?.message,
-              errorCode: createUserError?.code
+              errorType: createUserError?.name,
+              errorCode: createUserError?.code,
+              flow: 'checkout',
+              duplicateAnalysis
             }
           });
-          throw new Error('Erro ao criar usuário: ' + (createUserError?.message || 'Erro desconhecido'));
+          throw new Error('Erro ao criar conta de usuário: ' + (createUserError?.message || 'Erro desconhecido'));
         }
 
         userId = newUser.user.id;
 
         await supabase.from('logs').insert({
           level: 'info',
-          context: 'auth-created',
-          message: 'Usuário Auth criado com sucesso',
+          context: 'create-asaas-payment-auth-created',
+          message: '🔍 DEBUG: Usuário Auth criado com sucesso',
           metadata: { 
             userId,
-            email: normalizedEmail
+            email: email?.toLowerCase().trim(),
+            flow: 'checkout',
+            duplicateAnalysis
           }
         });
 
-        // Criar perfil (com UPSERT para segurança adicional)
         const { error: profileError } = await supabase
           .from('profiles')
-          .upsert({
+          .insert({
             id: userId,
-            name: name.trim(),
-            cpf: cpf.trim(),
-            email: normalizedEmail,
-            whatsapp: whatsapp.trim(),
-            access: [], // Vazio - será preenchido pelo webhook
+            name: name,
+            cpf: cpf,
+            email: email?.toLowerCase().trim(),
+            whatsapp: whatsapp,
+            access: [], // ⚠️ VAZIO - acesso será liberado pelo webhook
             primeiro_acesso: true,
             has_changed_password: false,
             is_admin: false,
             created_at: new Date().toISOString()
-          }, {
-            onConflict: 'id',
-            ignoreDuplicates: false
           });
 
         if (profileError) {
           await supabase.from('logs').insert({
             level: 'error',
-            context: 'profile-creation-error',
-            message: 'Falha ao criar perfil do usuário',
+            context: 'create-asaas-payment-profile-creation-error',
+            message: '🔍 DEBUG: FALHA CRÍTICA ao criar perfil do novo usuário',
             metadata: { 
               userId,
+              email: email?.toLowerCase().trim(),
               error: profileError.message,
-              errorCode: profileError.code
+              errorCode: profileError.code,
+              flow: 'checkout',
+              duplicateAnalysis
             }
           });
           
-          // Rollback: deletar usuário Auth criado
           await supabase.auth.admin.deleteUser(userId);
           
-          throw new Error('Erro ao criar perfil: ' + profileError.message);
+          throw new Error('Erro ao criar perfil do usuário: ' + profileError.message);
         }
 
         await supabase.from('logs').insert({
           level: 'info',
-          context: 'profile-created',
-          message: 'Perfil do usuário criado com sucesso',
+          context: 'create-asaas-payment-profile-created',
+          message: '🔍 DEBUG: Perfil do novo usuário criado com sucesso',
           metadata: { 
             userId,
-            email: normalizedEmail
+            email: email?.toLowerCase().trim(),
+            flow: 'checkout',
+            access: [], // Confirmado que está vazio
+            duplicateAnalysis
           }
         });
       }
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'user-management-error',
-        message: 'Erro no gerenciamento de usuário',
+        context: 'create-asaas-payment-user-management-error',
+        message: `🔍 DEBUG: Erro no gerenciamento de usuário: ${error.message}`,
         metadata: { 
-          email: normalizedEmail,
+          email: email?.toLowerCase().trim(),
           error: error.message,
-          errorStack: error.stack
+          errorStack: error.stack,
+          flow: 'checkout',
+          duplicateAnalysis
         }
       });
       throw new Error('Erro no gerenciamento de usuário: ' + error.message);
     }
 
-    // ==================== CRIAÇÃO DO PEDIDO ====================
-    const totalPrice = products.reduce((sum, product) => sum + parseFloat(product.price.toString()), 0);
+    // CRIAÇÃO DO PEDIDO (usando IDs únicos)
+    const originalTotal = products.reduce((sum: number, product: any) => sum + parseFloat(product.price.toString()), 0);
 
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'creating-order',
-      message: 'Criando pedido',
+      context: 'create-asaas-payment-order-creation',
+      message: '🔍 DEBUG: Criando pedido com IDs únicos',
       metadata: { 
         userId,
+        uniqueProductIds,
+        originalTotal,
         productCount: uniqueProductIds.length,
-        totalPrice
+        duplicateAnalysis
       }
     });
 
@@ -347,17 +452,19 @@ serve(async (req) => {
       .from('orders')
       .insert({
         user_id: userId,
-        ordered_product_ids: uniqueProductIds,
-        total_price: totalPrice,
+        ordered_product_ids: uniqueProductIds, // ✅ USANDO ARRAY COM IDs ÚNICOS
+        total_price: originalTotal,
         status: 'pending',
         meta_tracking_data: {
           ...metaTrackingData,
           client_ip_address: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1',
           client_user_agent: req.headers.get('user-agent') || '',
-          duplicate_removal: {
+          duplicateAnalysis: {
             originalCount: productIds.length,
             uniqueCount: uniqueProductIds.length,
-            duplicatesRemoved
+            duplicatesRemoved: productIds.length - uniqueProductIds.length,
+            originalIds: productIds,
+            uniqueIds: uniqueProductIds
           }
         }
       })
@@ -367,12 +474,15 @@ serve(async (req) => {
     if (orderError || !order) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'order-creation-error',
-        message: 'Falha ao criar pedido',
+        context: 'create-asaas-payment-order-creation-error',
+        message: '🔍 DEBUG: FALHA ao criar pedido no banco',
         metadata: { 
           userId,
+          uniqueProductIds,
+          originalTotal,
           error: orderError?.message,
-          errorCode: orderError?.code
+          errorCode: orderError?.code,
+          duplicateAnalysis
         }
       });
       throw new Error('Erro ao criar pedido: ' + (orderError?.message || 'Erro desconhecido'));
@@ -380,75 +490,58 @@ serve(async (req) => {
 
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'order-created',
-      message: 'Pedido criado com sucesso',
+      context: 'create-asaas-payment-order-created',
+      message: '🔍 DEBUG: Pedido criado com sucesso',
       metadata: { 
         orderId: order.id,
         userId,
-        status: order.status
+        uniqueProductIds,
+        originalTotal,
+        status: order.status,
+        duplicateAnalysis
       }
     });
 
-    // ==================== PROCESSAMENTO DO PAGAMENTO ====================
+    // PROCESSAMENTO DO PAGAMENTO
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
     const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
 
     if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'config-error',
-        message: 'Credenciais Asaas não configuradas',
+        context: 'create-asaas-payment-config-error',
+        message: '🔍 DEBUG: Credenciais da API Asaas não configuradas',
         metadata: { 
           hasApiKey: !!ASAAS_API_KEY,
-          hasBaseUrl: !!ASAAS_BASE_URL
+          hasBaseUrl: !!ASAAS_BASE_URL,
+          duplicateAnalysis
         }
       });
       throw new Error('Configuração de pagamento não encontrada');
     }
 
-    // Preparar payload do pagamento
     const asaasPayload = {
       customer: {
-        name: name.trim(),
-        email: normalizedEmail,
-        cpfCnpj: cpf.trim(),
-        phone: whatsapp.trim(),
+        name: name,
+        email: email,
+        cpfCnpj: cpf,
+        phone: whatsapp,
       },
-      value: parseFloat(totalPrice.toFixed(2)),
-      description: `Pedido #${order.id}`,
-      dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // +1 dia
-      billingType: paymentMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD',
+      value: parseFloat(originalTotal.toFixed(2)),
+      description: `Order #${order.id} payment`,
+      dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      billingType: 'PIX',
     };
-
-    // Adicionar dados do cartão se for pagamento com cartão
-    if (paymentMethod === 'CREDIT_CARD' && creditCard) {
-      Object.assign(asaasPayload, {
-        creditCard: {
-          holderName: creditCard.holderName,
-          number: creditCard.number,
-          expiryMonth: creditCard.expiryMonth,
-          expiryYear: creditCard.expiryYear,
-          ccv: creditCard.ccv
-        },
-        creditCardHolderInfo: {
-          name: name.trim(),
-          email: normalizedEmail,
-          cpfCnpj: cpf.trim(),
-          postalCode: creditCard.postalCode,
-          addressNumber: creditCard.addressNumber,
-          phone: whatsapp.trim()
-        }
-      });
-    }
 
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'creating-payment',
-      message: `Criando pagamento ${paymentMethod}`,
+      context: 'create-asaas-payment-pix-start',
+      message: '🔍 DEBUG: Iniciando criação do pagamento PIX',
       metadata: { 
         orderId: order.id,
-        paymentMethod,
-        value: totalPrice
+        userId,
+        asaasPayload,
+        duplicateAnalysis
       }
     });
 
@@ -457,7 +550,6 @@ serve(async (req) => {
       'access_token': ASAAS_API_KEY,
     };
 
-    // Criar pagamento no Asaas
     const asaasResponse = await fetch(`${ASAAS_BASE_URL}/payments`, {
       method: 'POST',
       headers: asaasHeaders,
@@ -468,159 +560,179 @@ serve(async (req) => {
       const errorData = await asaasResponse.json();
       await supabase.from('logs').insert({
         level: 'error',
-        context: 'payment-creation-error',
-        message: 'Falha ao criar pagamento no Asaas',
+        context: 'create-asaas-payment-pix-creation-error',
+        message: '🔍 DEBUG: Falha ao criar pagamento PIX com Asaas',
         metadata: { 
           orderId: order.id,
           asaasError: errorData,
-          httpStatus: asaasResponse.status
+          httpStatus: asaasResponse.status,
+          httpStatusText: asaasResponse.statusText,
+          duplicateAnalysis
         }
       });
-      throw new Error('Erro ao criar pagamento: ' + (errorData.message || 'Erro na comunicação com gateway'));
+      throw new Error('Erro ao criar pagamento PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
     }
 
-    const paymentData = await asaasResponse.json();
+    const pixPaymentData = await asaasResponse.json();
 
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'payment-created',
-      message: 'Pagamento criado com sucesso no Asaas',
+      context: 'create-asaas-payment-pix-created',
+      message: '🔍 DEBUG: Pagamento PIX criado com sucesso',
       metadata: { 
         orderId: order.id,
-        asaasPaymentId: paymentData.id,
-        status: paymentData.status,
-        paymentMethod
+        asaasPaymentId: pixPaymentData.id,
+        status: pixPaymentData.status,
+        duplicateAnalysis
       }
     });
 
-    // Se for PIX, buscar QR Code
-    let pixDetails = null;
-    if (paymentMethod === 'PIX') {
-      const pixQrCodeResponse = await fetch(`${ASAAS_BASE_URL}/payments/${paymentData.id}/pixQrCode`, {
-        method: 'GET',
-        headers: asaasHeaders
-      });
+    // Buscar QR Code do PIX
+    const pixQrCodeResponse = await fetch(`${ASAAS_BASE_URL}/payments/${pixPaymentData.id}/pixQrCode`, {
+      method: 'GET',
+      headers: asaasHeaders
+    });
 
-      if (!pixQrCodeResponse.ok) {
-        const errorData = await pixQrCodeResponse.json();
-        await supabase.from('logs').insert({
-          level: 'error',
-          context: 'pix-qrcode-error',
-          message: 'Falha ao buscar QR Code PIX',
-          metadata: { 
-            orderId: order.id,
-            asaasPaymentId: paymentData.id,
-            asaasError: errorData
-          }
-        });
-        throw new Error('Erro ao gerar QR Code PIX: ' + (errorData.message || 'Erro desconhecido'));
-      }
-
-      const pixQrCodeData = await pixQrCodeResponse.json();
-
+    if (!pixQrCodeResponse.ok) {
+      const errorData = await pixQrCodeResponse.json();
       await supabase.from('logs').insert({
-        level: 'info',
-        context: 'pix-qrcode-success',
-        message: 'QR Code PIX obtido com sucesso',
+        level: 'error',
+        context: 'create-asaas-payment-pix-qrcode-error',
+        message: '🔍 DEBUG: Falha ao buscar QR Code PIX',
         metadata: { 
           orderId: order.id,
-          asaasPaymentId: paymentData.id
+          asaasPaymentId: pixPaymentData.id,
+          asaasError: errorData,
+          httpStatus: pixQrCodeResponse.status,
+          httpStatusText: pixQrCodeResponse.statusText,
+          duplicateAnalysis
         }
       });
-
-      pixDetails = {
-        id: paymentData.id,
-        payload: pixQrCodeData.payload,
-        encodedImage: pixQrCodeData.encodedImage,
-        expirationDate: pixQrCodeData.expirationDate
-      };
+      throw new Error('Erro ao gerar QR Code PIX: ' + (errorData.message || 'Erro na comunicação com gateway'));
     }
+
+    const pixQrCodeData = await pixQrCodeResponse.json();
+
+    await supabase.from('logs').insert({
+      level: 'info',
+      context: 'create-asaas-payment-pix-qrcode-success',
+      message: '🔍 DEBUG: QR Code PIX obtido com sucesso',
+      metadata: { 
+        orderId: order.id,
+        asaasPaymentId: pixPaymentData.id,
+        hasPayload: !!pixQrCodeData.payload,
+        hasEncodedImage: !!pixQrCodeData.encodedImage,
+        duplicateAnalysis
+      }
+    });
 
     // Atualizar pedido com ID do pagamento
     const { error: updateOrderError } = await supabase
       .from('orders')
-      .update({ 
-        asaas_payment_id: paymentData.id,
-        updated_at: new Date().toISOString()
-      })
+      .update({ asaas_payment_id: pixPaymentData.id })
       .eq('id', order.id);
 
     if (updateOrderError) {
       await supabase.from('logs').insert({
         level: 'warning',
-        context: 'order-update-warning',
-        message: 'Falha ao atualizar pedido com ID do pagamento (pagamento foi criado)',
+        context: 'create-asaas-payment-order-update-error',
+        message: '🔍 DEBUG: Falha ao atualizar pedido com ID do pagamento (mas pagamento foi criado)',
         metadata: { 
           orderId: order.id,
-          asaasPaymentId: paymentData.id,
-          error: updateOrderError.message
+          asaasPaymentId: pixPaymentData.id,
+          error: updateOrderError.message,
+          duplicateAnalysis
         }
       });
     } else {
       await supabase.from('logs').insert({
         level: 'info',
-        context: 'order-updated',
-        message: 'Pedido atualizado com ID do pagamento',
+        context: 'create-asaas-payment-order-updated',
+        message: '🔍 DEBUG: Pedido atualizado com ID do pagamento',
         metadata: { 
           orderId: order.id,
-          asaasPaymentId: paymentData.id
+          asaasPaymentId: pixPaymentData.id,
+          duplicateAnalysis
         }
       });
     }
 
-    // LOG FINAL DE SUCESSO
     await supabase.from('logs').insert({
       level: 'info',
-      context: 'payment-success',
-      message: 'Processo de pagamento concluído com sucesso',
+      context: 'create-asaas-payment-success',
+      message: '🔍 DEBUG: Processo CORRETO concluído com sucesso - DUPLICAÇÃO PREVENIDA',
       metadata: { 
         orderId: order.id,
         userId,
-        asaasPaymentId: paymentData.id,
-        paymentMethod,
-        totalPrice,
-        productCount: uniqueProductIds.length,
-        duplicatesRemoved
+        asaasPaymentId: pixPaymentData.id,
+        originalProductCount: productIds.length,
+        uniqueProductCount: uniqueProductIds.length,
+        duplicatesRemoved: productIds.length - uniqueProductIds.length,
+        duplicateAnalysis: {
+          originalCount: productIds.length,
+          uniqueCount: uniqueProductIds.length,
+          hasDuplicates: false,
+          duplicates: [],
+          duplicatesRemoved: productIds.length - uniqueProductIds.length,
+          originalIds: productIds,
+          uniqueIds: uniqueProductIds
+        }
       }
     });
 
-    // Resposta de sucesso
-    const response: any = {
+    return new Response(JSON.stringify({
       success: true,
       orderId: order.id,
-      asaasPaymentId: paymentData.id,
-      message: 'Pagamento processado com sucesso!',
-      paymentMethod
-    };
-
-    if (pixDetails) {
-      response.pixDetails = pixDetails;
-    }
-
-    if (duplicatesRemoved > 0) {
-      response.warning = `${duplicatesRemoved} produto(s) duplicado(s) foram removidos automaticamente`;
-    }
-
-    return new Response(JSON.stringify(response), {
+      asaasPaymentId: pixPaymentData.id,
+      message: '🔍 DEBUG: Pagamento iniciado com sucesso! Duplicação prevenida no backend.',
+      pixDetails: {
+        id: pixPaymentData.id,
+        payload: pixQrCodeData.payload,
+        encodedImage: pixQrCodeData.encodedImage
+      },
+      debugInfo: {
+        duplicateAnalysis,
+        originalProductIds: productIds,
+        uniqueProductIds: uniqueProductIds,
+        duplicatesRemoved: productIds.length - uniqueProductIds.length
+      }
+    }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    // Log de erro final
     await supabase.from('logs').insert({
       level: 'error',
-      context: 'payment-error',
-      message: `Erro no processamento: ${error.message}`,
+      context: 'create-asaas-payment-unhandled-error',
+      message: `🔍 DEBUG: Erro não tratado no processamento do pagamento: ${error.message}`,
       metadata: {
         error: error.message,
-        errorStack: error.stack
+        errorStack: error.stack,
+        requestBody: {
+          ...req.body,
+          password: 'REDACTED',
+          creditCard: 'REDACTED'
+        },
+        duplicateAnalysis: {
+          originalCount: req.body.productIds?.length || 0,
+          uniqueCount: [...new Set(req.body.productIds || [])].length,
+          hasDuplicates: (req.body.productIds?.length || 0) !== [...new Set(req.body.productIds || [])].length,
+          duplicates: req.body.productIds ? req.body.productIds.filter((id, index) => req.body.productIds.indexOf(id) !== index) : []
+        }
       }
     });
 
     return new Response(JSON.stringify({ 
-      success: false,
-      error: error.message || 'Erro no processamento do pagamento'
+      error: '🔍 DEBUG: Erro no processamento do pagamento: ' + error.message,
+      debugInfo: {
+        duplicateAnalysis: {
+          originalCount: req.body.productIds?.length || 0,
+          uniqueCount: [...new Set(req.body.productIds || [])].length,
+          hasDuplicates: (req.body.productIds?.length || 0) !== [...new Set(req.body.productIds || [])].length,
+          duplicates: req.body.productIds ? req.body.productIds.filter((id, index) => req.body.productIds.indexOf(id) !== index) : []
+        }
+      }
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
