@@ -29,13 +29,17 @@ export async function createPixPayment(
     throw new Error('Configuração de pagamento não encontrada');
   }
 
+  // Limpar dados do cliente
+  const cleanCpf = customerData.cpf.replace(/\D/g, '');
+  const cleanPhone = customerData.whatsapp.replace(/\D/g, '');
+  
   // ✅ FORMATO CORRETO: Enviar customer como objeto
   const asaasPayload = {
     customer: {
       name: customerData.name,
       email: customerData.email,
-      cpfCnpj: customerData.cpf,
-      phone: customerData.whatsapp,
+      cpfCnpj: cleanCpf,
+      phone: cleanPhone,
     },
     value: parseFloat(totalPrice.toFixed(2)),
     description: `Pedido #${orderId.substring(0, 8)}`,
@@ -61,7 +65,7 @@ export async function createPixPayment(
   if (!response.ok) {
     const errorData = await response.json();
     console.error('Asaas API error response:', errorData);
-    throw new Error(`Asaas API error: ${errorData.errors?.[0]?.description || response.statusText}`);
+    throw new Error(`Erro ao criar pagamento: ${errorData.errors?.[0]?.description || response.statusText}`);
   }
 
   const paymentData = await response.json();
@@ -120,13 +124,17 @@ export async function createCreditCardPayment(
     throw new Error('Configuração de pagamento não encontrada');
   }
 
+  // Limpar dados do cliente
+  const cleanCpf = customerData.cpf.replace(/\D/g, '');
+  const cleanPhone = customerData.whatsapp.replace(/\D/g, '');
+  
   // ✅ FORMATO CORRETO: Enviar customer como objeto
   const asaasPayload: any = {
     customer: {
       name: customerData.name,
       email: customerData.email,
-      cpfCnpj: customerData.cpf,
-      phone: customerData.whatsapp,
+      cpfCnpj: cleanCpf,
+      phone: cleanPhone,
     },
     value: parseFloat(totalPrice.toFixed(2)),
     description: `Pedido #${orderId.substring(0, 8)}`,
@@ -143,8 +151,8 @@ export async function createCreditCardPayment(
     creditCardHolderInfo: {
       name: customerData.name,
       email: customerData.email,
-      cpfCnpj: customerData.cpf,
-      phone: customerData.whatsapp,
+      cpfCnpj: cleanCpf,
+      phone: cleanPhone,
       postalCode: creditCardData.postalCode.replace(/\D/g, ''),
       addressNumber: creditCardData.addressNumber,
     },
@@ -172,7 +180,7 @@ export async function createCreditCardPayment(
   if (!response.ok) {
     const errorData = await response.json();
     console.error('Asaas API error response:', errorData);
-    throw new Error(`Asaas API error: ${errorData.errors?.[0]?.description || response.statusText}`);
+    throw new Error(`Erro ao criar pagamento: ${errorData.errors?.[0]?.description || response.statusText}`);
   }
 
   const paymentData = await response.json();

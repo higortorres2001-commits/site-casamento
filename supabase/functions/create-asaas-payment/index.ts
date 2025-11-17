@@ -113,17 +113,30 @@ serve(async (req) => {
     });
 
     // ==================== PROCESSAR PAGAMENTO ====================
-    let paymentResult: PaymentResult;
+    // Preparar dados do cliente limpos
+    const customerData = {
+      name,
+      email,
+      cpf: cpf.replace(/\D/g, ''),
+      whatsapp: whatsapp.replace(/\D/g, '')
+    };
+
+    // Log para debug do formato do customer
+    logger.info('Customer data being sent to Asaas', {
+      customerObject: {
+        name: customerData.name,
+        email: customerData.email,
+        cpfCnpj: customerData.cpf,
+        phone: customerData.whatsapp
+      }
+    });
+
+    let paymentResult;
 
     if (paymentMethod === 'PIX') {
       paymentResult = await createPixPayment(
         orderId,
-        {
-          name,
-          email,
-          cpf: cpf.replace(/\D/g, ''),
-          whatsapp: whatsapp.replace(/\D/g, '')
-        },
+        customerData,
         finalTotal
       );
 
@@ -135,12 +148,7 @@ serve(async (req) => {
     } else {
       paymentResult = await createCreditCardPayment(
         orderId,
-        {
-          name,
-          email,
-          cpf: cpf.replace(/\D/g, ''),
-          whatsapp: whatsapp.replace(/\D/g, '')
-        },
+        customerData,
         creditCard,
         finalTotal,
         clientIp
