@@ -197,16 +197,17 @@ async function sendAccessEmail(
    //     html: emailBody,
   //    }),
    // });
-      body: JSON.stringify({
-        from: 'contato@medsemestress.com', //  MUITO IMPORTANTE!
+      body: JSON.stringify({ // 1. Abre o parêntese do JSON.stringify
+        from: 'contato@medsemestress.com',
         to: email,
-        template_id: 'f24271ee-3730-454d-921b-ef9cee46be39I', // O ID que você copiou do Resend
-        params: {
-          // As variáveis que você definiu no template
+        template_id: 'f24271ee-3730-454d-921b-ef9cee46be39', // 2. CORRIJA SEU ID (removi o "I" no final)
+        params: { // 3. Abre o objeto params
           loginUrl: loginUrl,
           email: email,
-          cpf: cpf}),
-        });
+          cpf: cpf
+        } // 3. Fecha o objeto params
+      }) // 1. Fecha o parêntese do JSON.stringify
+    });
 
 
 
