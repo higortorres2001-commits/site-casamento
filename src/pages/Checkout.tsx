@@ -18,6 +18,8 @@ import { useSession } from "@/components/SessionContextProvider";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Package, Truck, CheckCircle, MessageCircle } from "lucide-react";
 
 declare global {
   interface Window {
@@ -335,8 +337,43 @@ const Checkout = () => {
 
       <main className="flex-1 container mx-auto p-4 md:p-8 max-w-2xl pb-32">
         <div className="space-y-6">
+          {/* 1. Card do Produto */}
           <MainProductDisplayCard product={mainProduct} />
 
+          {/* 2. Dados do Cliente */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
+            <CheckoutForm
+              ref={checkoutFormRef}
+              onSubmit={() => {}}
+              isLoading={isSubmitting}
+            />
+          </div>
+
+          {/* 3. Forma de Pagamento */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
+            <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="PIX">PIX</TabsTrigger>
+                <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
+              </TabsList>
+              <TabsContent value="PIX" className="mt-4">
+                <p className="text-sm text-gray-600">
+                  Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
+                </p>
+              </TabsContent>
+              <TabsContent value="CREDIT_CARD" className="mt-4">
+                <CreditCardForm
+                  ref={creditCardFormRef}
+                  isLoading={isSubmitting}
+                  totalPrice={currentTotalPrice}
+                />
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* 4. Leve Também (Order Bumps) */}
           {orderBumps.length > 0 && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-gray-800">Aproveite também:</h2>
@@ -351,6 +388,7 @@ const Checkout = () => {
             </div>
           )}
 
+          {/* 5. Resumo do Pedido */}
           <OrderSummaryAccordion
             mainProduct={mainProduct}
             selectedOrderBumpsDetails={selectedOrderBumpsDetails}
@@ -360,35 +398,53 @@ const Checkout = () => {
             onCouponApplied={handleCouponApplied}
           />
 
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
-            <CheckoutForm
-              ref={checkoutFormRef}
-              onSubmit={() => {}}
-              isLoading={isSubmitting}
-            />
+          {/* 6. Acordeon - Como funciona a entrega */}
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="delivery-info" className="border-none">
+              <div className="bg-blue-50 rounded-xl shadow-md">
+                <AccordionTrigger className="flex justify-between items-center p-4 text-lg font-semibold text-blue-800 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    <span>Como funciona a entrega do material?</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-4 border-t border-blue-200 bg-white rounded-b-xl">
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Confirmação do Pagamento</h4>
+                        <p className="text-sm text-gray-600">Após a confirmação do seu pagamento, você receberá um e-mail com suas credenciais de acesso.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <Truck className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Acesso Imediato</h4>
+                        <p className="text-sm text-gray-600">Não há entrega física. Todo o material é digital e fica disponível na sua área de membros para download.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <MessageCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Suporte Disponível</h4>
+                        <p className="text-sm text-gray-600">Em caso de dúvidas ou dificuldades no acesso, clique no botão do WhatsApp para falar conosco.</p>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </div>
+            </AccordionItem>
+          </Accordion>
 
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
-              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="PIX">PIX</TabsTrigger>
-                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
-                </TabsList>
-                <TabsContent value="PIX" className="mt-4">
-                  <p className="text-sm text-gray-600">
-                    Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
-                  </p>
-                </TabsContent>
-                <TabsContent value="CREDIT_CARD" className="mt-4">
-                  <CreditCardForm
-                    ref={creditCardFormRef}
-                    isLoading={isSubmitting}
-                    totalPrice={currentTotalPrice}
-                  />
-                </TabsContent>
-              </Tabs>
-            </div>
+          {/* 7. Informações Legais */}
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <p className="text-xs text-gray-500 text-center leading-relaxed">
+              O pagamento será processado para <strong>CNPJ: 44.962.282/0001-83</strong>. 
+              Em caso de qualquer dúvida ou dificuldade no acesso aos materiais, 
+              clique no botão do WhatsApp para entrar em contato conosco. 
+              Estamos aqui para ajudar!
+            </p>
           </div>
         </div>
       </main>
