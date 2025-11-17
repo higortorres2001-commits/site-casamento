@@ -1,10 +1,36 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { checkPaymentStatus } from '../_shared/payment.service.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+/**
+ * Verifica status de pagamento no Asaas
+ */
+async function checkPaymentStatus(paymentId: string): Promise<string> {
+  const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+  const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
+
+  if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
+    throw new Error('Configuração de pagamento não encontrada');
+  }
+
+  const response = await fetch(`${ASAAS_BASE_URL}/payments/${paymentId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'access_token': ASAAS_API_KEY,
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('Erro ao verificar status do pagamento');
+  }
+
+  const data = await response.json();
+  return data.status;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {

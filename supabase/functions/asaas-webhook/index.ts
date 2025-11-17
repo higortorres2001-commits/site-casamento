@@ -1,12 +1,74 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { grantProductAccess, updateOrderStatus } from '../_shared/database.service.ts';
-import { Logger } from '../_shared/logger.service.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, asaas-access-token',
 };
+
+// Classe para logging
+class Logger {
+  private supabase;
+  private context: string;
+
+  constructor(supabase, context: string) {
+    this.supabase = supabase;
+    this.context = context;
+  }
+
+  async info(message: string, metadata?: any): Promise<void> {
+    this.supabase.from('logs').insert({
+      level: 'info',
+      context: this.context,
+      message,
+      metadata: metadata || {}
+    }).then(({ error }) => {
+      if (error) {
+        console.error('Failed to write log:', error);
+      }
+    });
+  }
+
+  async warning(message: string, metadata?: any): Promise<void> {
+    this.supabase.from('logs').insert({
+      level: 'warning',
+      context: this.context,
+      message,
+      metadata: metadata || {}
+    }).then(({ error }) => {
+      if (error) {
+        console.error('Failed to write log:', error);
+      }
+    });
+  }
+
+  async error(message: string, metadata?: any): Promise<void> {
+    this.supabase.from('logs').insert({
+      level: 'error',
+      context: this.context,
+      message,
+      metadata: metadata || {}
+    }).then(({ error }) => {
+      if (error) {
+        console.error('Failed to write log:', error);
+      }
+    });
+  }
+
+  async critical(message: string, metadata?: any): Promise<void> {
+    await this.supabase.from('logs').insert({
+      level: 'error',
+      context: this.context,
+      message: `CRITICAL: ${message}`,
+      metadata: {
+        ...metadata,
+        CRITICAL: true,
+        REQUIRES_IMMEDIATE_ACTION: true,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+}
 
 /**
  * Valida assinatura do webhook Asaas (se configurada)
@@ -21,6 +83,74 @@ function validateWebhookSignature(req: Request): boolean {
   }
   
   return asaasToken === expectedToken;
+}
+
+/**
+ * Atualiza status do pedido de forma atômica
+ */
+async function updateOrderStatus(
+  supabase,
+  orderId: string,
+  status: 'pending' | 'paid' | 'cancelled',
+  asaasPaymentId?: string
+): Promise<void> {
+  const updateData: any = { status };
+  
+  if (asaasPaymentId) {
+    updateData.asaas_payment_id = asaasPaymentId;
+  }
+
+  const { error } = await supabase
+    .from('orders')
+    .update(updateData)
+    .eq('id', orderId);
+
+  if (error) {
+    throw new Error(`Erro ao atualizar status do pedido: ${error.message}`);
+  }
+}
+
+/**
+ * Concede acesso aos produtos de forma atômica e idempotente
+ */
+async function grantProductAccess(
+  supabase,
+  userId: string,
+  productIds: string[]
+): Promise<void> {
+  // Buscar acesso atual
+  const { data: profile, error: fetchError } = await supabase
+    .from('profiles')
+    .select('access')
+    .eq('id', userId)
+    .single();
+
+  if (fetchError) {
+    throw new Error(`Erro ao buscar perfil: ${fetchError.message}`);
+  }
+
+  const currentAccess = Array.isArray(profile.access) ? profile.access : [];
+  const newAccess = [...new Set([...currentAccess, ...productIds])];
+
+  // Verificar se já tem todos os acessos (idempotência)
+  const hasAllAccess = productIds.every(id => currentAccess.includes(id));
+  
+  if (hasAllAccess) {
+    return; // Já tem acesso, nada a fazer
+  }
+
+  // Atualizar com novo acesso
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ 
+      access: newAccess,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', userId);
+
+  if (updateError) {
+    throw new Error(`Erro ao conceder acesso: ${updateError.message}`);
+  }
 }
 
 /**
@@ -162,6 +292,7 @@ serve(async (req) => {
   );
 
   const logger = new Logger(supabase, 'asaas-webhook');
+  let payload: any;
 
   try {
     // Validar assinatura do webhook
@@ -173,7 +304,7 @@ serve(async (req) => {
       });
     }
 
-    const payload = await req.json();
+    payload = await req.json();
     
     logger.info('Webhook received', {
       event: payload.event,
