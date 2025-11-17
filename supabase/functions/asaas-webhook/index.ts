@@ -197,7 +197,7 @@ async function sendAccessEmail(
         html: emailBody,
       }),
     });
-
+//*
     if (!response.ok) {
       const errorData = await response.json();
       logger.error('Failed to send access email', { email, error: errorData });
