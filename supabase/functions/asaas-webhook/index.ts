@@ -200,7 +200,7 @@ async function sendAccessEmail(
       body: JSON.stringify({
         from: 'contato@medsemestress.com', //  MUITO IMPORTANTE!
         to: email,
-        template_id: 'COLE_SEU_TEMPLATE_ID_AQUI', // O ID que você copiou do Resend
+        template_id: 'f24271ee-3730-454d-921b-ef9cee46be39I', // O ID que você copiou do Resend
         params: {
           // As variáveis que você definiu no template
           loginUrl: loginUrl,
