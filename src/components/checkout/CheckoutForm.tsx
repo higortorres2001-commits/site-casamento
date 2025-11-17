@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import EmailVerificationModal from "./EmailVerificationModal";
 import { useEmailExistence } from "@/hooks/use-email-existence";
+import { trackInitiateCheckout } from "@/utils/metaPixel";
 
 export interface CheckoutFormRef {
   submitForm: () => Promise<boolean>;
@@ -51,16 +52,25 @@ interface CheckoutFormProps {
     email?: string | null;
     whatsapp?: string | null;
   };
+  // Novos props para o evento InitiateCheckout
+  mainProduct?: {
+    id: string;
+    price: number;
+  };
+  selectedOrderBumps?: string[];
+  currentTotalPrice?: number;
+  onEmailEntered?: (email: string) => void; // Callback quando email válido for inserido
 }
 
 const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
-  ({ onSubmit, isLoading, initialData }, ref) => {
+  ({ onSubmit, isLoading, initialData, mainProduct, selectedOrderBumps = [], currentTotalPrice = 0, onEmailEntered }, ref) => {
     // Estados para controle de verificação de email
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isExistingUser, setIsExistingUser] = useState(false);
     const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
     const [emailForVerification, setEmailForVerification] = useState("");
     const [isEmailVerified, setIsEmailVerified] = useState(false);
+    const [hasTriggeredInitiateCheckout, setHasTriggeredInitiateCheckout] = useState(false);
     
     // Hook para verificar existência de email
     const { checkEmailExists, isChecking } = useEmailExistence();
@@ -87,6 +97,37 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       getValues: () => form.getValues(),
     }));
 
+    // 🎯 Função para disparar InitiateCheckout quando email válido for inserido
+    const triggerInitiateCheckoutOnEmail = (email: string) => {
+      if (!mainProduct || !window.fbq || hasTriggeredInitiateCheckout) return;
+
+      console.log("🎯 Triggering InitiateCheckout on email entry:", email);
+
+      const customerData = {
+        email: email,
+        phone: null,
+        firstName: null,
+        lastName: null,
+      };
+
+      const productIds = [mainProduct.id, ...selectedOrderBumps];
+
+      trackInitiateCheckout(
+        currentTotalPrice || mainProduct.price,
+        "BRL",
+        productIds,
+        productIds.length,
+        customerData
+      );
+
+      setHasTriggeredInitiateCheckout(true);
+      
+      // Notificar o componente pai se necessário
+      if (onEmailEntered) {
+        onEmailEntered(email);
+      }
+    };
+
     // Verificar email quando o usuário termina de digitar
     const handleEmailBlur = async () => {
       const email = form.getValues("email");
@@ -95,6 +136,9 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         setIsEmailVerified(false);
         return;
       }
+      
+      // 🎯 Disparar InitiateCheckout assim que email válido for inserido
+      triggerInitiateCheckoutOnEmail(email);
       
       setIsCheckingEmail(true);
       try {
@@ -117,6 +161,20 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         setIsEmailVerified(false);
       } finally {
         setIsCheckingEmail(false);
+      }
+    };
+
+    // 🎯 Também disparar quando o email for alterado e for válido (para casos de digitação rápida)
+    const handleEmailChange = (value: string) => {
+      // Verificar se é um email válido
+      if (value && value.includes("@") && z.string().email().safeParse(value).success) {
+        // Usar setTimeout para evitar múltiplos disparos durante digitação
+        setTimeout(() => {
+          const currentEmail = form.getValues("email");
+          if (currentEmail === value && !hasTriggeredInitiateCheckout) {
+            triggerInitiateCheckoutOnEmail(value);
+          }
+        }, 1000); // Aguardar 1 segundo após parar de digitar
       }
     };
 
@@ -179,6 +237,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                       <Input
                         placeholder="seu@email.com"
                         {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          handleEmailChange(e.target.value);
+                        }}
                         onBlur={handleEmailBlur}
                         className="focus:ring-orange-500 focus:border-orange-500 pr-10"
                         type="email"

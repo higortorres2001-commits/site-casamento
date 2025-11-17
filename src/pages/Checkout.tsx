@@ -66,9 +66,8 @@ const Checkout = () => {
   const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
 
-  // Estados para controle do InitiateCheckout
-  const [hasTriggeredInitialCheckout, setHasTriggeredInitialCheckout] = useState(false);
-  const [hasTriggeredFormCheckout, setHasTriggeredFormCheckout] = useState(false);
+  // 🎯 Estado para controlar se InitiateCheckout já foi disparado via email
+  const [hasTriggeredEmailCheckout, setHasTriggeredEmailCheckout] = useState(false);
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
@@ -138,31 +137,6 @@ const Checkout = () => {
     fetchProductData();
   }, [productId, navigate]);
 
-  // 🎯 InitiateCheckout inicial - quando o produto carrega (sem dados do usuário)
-  useEffect(() => {
-    if (mainProduct && window.fbq && !hasTriggeredInitialCheckout) {
-      console.log("🎯 Triggering initial InitiateCheckout (page load)");
-      
-      // Dados básicos sem informações do usuário
-      const basicCustomerData = {
-        email: null,
-        phone: null,
-        firstName: null,
-        lastName: null,
-      };
-
-      trackInitiateCheckout(
-        mainProduct.price,
-        "BRL",
-        [mainProduct.id],
-        1,
-        basicCustomerData
-      );
-
-      setHasTriggeredInitialCheckout(true);
-    }
-  }, [mainProduct, hasTriggeredInitialCheckout]);
-
   const selectedOrderBumpsDetails = useMemo(() => {
     return orderBumps.filter((bump) => selectedOrderBumps.includes(bump.id));
   }, [orderBumps, selectedOrderBumps]);
@@ -195,28 +169,10 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
-  // 🎯 Função para disparar InitiateCheckout com dados do formulário
-  const triggerFormInitiateCheckout = (formData: any) => {
-    if (!mainProduct || !window.fbq || hasTriggeredFormCheckout) return;
-
-    console.log("🎯 Triggering InitiateCheckout with form data");
-
-    const formDataCustomerData = {
-      email: formData.email,
-      phone: cleanWhatsApp(formData.whatsapp),
-      firstName: extractNameParts(formData.name).firstName,
-      lastName: extractNameParts(formData.name).lastName,
-    };
-
-    trackInitiateCheckout(
-      currentTotalPrice,
-      "BRL",
-      [mainProduct.id, ...selectedOrderBumps],
-      1 + selectedOrderBumps.length,
-      formDataCustomerData
-    );
-
-    setHasTriggeredFormCheckout(true);
+  // 🎯 Callback quando email válido for inserido no formulário
+  const handleEmailEntered = (email: string) => {
+    console.log("🎯 Email entered in checkout form:", email);
+    setHasTriggeredEmailCheckout(true);
   };
 
   const handleSubmit = async () => {
@@ -236,9 +192,6 @@ const Checkout = () => {
       showError("Erro ao obter dados do formulário.");
       return;
     }
-
-    // 🎯 Disparar InitiateCheckout com dados do formulário preenchido
-    triggerFormInitiateCheckout(checkoutFormData);
 
     let creditCardData = null;
     if (paymentMethod === "CREDIT_CARD") {
@@ -345,6 +298,10 @@ const Checkout = () => {
               ref={checkoutFormRef}
               onSubmit={() => {}}
               isLoading={isSubmitting}
+              mainProduct={mainProduct}
+              selectedOrderBumps={selectedOrderBumps}
+              currentTotalPrice={currentTotalPrice}
+              onEmailEntered={handleEmailEntered}
             />
           </div>
 
