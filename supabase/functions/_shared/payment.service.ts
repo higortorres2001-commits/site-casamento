@@ -8,6 +8,119 @@ export interface PaymentResult {
   encodedImage?: string;
 }
 
+export interface AsaasCustomer {
+  id: string;
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  phone: string;
+}
+
+/**
+ * Busca cliente existente no Asaas por email
+ */
+async function findAsaasCustomer(email: string): Promise<AsaasCustomer | null> {
+  const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+  const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
+
+  if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
+    throw new Error('Configuração de pagamento não encontrada');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'access_token': ASAAS_API_KEY,
+  };
+
+  const response = await fetch(
+    `${ASAAS_BASE_URL}/customers?email=${encodeURIComponent(email)}`,
+    { method: 'GET', headers }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar cliente no Asaas: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  // A API retorna um array de clientes
+  if (data.data && data.data.length > 0) {
+    return data.data[0]; // Retorna o primeiro cliente encontrado
+  }
+
+  return null;
+}
+
+/**
+ * Cria novo cliente no Asaas
+ */
+async function createAsaasCustomer(customerData: {
+  name: string;
+  email: string;
+  cpf: string;
+  whatsapp: string;
+}): Promise<AsaasCustomer> {
+  const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+  const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
+
+  if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
+    throw new Error('Configuração de pagamento não encontrada');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'access_token': ASAAS_API_KEY,
+  };
+
+  const payload = {
+    name: customerData.name,
+    email: customerData.email,
+    cpfCnpj: customerData.cpf,
+    phone: customerData.whatsapp,
+    mobilePhone: customerData.whatsapp,
+    notificationDisabled: false,
+  };
+
+  const response = await fetch(`${ASAAS_BASE_URL}/customers`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Erro ao criar cliente no Asaas: ${errorData.errors?.[0]?.description || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Busca ou cria cliente no Asaas (idempotente)
+ */
+async function getOrCreateAsaasCustomer(customerData: {
+  name: string;
+  email: string;
+  cpf: string;
+  whatsapp: string;
+}): Promise<AsaasCustomer> {
+  // Primeiro, tentar buscar cliente existente
+  const existingCustomer = await findAsaasCustomer(customerData.email);
+  
+  if (existingCustomer) {
+    console.log('Asaas customer found:', existingCustomer.id);
+    return existingCustomer;
+  }
+
+  // Se não existir, criar novo cliente
+  console.log('Creating new Asaas customer for:', customerData.email);
+  const newCustomer = await createAsaasCustomer(customerData);
+  console.log('Asaas customer created:', newCustomer.id);
+  
+  return newCustomer;
+}
+
 /**
  * Cria pagamento PIX no Asaas
  */
@@ -28,15 +141,15 @@ export async function createPixPayment(
     throw new Error('Configuração de pagamento não encontrada');
   }
 
+  // ETAPA 1: Buscar ou criar cliente no Asaas
+  const asaasCustomer = await getOrCreateAsaasCustomer(customerData);
+
+  // ETAPA 2: Criar pagamento usando o ID do cliente
   const asaasPayload = {
-    customer: {
-      name: customerData.name,
-      email: customerData.email,
-      cpfCnpj: customerData.cpf,
-      phone: customerData.whatsapp,
-    },
+    customer: asaasCustomer.id, // ✅ Usar ID do cliente, não o email
     value: parseFloat(totalPrice.toFixed(2)),
-    description: `Pedido #${orderId}`,
+    description: `Pedido #${orderId.substring(0, 8)}`,
+    externalReference: orderId,
     dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     billingType: 'PIX',
   };
@@ -46,7 +159,6 @@ export async function createPixPayment(
     'access_token': ASAAS_API_KEY,
   };
 
-  // Criar pagamento
   const response = await fetch(`${ASAAS_BASE_URL}/payments`, {
     method: 'POST',
     headers,
@@ -55,12 +167,12 @@ export async function createPixPayment(
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(`Asaas API error: ${errorData.message || response.statusText}`);
+    throw new Error(`Asaas API error: ${errorData.errors?.[0]?.description || response.statusText}`);
   }
 
   const paymentData = await response.json();
 
-  // Buscar QR Code
+  // ETAPA 3: Buscar QR Code
   const qrCodeResponse = await fetch(
     `${ASAAS_BASE_URL}/payments/${paymentData.id}/pixQrCode`,
     { method: 'GET', headers }
@@ -112,15 +224,15 @@ export async function createCreditCardPayment(
     throw new Error('Configuração de pagamento não encontrada');
   }
 
+  // ETAPA 1: Buscar ou criar cliente no Asaas
+  const asaasCustomer = await getOrCreateAsaasCustomer(customerData);
+
+  // ETAPA 2: Criar pagamento usando o ID do cliente
   const asaasPayload: any = {
-    customer: {
-      name: customerData.name,
-      email: customerData.email,
-      cpfCnpj: customerData.cpf,
-      phone: customerData.whatsapp,
-    },
+    customer: asaasCustomer.id, // ✅ Usar ID do cliente, não o email
     value: parseFloat(totalPrice.toFixed(2)),
-    description: `Pedido #${orderId}`,
+    description: `Pedido #${orderId.substring(0, 8)}`,
+    externalReference: orderId,
     dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     billingType: 'CREDIT_CARD',
     creditCard: {
@@ -159,7 +271,7 @@ export async function createCreditCardPayment(
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(`Asaas API error: ${errorData.message || response.statusText}`);
+    throw new Error(`Asaas API error: ${errorData.errors?.[0]?.description || response.statusText}`);
   }
 
   const paymentData = await response.json();

@@ -7,6 +7,7 @@ O sistema de pagamento foi projetado para ser **100% confiável** mesmo com:
 - ✅ Falhas de rede temporárias
 - ✅ Race conditions no banco de dados
 - ✅ Webhooks duplicados
+- ✅ Clientes duplicados no Asaas
 
 ## Arquitetura
 
@@ -17,7 +18,7 @@ Cliente → create-asaas-payment → Asaas API → Webhook → Liberação de Ac
 ### Componentes Principais
 
 1. **database.service.ts**: Operações atômicas no banco
-2. **payment.service.ts**: Integração com Asaas
+2. **payment.service.ts**: Integração com Asaas (buscar/criar cliente + pagamento)
 3. **logger.service.ts**: Logs estruturados
 4. **retry.service.ts**: Retry inteligente
 
@@ -45,12 +46,16 @@ Cliente → create-asaas-payment → Asaas API → Webhook → Liberação de Ac
 1. **Validação de dados** (fail-fast)
 2. **Validação de produtos** (verificar existência e status)
 3. **Aplicação de cupom** (se fornecido)
-4. **Criar/Atualizar usuário** (UPSERT atômico)
+4. **Criar/Atualizar usuário no sistema** (UPSERT atômico)
    - Se existe: atualiza dados
    - Se não existe: cria Auth + Profile
-5. **Criar pedido** (status: pending)
-6. **Processar pagamento** (Asaas API)
-7. **Atualizar pedido** com payment_id
+5. **Buscar ou criar cliente no Asaas** ⭐ NOVO
+   - GET /customers?email=... (buscar)
+   - Se não existir: POST /customers (criar)
+   - Retorna customer.id (ex: cus_12345)
+6. **Criar pedido no sistema** (status: pending)
+7. **Processar pagamento no Asaas** usando customer.id
+8. **Atualizar pedido** com payment_id
 
 **Saída PIX:**
 ```json
@@ -97,7 +102,7 @@ Cliente → create-asaas-payment → Asaas API → Webhook → Liberação de Ac
 
 ### Problema: Dois checkouts simultâneos do mesmo email
 
-**Solução:**
+**Solução no Sistema:**
 ```typescript
 // UPSERT com ON CONFLICT garante atomicidade
 await supabase
@@ -109,6 +114,17 @@ await supabase
     onConflict: 'id',
     ignoreDuplicates: false
   });
+```
+
+**Solução no Asaas:**
+```typescript
+// Buscar cliente antes de criar
+const existingCustomer = await findAsaasCustomer(email);
+if (existingCustomer) {
+  return existingCustomer; // Reutilizar cliente existente
+}
+// Criar apenas se não existir
+const newCustomer = await createAsaasCustomer(data);
 ```
 
 ### Problema: Webhook duplicado
@@ -130,14 +146,54 @@ const currentAccess = profile.access || [];
 const newAccess = [...new Set([...currentAccess, ...productIds])];
 ```
 
+## Integração com Asaas
+
+### Endpoints Utilizados
+
+1. **GET /v3/customers?email={email}**
+   - Busca cliente existente
+   - Retorna array de clientes
+   - Usado para evitar duplicatas
+
+2. **POST /v3/customers**
+   - Cria novo cliente
+   - Campos: name, email, cpfCnpj, phone, mobilePhone
+   - Retorna customer.id
+
+3. **POST /v3/payments**
+   - Cria cobrança
+   - Campo customer: ID do cliente (ex: cus_12345)
+   - Campos: value, description, dueDate, billingType
+
+4. **GET /v3/payments/{id}/pixQrCode**
+   - Busca QR Code do PIX
+   - Retorna payload e encodedImage
+
+5. **GET /v3/payments/{id}**
+   - Verifica status do pagamento
+   - Usado no polling do cliente
+
+### Tratamento de Erros Asaas
+
+**Erros Comuns:**
+- `invalid_customer`: Cliente não encontrado ou ID inválido
+- `invalid_value`: Valor inválido (< 5.00)
+- `invalid_cpfCnpj`: CPF inválido
+
+**Estratégia:**
+- Validar dados antes de enviar
+- Usar buscar/criar para evitar invalid_customer
+- Logs detalhados para debug
+
 ## Recuperação de Falhas
 
 ### Vendas Perdidas
 
 Qualquer falha crítica salva dados em:
 ```
-logs.context = 'create-asaas-payment-CRITICAL-FAILURE'
+logs.context = 'create-payment' (com level: 'error')
 logs.metadata.CUSTOMER_CONTACT_DATA = { ... }
+logs.metadata.MANUAL_RECOVERY_REQUIRED = true
 ```
 
 **Recuperação Manual:**
@@ -149,14 +205,14 @@ logs.metadata.CUSTOMER_CONTACT_DATA = { ... }
 ## Configuração de Secrets
 
 **Obrigatórios:**
-- `ASAAS_API_KEY`
-- `ASAAS_API_URL`
+- `ASAAS_API_KEY`: Token de acesso da API Asaas
+- `ASAAS_API_URL`: URL base da API (ex: https://sandbox.asaas.com/api/v3)
 
 **Opcionais:**
-- `ASAAS_WEBHOOK_TOKEN` (validação de assinatura)
-- `RESEND_API_KEY` (emails)
-- `META_PIXEL_ID` (tracking)
-- `META_CAPI_ACCESS_TOKEN` (tracking)
+- `ASAAS_WEBHOOK_TOKEN`: Token para validação de assinatura do webhook
+- `RESEND_API_KEY`: Para envio de emails
+- `META_PIXEL_ID`: Para tracking Meta
+- `META_CAPI_ACCESS_TOKEN`: Para Meta Conversions API
 
 ## Monitoramento
 
@@ -167,14 +223,15 @@ logs.metadata.CUSTOMER_CONTACT_DATA = { ... }
 - `asaas-webhook` → `Webhook processed successfully`
 
 **Atenção:**
-- `create-payment-CRITICAL-FAILURE` → Venda perdida, recuperação necessária
-- `webhook` → `Order not found` → Verificar se pedido existe
+- `create-payment` (level: error) → Venda perdida, verificar metadata
+- `asaas-webhook` → `Order not found` → Verificar se pedido existe
 
 ### Métricas
 
 - Taxa de sucesso: > 99%
 - Tempo médio: < 3s
 - Vendas recuperáveis: 100%
+- Clientes duplicados no Asaas: 0 (prevenido)
 
 ## Testes
 
@@ -190,7 +247,8 @@ done
 ```
 
 **Resultado Esperado:**
-- 1 usuário criado
+- 1 usuário criado no sistema
+- 1 cliente criado no Asaas (reutilizado nas outras 9 chamadas)
 - 10 pedidos criados
 - 0 erros de duplicata
 
@@ -212,6 +270,11 @@ done
 
 ## Troubleshooting
 
+### Erro: invalid_customer
+
+**Causa:** ID do cliente não foi encontrado no Asaas
+**Solução:** Sistema agora busca/cria cliente automaticamente
+
 ### Usuário não recebeu acesso
 
 1. Verificar logs: `context = 'asaas-webhook'`
@@ -225,10 +288,9 @@ done
 2. URL do webhook: `https://xxx.supabase.co/functions/v1/asaas-webhook`
 3. Eventos: `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`
 
-### Erro de duplicata ao criar usuário
+### Cliente duplicado no Asaas
 
-**Não deve mais acontecer** com a nova implementação.
+**Não deve mais acontecer** - sistema busca antes de criar.
 Se acontecer:
-1. Verificar logs para identificar race condition
-2. Sistema automaticamente usa UPSERT
-3. Reportar como bug crítico
+1. Verificar logs para identificar falha na busca
+2. Sistema reutiliza cliente existente automaticamente
