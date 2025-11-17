@@ -191,7 +191,7 @@ async function sendAccessEmail(
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: '',
         to: email,
         subject: 'Seu acesso foi liberado!',
         html: emailBody,
