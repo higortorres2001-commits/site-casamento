@@ -190,32 +190,13 @@ async function sendAccessEmail(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
-      //body: JSON.stringify({
-      //  from: 'onboarding@resend.dev',
-      //  to: email,
-     //   subject: 'Seu acesso foi liberado!',
-   //     html: emailBody,
-  //    }),
-   // });
-      body: JSON.stringify({ // 1. Abre o parêntese do JSON.stringify
-        from: 'contato@medsemestress.com',
+      body: JSON.stringify({
+        from: 'onboarding@resend.dev',
         to: email,
-        template_id: 'f24271ee-3730-454d-921b-ef9cee46be39', // 2. CORRIJA SEU ID (removi o "I" no final)
-        params: { // 3. Abre o objeto params
-          loginUrl: loginUrl,
-          email: email,
-          cpf: cpf
-        } // 3. Fecha o objeto params
-      }) // 1. Fecha o parêntese do JSON.stringify
+        subject: 'Seu acesso foi liberado!',
+        html: emailBody,
+      }),
     });
-
-
-
-
-
-
-
-
 
     if (!response.ok) {
       const errorData = await response.json();
