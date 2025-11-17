@@ -170,7 +170,7 @@ async function sendAccessEmail(
   }
 
   const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'https://seu-app.com';
-  const loginUrl = `${appUrl}/login`;
+  const loginUrl = 'https://app.medsemestress.com';
   
   const emailBody = `
     <h2>Parabéns! Seu pagamento foi confirmado 🎉</h2>
