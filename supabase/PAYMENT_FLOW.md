@@ -7,7 +7,7 @@ O sistema de pagamento foi projetado para ser **100% confiável** mesmo com:
 - ✅ Falhas de rede temporárias
 - ✅ Race conditions no banco de dados
 - ✅ Webhooks duplicados
-- ✅ Clientes duplicados no Asaas
+- ✅ Criação inline de clientes no Asaas (sem duplicatas)
 
 ## Arquitetura
 
@@ -18,7 +18,7 @@ Cliente → create-asaas-payment → Asaas API → Webhook → Liberação de Ac
 ### Componentes Principais
 
 1. **database.service.ts**: Operações atômicas no banco
-2. **payment.service.ts**: Integração com Asaas (buscar/criar cliente + pagamento)
+2. **payment.service.ts**: Integração com Asaas (criação inline de cliente)
 3. **logger.service.ts**: Logs estruturados
 4. **retry.service.ts**: Retry inteligente
 
@@ -49,13 +49,29 @@ Cliente → create-asaas-payment → Asaas API → Webhook → Liberação de Ac
 4. **Criar/Atualizar usuário no sistema** (UPSERT atômico)
    - Se existe: atualiza dados
    - Se não existe: cria Auth + Profile
-5. **Buscar ou criar cliente no Asaas** ⭐ NOVO
-   - GET /customers?email=... (buscar)
-   - Se não existir: POST /customers (criar)
-   - Retorna customer.id (ex: cus_12345)
-6. **Criar pedido no sistema** (status: pending)
-7. **Processar pagamento no Asaas** usando customer.id
-8. **Atualizar pedido** com payment_id
+5. **Criar pedido no sistema** (status: pending)
+6. **Processar pagamento no Asaas** ⭐ FORMATO INLINE
+   - Envia `customer` como objeto: `{ name, email, cpfCnpj, phone }`
+   - Asaas cria/atualiza cliente automaticamente
+   - Retorna payment.id
+7. **Atualizar pedido** com payment_id
+
+**Formato do Payload Asaas (PIX):**
+```json
+{
+  "customer": {
+    "name": "João Silva",
+    "email": "joao@email.com",
+    "cpfCnpj": "12345678901",
+    "phone": "11999999999"
+  },
+  "value": 99.90,
+  "description": "Pedido #abc123",
+  "externalReference": "order-uuid",
+  "dueDate": "2025-11-18",
+  "billingType": "PIX"
+}
+```
 
 **Saída PIX:**
 ```json
@@ -118,13 +134,16 @@ await supabase
 
 **Solução no Asaas:**
 ```typescript
-// Buscar cliente antes de criar
-const existingCustomer = await findAsaasCustomer(email);
-if (existingCustomer) {
-  return existingCustomer; // Reutilizar cliente existente
-}
-// Criar apenas se não existir
-const newCustomer = await createAsaasCustomer(data);
+// Criação inline - Asaas gerencia duplicatas automaticamente
+const asaasPayload = {
+  customer: {
+    name: customerData.name,
+    email: customerData.email,
+    cpfCnpj: customerData.cpf,
+    phone: customerData.whatsapp,
+  },
+  // ... resto do payload
+};
 ```
 
 ### Problema: Webhook duplicado
@@ -150,39 +169,58 @@ const newAccess = [...new Set([...currentAccess, ...productIds])];
 
 ### Endpoints Utilizados
 
-1. **GET /v3/customers?email={email}**
-   - Busca cliente existente
-   - Retorna array de clientes
-   - Usado para evitar duplicatas
+1. **POST /v3/payments** (com customer inline)
+   - Cria cobrança E cliente em uma única chamada
+   - Campo customer: Objeto com dados do cliente
+   - Asaas gerencia duplicatas automaticamente
+   - Campos: value, description, dueDate, billingType, customer
 
-2. **POST /v3/customers**
-   - Cria novo cliente
-   - Campos: name, email, cpfCnpj, phone, mobilePhone
-   - Retorna customer.id
-
-3. **POST /v3/payments**
-   - Cria cobrança
-   - Campo customer: ID do cliente (ex: cus_12345)
-   - Campos: value, description, dueDate, billingType
-
-4. **GET /v3/payments/{id}/pixQrCode**
+2. **GET /v3/payments/{id}/pixQrCode**
    - Busca QR Code do PIX
    - Retorna payload e encodedImage
 
-5. **GET /v3/payments/{id}**
+3. **GET /v3/payments/{id}**
    - Verifica status do pagamento
    - Usado no polling do cliente
+
+### Formato do Campo Customer
+
+**✅ CORRETO (Objeto):**
+```json
+{
+  "customer": {
+    "name": "João Silva",
+    "email": "joao@email.com",
+    "cpfCnpj": "12345678901",
+    "phone": "11999999999"
+  }
+}
+```
+
+**❌ INCORRETO (String com email):**
+```json
+{
+  "customer": "joao@email.com"
+}
+```
+
+**✅ ALTERNATIVA (ID do cliente):**
+```json
+{
+  "customer": "cus_12345"
+}
+```
 
 ### Tratamento de Erros Asaas
 
 **Erros Comuns:**
-- `invalid_customer`: Cliente não encontrado ou ID inválido
+- `invalid_customer`: Formato incorreto do campo customer
 - `invalid_value`: Valor inválido (< 5.00)
 - `invalid_cpfCnpj`: CPF inválido
 
 **Estratégia:**
 - Validar dados antes de enviar
-- Usar buscar/criar para evitar invalid_customer
+- Usar formato de objeto para customer
 - Logs detalhados para debug
 
 ## Recuperação de Falhas
@@ -231,7 +269,7 @@ logs.metadata.MANUAL_RECOVERY_REQUIRED = true
 - Taxa de sucesso: > 99%
 - Tempo médio: < 3s
 - Vendas recuperáveis: 100%
-- Clientes duplicados no Asaas: 0 (prevenido)
+- Clientes duplicados no Asaas: Gerenciados automaticamente pela API
 
 ## Testes
 
@@ -248,9 +286,9 @@ done
 
 **Resultado Esperado:**
 - 1 usuário criado no sistema
-- 1 cliente criado no Asaas (reutilizado nas outras 9 chamadas)
 - 10 pedidos criados
-- 0 erros de duplicata
+- Asaas gerencia clientes automaticamente
+- 0 erros de invalid_customer
 
 ### Teste de Webhook Duplicado
 
@@ -272,8 +310,8 @@ done
 
 ### Erro: invalid_customer
 
-**Causa:** ID do cliente não foi encontrado no Asaas
-**Solução:** Sistema agora busca/cria cliente automaticamente
+**Causa:** Campo customer enviado como string (email) ao invés de objeto
+**Solução:** ✅ Corrigido - agora envia objeto completo
 
 ### Usuário não recebeu acesso
 
@@ -290,7 +328,4 @@ done
 
 ### Cliente duplicado no Asaas
 
-**Não deve mais acontecer** - sistema busca antes de criar.
-Se acontecer:
-1. Verificar logs para identificar falha na busca
-2. Sistema reutiliza cliente existente automaticamente
+**Gerenciado automaticamente** - Asaas detecta email duplicado e reutiliza cliente existente quando usamos criação inline.
