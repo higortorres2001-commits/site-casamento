@@ -14,7 +14,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Loader2, Mail, User, Shield, CheckCircle } from "lucide-react";
+import { Loader2, Mail, User, Shield, CheckCircle, Lock } from "lucide-react";
 import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
 import { supabase } from "@/integrations/supabase/client";
@@ -100,6 +100,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         
         if (exists && !isEmailVerified) {
           setIsExistingUser(true);
+          showSuccess("E-mail encontrado! Vamos verificar sua identidade.");
+        } else if (!exists) {
+          setIsExistingUser(false);
+          showSuccess("Novo cliente! Preencha seus dados abaixo.");
         }
       } catch (error) {
         console.error("Error checking email:", error);
@@ -126,7 +130,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       setIsEmailVerified(true);
       setIsVerificationModalOpen(false);
       
-      // Preencher o formulário com os dados do usuário
+      // 🎯 Preencher o formulário com os dados do usuário e TRAVAR os campos
       form.setValue("name", userData.name);
       form.setValue("cpf", formatCPF(userData.cpf));
       form.setValue("whatsapp", formatWhatsapp(userData.whatsapp));
@@ -134,7 +138,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       // Marcar campos como "touched" para validação
       form.trigger();
       
-      showSuccess("E-mail verificado com sucesso!");
+      showSuccess("E-mail verificado! Seus dados foram preenchidos automaticamente.");
     };
 
     return (
@@ -143,12 +147,14 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <div className="text-center mb-6">
               <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                {isExistingUser ? "Bem-vindo de volta!" : "Preencha seus dados"}
+                {isEmailVerified ? "Dados Confirmados" : isExistingUser ? "Bem-vindo de volta!" : "Preencha seus dados"}
               </h3>
               <p className="text-sm text-gray-600">
-                {isExistingUser 
-                  ? "Vimos que você já é nosso cliente. Para sua segurança, precisamos verificar seu e-mail."
-                  : "Preencha os dados abaixo para continuar com sua compra."
+                {isEmailVerified 
+                  ? "Seus dados foram verificados e preenchidos automaticamente. Você pode prosseguir com o pagamento."
+                  : isExistingUser 
+                    ? "Vimos que você já é nosso cliente. Para sua segurança, precisamos verificar seu e-mail."
+                    : "Preencha os dados abaixo para continuar com sua compra."
                 }
               </p>
             </div>
@@ -167,7 +173,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                         onBlur={handleEmailBlur}
                         className="focus:ring-orange-500 focus:border-orange-500 pr-10"
                         type="email"
-                        disabled={isLoading || isEmailVerified}
+                        disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
                         {isCheckingEmail || isChecking ? (
@@ -216,13 +222,16 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Nome Completo</FormLabel>
+                      <FormLabel className="flex items-center gap-2">
+                        Nome Completo
+                        {isEmailVerified && <Lock className="h-3 w-3 text-green-600" />}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Seu nome completo"
                           {...field}
                           className="focus:ring-orange-500 focus:border-orange-500"
-                          disabled={isLoading || (isExistingUser && !isEmailVerified)}
+                          disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
                         />
                       </FormControl>
                       <FormMessage />
@@ -235,7 +244,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                   name="cpf"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>CPF</FormLabel>
+                      <FormLabel className="flex items-center gap-2">
+                        CPF
+                        {isEmailVerified && <Lock className="h-3 w-3 text-green-600" />}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="000.000.000-00"
@@ -255,7 +267,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           }}
                           maxLength={14}
                           className="focus:ring-orange-500 focus:border-orange-500"
-                          disabled={isLoading || (isExistingUser && !isEmailVerified)}
+                          disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
                         />
                       </FormControl>
                       <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
@@ -268,7 +280,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                   name="whatsapp"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>WhatsApp</FormLabel>
+                      <FormLabel className="flex items-center gap-2">
+                        WhatsApp
+                        {isEmailVerified && <Lock className="h-3 w-3 text-green-600" />}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="(XX) XXXXX-XXXX"
@@ -279,13 +294,28 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           }}
                           maxLength={15}
                           className="focus:ring-orange-500 focus:border-orange-500"
-                          disabled={isLoading || (isExistingUser && !isEmailVerified)}
+                          disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* 🎯 Indicador visual de que os dados estão travados */}
+                {isEmailVerified && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">
+                        Dados verificados e confirmados
+                      </span>
+                    </div>
+                    <p className="text-xs text-green-700 mt-1">
+                      Seus dados foram preenchidos automaticamente após a verificação do e-mail.
+                    </p>
+                  </div>
+                )}
               </>
             )}
           </form>

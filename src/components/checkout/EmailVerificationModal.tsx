@@ -24,7 +24,7 @@ const EmailVerificationModal = ({
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(35);
+  const [timeLeft, setTimeLeft] = useState(30); // 🎯 Alterado para 30 segundos
   const [canResend, setCanResend] = useState(false);
   const [verificationStep, setVerificationStep] = useState<'sending' | 'input' | 'verifying' | 'success'>('sending');
   
@@ -41,15 +41,15 @@ const EmailVerificationModal = ({
     }
   }, [isOpen]);
   
-  // Timer para reenvio
+  // Timer para reenvio - 🎯 Corrigido para 30 segundos
   useEffect(() => {
-    if (timeLeft > 0) {
+    if (timeLeft > 0 && verificationStep === 'input') {
       const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
       return () => clearTimeout(timer);
-    } else {
+    } else if (timeLeft === 0) {
       setCanResend(true);
     }
-  }, [timeLeft]);
+  }, [timeLeft, verificationStep]);
   
   // Persistir estado no localStorage para recuperação após troca de apps
   useEffect(() => {
@@ -127,7 +127,7 @@ const EmailVerificationModal = ({
         console.log("✅ OTP sent successfully");
         showSuccess("Código enviado para seu e-mail!");
         setVerificationStep('input');
-        setTimeLeft(35);
+        setTimeLeft(30); // 🎯 Reset para 30 segundos
         setCanResend(false);
       }
     } catch (error: any) {
@@ -254,6 +254,15 @@ const EmailVerificationModal = ({
     }
   };
 
+  // 🎯 Função para reenviar código
+  const handleResendCode = async () => {
+    console.log("🔄 Resending OTP code");
+    setCanResend(false);
+    setTimeLeft(30); // Reset timer para 30 segundos
+    setOtp(Array(6).fill("")); // Limpar campos
+    await sendOtpCode();
+  };
+
   // Renderizar conteúdo baseado no passo atual
   const renderContent = () => {
     switch (verificationStep) {
@@ -328,7 +337,7 @@ const EmailVerificationModal = ({
                 </p>
                 <Button
                   variant="ghost"
-                  onClick={sendOtpCode}
+                  onClick={handleResendCode}
                   disabled={!canResend || isResending}
                   className="text-blue-600 hover:text-blue-700"
                 >

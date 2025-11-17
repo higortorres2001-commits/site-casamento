@@ -66,6 +66,10 @@ const Checkout = () => {
   const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
 
+  // Estados para controle do InitiateCheckout
+  const [hasTriggeredInitialCheckout, setHasTriggeredInitialCheckout] = useState(false);
+  const [hasTriggeredFormCheckout, setHasTriggeredFormCheckout] = useState(false);
+
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
 
@@ -134,33 +138,30 @@ const Checkout = () => {
     fetchProductData();
   }, [productId, navigate]);
 
+  // 🎯 InitiateCheckout inicial - quando o produto carrega (sem dados do usuário)
   useEffect(() => {
-    if (mainProduct && window.fbq) {
-      let customerData = {
-        email: user?.email || null,
-        phone: user?.user_metadata?.whatsapp ? cleanWhatsApp(user.user_metadata.whatsapp) : null,
-        firstName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).firstName : null,
-        lastName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
+    if (mainProduct && window.fbq && !hasTriggeredInitialCheckout) {
+      console.log("🎯 Triggering initial InitiateCheckout (page load)");
+      
+      // Dados básicos sem informações do usuário
+      const basicCustomerData = {
+        email: null,
+        phone: null,
+        firstName: null,
+        lastName: null,
       };
-
-      if (!user) {
-        customerData = {
-          email: null,
-          phone: null,
-          firstName: null,
-          lastName: null,
-        };
-      }
 
       trackInitiateCheckout(
         mainProduct.price,
         "BRL",
         [mainProduct.id],
         1,
-        customerData
+        basicCustomerData
       );
+
+      setHasTriggeredInitialCheckout(true);
     }
-  }, [mainProduct, user]);
+  }, [mainProduct, hasTriggeredInitialCheckout]);
 
   const selectedOrderBumpsDetails = useMemo(() => {
     return orderBumps.filter((bump) => selectedOrderBumps.includes(bump.id));
@@ -194,6 +195,30 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
+  // 🎯 Função para disparar InitiateCheckout com dados do formulário
+  const triggerFormInitiateCheckout = (formData: any) => {
+    if (!mainProduct || !window.fbq || hasTriggeredFormCheckout) return;
+
+    console.log("🎯 Triggering InitiateCheckout with form data");
+
+    const formDataCustomerData = {
+      email: formData.email,
+      phone: cleanWhatsApp(formData.whatsapp),
+      firstName: extractNameParts(formData.name).firstName,
+      lastName: extractNameParts(formData.name).lastName,
+    };
+
+    trackInitiateCheckout(
+      currentTotalPrice,
+      "BRL",
+      [mainProduct.id, ...selectedOrderBumps],
+      1 + selectedOrderBumps.length,
+      formDataCustomerData
+    );
+
+    setHasTriggeredFormCheckout(true);
+  };
+
   const handleSubmit = async () => {
     if (!mainProduct) {
       showError("Produto não carregado.");
@@ -212,22 +237,8 @@ const Checkout = () => {
       return;
     }
 
-    const formDataCustomerData = {
-      email: checkoutFormData.email,
-      phone: cleanWhatsApp(checkoutFormData.whatsapp),
-      firstName: extractNameParts(checkoutFormData.name).firstName,
-      lastName: extractNameParts(checkoutFormData.name).lastName,
-    };
-
-    if (window.fbq) {
-      trackInitiateCheckout(
-        currentTotalPrice,
-        "BRL",
-        [mainProduct.id, ...selectedOrderBumps],
-        1 + selectedOrderBumps.length,
-        formDataCustomerData
-      );
-    }
+    // 🎯 Disparar InitiateCheckout com dados do formulário preenchido
+    triggerFormInitiateCheckout(checkoutFormData);
 
     let creditCardData = null;
     if (paymentMethod === "CREDIT_CARD") {
