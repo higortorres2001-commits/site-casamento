@@ -18,8 +18,6 @@ import { useSession } from "@/components/SessionContextProvider";
 import { useMetaTrackingData } from "@/hooks/use-meta-tracking-data";
 import { trackInitiateCheckout } from "@/utils/metaPixel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Package, Truck, CheckCircle, MessageCircle } from "lucide-react";
 
 declare global {
   interface Window {
@@ -27,6 +25,7 @@ declare global {
   }
 }
 
+// Função para extrair primeiro e último nome
 const extractNameParts = (fullName: string | null | undefined): { firstName: string | null; lastName: string | null } => {
   if (!fullName || typeof fullName !== 'string') {
     return { firstName: null, lastName: null };
@@ -43,9 +42,10 @@ const extractNameParts = (fullName: string | null | undefined): { firstName: str
   return { firstName, lastName };
 };
 
+// Função para limpar WhatsApp (remover formatação)
 const cleanWhatsApp = (whatsapp: string | null | undefined): string | null => {
   if (!whatsapp) return null;
-  return whatsapp.replace(/\D/g, '');
+  return whatsapp.replace(/\D/g, ''); // Remove tudo que não é dígito
 };
 
 const Checkout = () => {
@@ -80,7 +80,9 @@ const Checkout = () => {
       setIsLoadingProduct(true);
       
       try {
+        // Executar ambas as consultas em paralelo com Promise.all
         const [productResult, bumpsResult] = await Promise.all([
+          // Consulta 1: Buscar o produto principal
           supabase
             .from("products")
             .select("*")
@@ -88,11 +90,12 @@ const Checkout = () => {
             .eq("status", "ativo")
             .single(),
           
+          // Consulta 2: Buscar os order bumps (se existirem)
           supabase
             .from("products")
             .select("id, name, price")
             .eq("status", "ativo")
-            .in("id", [productId])
+            .in("id", [productId]) // Placeholder, será atualizado abaixo
         ]);
         
         const { data: product, error: productError } = productResult;
@@ -104,8 +107,10 @@ const Checkout = () => {
           return;
         }
 
+        // Configurar o produto principal imediatamente
         setMainProduct(product);
 
+        // Buscar os order bumps em paralelo (se existirem)
         if (product.orderbumps && product.orderbumps.length > 0) {
           const { data: bumps, error: bumpsError } = await supabase
             .from("products")
@@ -136,6 +141,7 @@ const Checkout = () => {
 
   useEffect(() => {
     if (mainProduct && window.fbq) {
+      // Extrair dados do usuário logado
       let customerData = {
         email: user?.email || null,
         phone: user?.user_metadata?.whatsapp ? cleanWhatsApp(user.user_metadata.whatsapp) : null,
@@ -143,6 +149,7 @@ const Checkout = () => {
         lastName: user?.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
       };
 
+      // Se não há usuário logado, usar dados vazios
       if (!user) {
         customerData = {
           email: null,
@@ -191,6 +198,7 @@ const Checkout = () => {
   };
 
   const handleCouponApplied = (coupon: Coupon | null) => {
+    console.log("🎯 Cupom recebido no Checkout:", coupon);
     setAppliedCoupon(coupon);
   };
 
@@ -202,7 +210,7 @@ const Checkout = () => {
 
     const checkoutFormValid = await checkoutFormRef.current?.submitForm();
     if (!checkoutFormValid) {
-      showError("Por favor, preencha todos os campos obrigatórios.");
+      showError("Por favor, preencha todos os campos obrigatórios do formulário.");
       return;
     }
 
@@ -212,6 +220,7 @@ const Checkout = () => {
       return;
     }
 
+    // Extrair dados do formulário para Meta Pixel
     const formDataCustomerData = {
       email: checkoutFormData.email,
       phone: cleanWhatsApp(checkoutFormData.whatsapp),
@@ -219,6 +228,7 @@ const Checkout = () => {
       lastName: extractNameParts(checkoutFormData.name).lastName,
     };
 
+    // Disparar evento InitiateCheckout com dados do formulário
     if (window.fbq) {
       trackInitiateCheckout(
         currentTotalPrice,
@@ -233,7 +243,7 @@ const Checkout = () => {
     if (paymentMethod === "CREDIT_CARD") {
       const creditCardFormValid = await creditCardFormRef.current?.submitForm();
       if (!creditCardFormValid) {
-        showError("Por favor, preencha todos os campos do cartão.");
+        showError("Por favor, preencha todos os campos do cartão de crédito.");
         return;
       }
       creditCardData = creditCardFormRef.current?.getValues();
@@ -262,23 +272,22 @@ const Checkout = () => {
         payload.creditCard = creditCardData;
       }
 
+      console.log("🚀 Enviando payload com cupom:", {
+        coupon_code: appliedCoupon?.code || null,
+        coupon_applied: !!appliedCoupon,
+        coupon_value: appliedCoupon?.value,
+        coupon_type: appliedCoupon?.discount_type,
+        original_total: originalTotalPrice,
+        final_total: currentTotalPrice
+      });
+
       const { data, error } = await supabase.functions.invoke("create-asaas-payment", {
         body: payload,
       });
 
       if (error) {
-        // Verificar se é erro recuperável
-        if (error.message?.includes('recuperável') || error.message?.includes('temporário')) {
-          showError("Erro temporário. Seus dados foram salvos e entraremos em contato em breve.");
-        } else {
-          showError("Erro ao processar pagamento: " + error.message);
-        }
-        console.error("Payment error:", error);
-        return;
-      }
-
-      if (data?.error) {
-        showError(data.error);
+        showError("Falha ao finalizar o checkout: " + error.message);
+        console.error("Edge function error:", error);
         return;
       }
 
@@ -292,7 +301,7 @@ const Checkout = () => {
           showSuccess("Pagamento confirmado!");
           navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } });
         } else {
-          showSuccess("Pedido criado! Aguardando confirmação.");
+          showSuccess("Pedido criado! Aguardando confirmação do pagamento.");
           navigate("/processando-pagamento");
         }
       }
@@ -328,37 +337,6 @@ const Checkout = () => {
         <div className="space-y-6">
           <MainProductDisplayCard product={mainProduct} />
 
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
-            <CheckoutForm
-              ref={checkoutFormRef}
-              onSubmit={() => {}}
-              isLoading={isSubmitting}
-            />
-          </div>
-
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
-            <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="PIX">PIX</TabsTrigger>
-                <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
-              </TabsList>
-              <TabsContent value="PIX" className="mt-4">
-                <p className="text-sm text-gray-600">
-                  Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
-                </p>
-              </TabsContent>
-              <TabsContent value="CREDIT_CARD" className="mt-4">
-                <CreditCardForm
-                  ref={creditCardFormRef}
-                  isLoading={isSubmitting}
-                  totalPrice={currentTotalPrice}
-                />
-              </TabsContent>
-            </Tabs>
-          </div>
-
           {orderBumps.length > 0 && (
             <div className="space-y-4">
               <h2 className="text-2xl font-bold text-gray-800">Aproveite também:</h2>
@@ -382,51 +360,35 @@ const Checkout = () => {
             onCouponApplied={handleCouponApplied}
           />
 
-          <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="delivery-info" className="border-none">
-              <div className="bg-blue-50 rounded-xl shadow-md">
-                <AccordionTrigger className="flex justify-between items-center p-4 text-lg font-semibold text-blue-800 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
-                    <span>Como funciona a entrega do material?</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="p-4 border-t border-blue-200 bg-white rounded-b-xl">
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <h4 className="font-semibold text-gray-800">Confirmação do Pagamento</h4>
-                        <p className="text-sm text-gray-600">Após a confirmação do seu pagamento, você receberá um e-mail com suas credenciais de acesso.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Truck className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <h4 className="font-semibold text-gray-800">Acesso Imediato</h4>
-                        <p className="text-sm text-gray-600">Não há entrega física. Todo o material é digital e fica disponível na sua área de membros para download.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <MessageCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <h4 className="font-semibold text-gray-800">Suporte Disponível</h4>
-                        <p className="text-sm text-gray-600">Em caso de dúvidas ou dificuldades no acesso, clique no botão do WhatsApp para falar conosco.</p>
-                      </div>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </div>
-            </AccordionItem>
-          </Accordion>
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
+            <CheckoutForm
+              ref={checkoutFormRef}
+              onSubmit={() => {}}
+              isLoading={isSubmitting}
+            />
 
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <p className="text-xs text-gray-500 text-center leading-relaxed">
-              O pagamento será processado para <strong>CNPJ: 44.962.282/0001-83</strong>. 
-              Em caso de qualquer dúvida ou dificuldade no acesso aos materiais, 
-              clique no botão do WhatsApp para entrar em contato conosco. 
-              Estamos aqui para ajudar!
-            </p>
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">Método de Pagamento</h3>
+              <Tabs value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as "PIX" | "CREDIT_CARD")}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="PIX">PIX</TabsTrigger>
+                  <TabsTrigger value="CREDIT_CARD">Cartão de Crédito</TabsTrigger>
+                </TabsList>
+                <TabsContent value="PIX" className="mt-4">
+                  <p className="text-sm text-gray-600">
+                    Você receberá um QR Code para pagamento via PIX após finalizar o pedido.
+                  </p>
+                </TabsContent>
+                <TabsContent value="CREDIT_CARD" className="mt-4">
+                  <CreditCardForm
+                    ref={creditCardFormRef}
+                    isLoading={isSubmitting}
+                    totalPrice={currentTotalPrice}
+                  />
+                </TabsContent>
+              </Tabs>
+            </div>
           </div>
         </div>
       </main>
