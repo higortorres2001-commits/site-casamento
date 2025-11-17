@@ -190,14 +190,32 @@ async function sendAccessEmail(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
+      //body: JSON.stringify({
+      //  from: 'onboarding@resend.dev',
+      //  to: email,
+     //   subject: 'Seu acesso foi liberado!',
+   //     html: emailBody,
+  //    }),
+   // });
       body: JSON.stringify({
-        from: 'onboarding@resend.dev',
+        from: 'contato@medsemestress.com', //  MUITO IMPORTANTE!
         to: email,
-        subject: 'Seu acesso foi liberado!',
-        html: emailBody,
-      }),
-    });
-//*
+        template_id: 'COLE_SEU_TEMPLATE_ID_AQUI', // O ID que você copiou do Resend
+        params: {
+          // As variáveis que você definiu no template
+          loginUrl: loginUrl,
+          email: email,
+          cpf: cpf}),
+        });
+
+
+
+
+
+
+
+
+
     if (!response.ok) {
       const errorData = await response.json();
       logger.error('Failed to send access email', { email, error: errorData });
