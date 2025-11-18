@@ -43,10 +43,10 @@ export const usePixelInitialization = () => {
             lastName: user.user_metadata?.name ? extractNameParts(user.user_metadata.name).lastName : null,
           };
 
-          initializePixelWithUserData('1028226016169295', customerData);
+          initializePixelWithUserData('1335524184734471', customerData);
         } else {
           // Usuário não logado - inicialização padrão
-          initializePixelWithUserData('1028226016169295');
+          initializePixelWithUserData('1335524184734471');
         }
       }
     }, 1000); // Aguardar 1 segundo para garantir que o Pixel esteja carregado
