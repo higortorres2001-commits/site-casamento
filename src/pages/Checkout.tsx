@@ -27,27 +27,6 @@ declare global {
   }
 }
 
-const extractNameParts = (fullName: string | null | undefined): { firstName: string | null; lastName: string | null } => {
-  if (!fullName || typeof fullName !== 'string') {
-    return { firstName: null, lastName: null };
-  }
-  
-  const nameParts = fullName.trim().split(/\s+/);
-  if (nameParts.length === 0) {
-    return { firstName: null, lastName: null };
-  }
-  
-  const firstName = nameParts[0];
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
-  
-  return { firstName, lastName };
-};
-
-const cleanWhatsApp = (whatsapp: string | null | undefined): string | null => {
-  if (!whatsapp) return null;
-  return whatsapp.replace(/\D/g, '');
-};
-
 const Checkout = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
@@ -65,9 +44,7 @@ const Checkout = () => {
   const [asaasPaymentId, setAsaasPaymentId] = useState<string | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
-
-  // 🎯 Estado para controlar se InitiateCheckout já foi disparado via email
-  const [hasTriggeredEmailCheckout, setHasTriggeredEmailCheckout] = useState(false);
+  const [hasTriggeredInitiateCheckout, setHasTriggeredInitiateCheckout] = useState(false);
 
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
@@ -169,10 +146,28 @@ const Checkout = () => {
     setAppliedCoupon(coupon);
   };
 
-  // 🎯 Callback quando email válido for inserido no formulário
-  const handleEmailEntered = (email: string) => {
-    console.log("🎯 Email entered in checkout form:", email);
-    setHasTriggeredEmailCheckout(true);
+  // 🎯 ÚNICO LUGAR onde InitiateCheckout é disparado
+  const handleEmailVerified = (email: string) => {
+    if (hasTriggeredInitiateCheckout || !mainProduct) return;
+
+    console.log("🎯 Triggering InitiateCheckout - Email verified:", email);
+
+    const productIds = [mainProduct.id, ...selectedOrderBumps];
+
+    trackInitiateCheckout(
+      currentTotalPrice,
+      "BRL",
+      productIds,
+      productIds.length,
+      {
+        email: email,
+        phone: null,
+        firstName: null,
+        lastName: null,
+      }
+    );
+
+    setHasTriggeredInitiateCheckout(true);
   };
 
   const handleSubmit = async () => {
@@ -231,7 +226,6 @@ const Checkout = () => {
       });
 
       if (error) {
-        // Verificar se é erro recuperável
         if (error.message?.includes('recuperável') || error.message?.includes('temporário')) {
           showError("Erro temporário. Seus dados foram salvos e entraremos em contato em breve.");
         } else {
@@ -298,10 +292,7 @@ const Checkout = () => {
               ref={checkoutFormRef}
               onSubmit={() => {}}
               isLoading={isSubmitting}
-              mainProduct={mainProduct}
-              selectedOrderBumps={selectedOrderBumps}
-              currentTotalPrice={currentTotalPrice}
-              onEmailEntered={handleEmailEntered}
+              onEmailVerified={handleEmailVerified}
             />
           </div>
 

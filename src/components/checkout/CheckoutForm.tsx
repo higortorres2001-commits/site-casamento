@@ -21,7 +21,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import EmailVerificationModal from "./EmailVerificationModal";
 import { useEmailExistence } from "@/hooks/use-email-existence";
-import { trackInitiateCheckout } from "@/utils/metaPixel";
 
 export interface CheckoutFormRef {
   submitForm: () => Promise<boolean>;
@@ -31,14 +30,14 @@ export interface CheckoutFormRef {
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
   cpf: z.string()
-    .transform(val => val.replace(/[^\d]+/g, '')) // Limpa o CPF, deixando apenas dígitos
-    .refine(val => val.length === 11 && isValidCPF(val), { // Valida o comprimento e a lógica do CPF
+    .transform(val => val.replace(/[^\d]+/g, ''))
+    .refine(val => val.length === 11 && isValidCPF(val), {
       message: "CPF inválido",
     }),
   email: z.string().email("Email inválido").min(1, "O email é obrigatório"),
   whatsapp: z.string()
-    .transform(val => val.replace(/\D/g, '')) // Limpa o WhatsApp, deixando apenas dígitos
-    .refine(val => isValidWhatsapp(val), { // Valida o comprimento (10 ou 11 dígitos)
+    .transform(val => val.replace(/\D/g, ''))
+    .refine(val => isValidWhatsapp(val), {
       message: "Número de WhatsApp inválido",
     }),
 });
@@ -52,27 +51,17 @@ interface CheckoutFormProps {
     email?: string | null;
     whatsapp?: string | null;
   };
-  // Novos props para o evento InitiateCheckout
-  mainProduct?: {
-    id: string;
-    price: number;
-  };
-  selectedOrderBumps?: string[];
-  currentTotalPrice?: number;
-  onEmailEntered?: (email: string) => void; // Callback quando email válido for inserido
+  onEmailVerified?: (email: string) => void;
 }
 
 const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
-  ({ onSubmit, isLoading, initialData, mainProduct, selectedOrderBumps = [], currentTotalPrice = 0, onEmailEntered }, ref) => {
-    // Estados para controle de verificação de email
+  ({ onSubmit, isLoading, initialData, onEmailVerified }, ref) => {
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isExistingUser, setIsExistingUser] = useState(false);
     const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
     const [emailForVerification, setEmailForVerification] = useState("");
     const [isEmailVerified, setIsEmailVerified] = useState(false);
-    const [hasTriggeredInitiateCheckout, setHasTriggeredInitiateCheckout] = useState(false);
     
-    // Hook para verificar existência de email
     const { checkEmailExists, isChecking } = useEmailExistence();
 
     const form = useForm<z.infer<typeof formSchema>>({
@@ -87,7 +76,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
 
     useImperativeHandle(ref, () => ({
       submitForm: async () => {
-        // Se for um usuário existente, verificar se o email foi verificado
         if (isExistingUser && !isEmailVerified) {
           showError("Por favor, verifique seu e-mail antes de continuar.");
           return false;
@@ -97,38 +85,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       getValues: () => form.getValues(),
     }));
 
-    // 🎯 Função para disparar InitiateCheckout quando email válido for inserido
-    const triggerInitiateCheckoutOnEmail = (email: string) => {
-      if (!mainProduct || !window.fbq || hasTriggeredInitiateCheckout) return;
-
-      console.log("🎯 Triggering InitiateCheckout on email entry:", email);
-
-      const customerData = {
-        email: email,
-        phone: null,
-        firstName: null,
-        lastName: null,
-      };
-
-      const productIds = [mainProduct.id, ...selectedOrderBumps];
-
-      trackInitiateCheckout(
-        currentTotalPrice || mainProduct.price,
-        "BRL",
-        productIds,
-        productIds.length,
-        customerData
-      );
-
-      setHasTriggeredInitiateCheckout(true);
-      
-      // Notificar o componente pai se necessário
-      if (onEmailEntered) {
-        onEmailEntered(email);
-      }
-    };
-
-    // Verificar email quando o usuário termina de digitar
     const handleEmailBlur = async () => {
       const email = form.getValues("email");
       if (!email || !email.includes("@") || !z.string().email().safeParse(email).success) {
@@ -136,9 +92,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         setIsEmailVerified(false);
         return;
       }
-      
-      // 🎯 Disparar InitiateCheckout assim que email válido for inserido
-      triggerInitiateCheckoutOnEmail(email);
       
       setIsCheckingEmail(true);
       try {
@@ -154,6 +107,11 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
           setIsExistingUser(false);
           setIsEmailVerified(false);
           showSuccess("Novo cliente! Preencha seus dados abaixo.");
+          
+          // Notificar o componente pai que o email foi verificado (para disparar InitiateCheckout)
+          if (onEmailVerified) {
+            onEmailVerified(email);
+          }
         }
       } catch (error) {
         console.error("Error checking email:", error);
@@ -164,21 +122,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       }
     };
 
-    // 🎯 Também disparar quando o email for alterado e for válido (para casos de digitação rápida)
-    const handleEmailChange = (value: string) => {
-      // Verificar se é um email válido
-      if (value && value.includes("@") && z.string().email().safeParse(value).success) {
-        // Usar setTimeout para evitar múltiplos disparos durante digitação
-        setTimeout(() => {
-          const currentEmail = form.getValues("email");
-          if (currentEmail === value && !hasTriggeredInitiateCheckout) {
-            triggerInitiateCheckoutOnEmail(value);
-          }
-        }, 1000); // Aguardar 1 segundo após parar de digitar
-      }
-    };
-
-    // Iniciar processo de verificação de email
     const handleStartVerification = () => {
       const email = form.getValues("email");
       if (!email || !email.includes("@")) {
@@ -191,21 +134,23 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       setIsVerificationModalOpen(true);
     };
 
-    // Callback quando a verificação é concluída
     const handleVerificationComplete = (userData: { name: string; cpf: string; whatsapp: string }) => {
       console.log("✅ Verification completed with user data:", userData);
       setIsEmailVerified(true);
       setIsVerificationModalOpen(false);
       
-      // 🎯 Preencher o formulário com os dados do usuário e TRAVAR os campos
       form.setValue("name", userData.name);
       form.setValue("cpf", formatCPF(userData.cpf));
       form.setValue("whatsapp", formatWhatsapp(userData.whatsapp));
       
-      // Marcar campos como "touched" para validação
       form.trigger();
       
       showSuccess("E-mail verificado! Seus dados foram preenchidos automaticamente.");
+      
+      // Notificar o componente pai que o email foi verificado (para disparar InitiateCheckout)
+      if (onEmailVerified) {
+        onEmailVerified(form.getValues("email"));
+      }
     };
 
     return (
@@ -237,14 +182,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                       <Input
                         placeholder="seu@email.com"
                         {...field}
-                        onChange={(e) => {
-                          field.onChange(e);
-                          handleEmailChange(e.target.value);
-                        }}
                         onBlur={handleEmailBlur}
                         className="focus:ring-orange-500 focus:border-orange-500 pr-10"
                         type="email"
-                        disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
+                        disabled={isLoading || isEmailVerified}
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
                         {isCheckingEmail || isChecking ? (
@@ -302,7 +243,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           placeholder="Seu nome completo"
                           {...field}
                           className="focus:ring-orange-500 focus:border-orange-500"
-                          disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
+                          disabled={isLoading || isEmailVerified}
                         />
                       </FormControl>
                       <FormMessage />
@@ -328,17 +269,16 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                             field.onChange(formatted);
                           }}
                           onBlur={(e) => {
-                            // Garante que o campo seja formatado corretamente ao perder o foco
                             const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
                             if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
                               field.onChange(formatCPF(cleanedCpf));
                             } else {
-                              field.onChange(e.target.value); // Mantém o valor digitado se for inválido para o usuário corrigir
+                              field.onChange(e.target.value);
                             }
                           }}
                           maxLength={14}
                           className="focus:ring-orange-500 focus:border-orange-500"
-                          disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
+                          disabled={isLoading || isEmailVerified}
                         />
                       </FormControl>
                       <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
@@ -365,7 +305,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           }}
                           maxLength={15}
                           className="focus:ring-orange-500 focus:border-orange-500"
-                          disabled={isLoading || isEmailVerified} // 🎯 Travar após verificação
+                          disabled={isLoading || isEmailVerified}
                         />
                       </FormControl>
                       <FormMessage />
@@ -373,7 +313,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                   )}
                 />
 
-                {/* 🎯 Indicador visual de que os dados estão travados */}
                 {isEmailVerified && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                     <div className="flex items-center gap-2">
@@ -392,7 +331,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
           </form>
         </Form>
 
-        {/* Modal de verificação de e-mail */}
         <EmailVerificationModal
           email={emailForVerification}
           isOpen={isVerificationModalOpen}
