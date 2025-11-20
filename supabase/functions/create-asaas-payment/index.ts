@@ -341,7 +341,7 @@ async function createPixPayment(
       cpfCnpj: cleanCpf,
       phone: cleanPhone,
     },
-    
+    notificationDisabled: true, // <--- notificacao asaas desabilitado
     value: parseFloat(totalPrice.toFixed(2)),
     description: `Pedido #${orderId.substring(0, 8)}`,
     externalReference: orderId,
