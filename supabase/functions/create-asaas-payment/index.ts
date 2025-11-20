@@ -433,6 +433,7 @@ async function createCreditCardPayment(
       cpfCnpj: cleanCpf,
       phone: cleanPhone,
     },
+    notificationDisabled: true,
     value: parseFloat(totalPrice.toFixed(2)),
     description: `Pedido #${orderId.substring(0, 8)}`,
     externalReference: orderId,
