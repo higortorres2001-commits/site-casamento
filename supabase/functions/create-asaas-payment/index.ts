@@ -341,6 +341,7 @@ async function createPixPayment(
       cpfCnpj: cleanCpf,
       phone: cleanPhone,
     },
+    
     value: parseFloat(totalPrice.toFixed(2)),
     description: `Pedido #${orderId.substring(0, 8)}`,
     externalReference: orderId,
