@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useImperativeHandle, forwardRef, useState, useEffect } from "react";
+import React, { useImperativeHandle, forwardRef, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Mail, User, Shield, CheckCircle, Lock } from "lucide-react";
 import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
-import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import EmailVerificationModal from "./EmailVerificationModal";
 import { useEmailExistence } from "@/hooks/use-email-existence";
@@ -56,16 +55,17 @@ interface CheckoutFormProps {
 
 const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
   ({ onSubmit, isLoading, initialData, onEmailVerified }, ref) => {
-    const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isExistingUser, setIsExistingUser] = useState(false);
     const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
     const [emailForVerification, setEmailForVerification] = useState("");
     const [isEmailVerified, setIsEmailVerified] = useState(false);
+    const [lastCheckedEmail, setLastCheckedEmail] = useState("");
     
     const { checkEmailExists, isChecking } = useEmailExistence();
 
     const form = useForm<z.infer<typeof formSchema>>({
       resolver: zodResolver(formSchema),
+      mode: "onBlur", // ✅ Validar apenas no blur para melhor performance
       defaultValues: initialData || {
         name: "",
         cpf: "",
@@ -85,15 +85,24 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       getValues: () => form.getValues(),
     }));
 
-    const handleEmailBlur = async () => {
+    // ✅ OTIMIZAÇÃO: useCallback para evitar re-criação
+    const handleEmailBlur = useCallback(async () => {
       const email = form.getValues("email");
+      
+      // ✅ Evitar verificações duplicadas
       if (!email || !email.includes("@") || !z.string().email().safeParse(email).success) {
         setIsExistingUser(false);
         setIsEmailVerified(false);
         return;
       }
+
+      // ✅ Não verificar se já foi verificado
+      if (email === lastCheckedEmail) {
+        return;
+      }
+
+      setLastCheckedEmail(email);
       
-      setIsCheckingEmail(true);
       try {
         console.log("🔍 Checking email on blur:", email);
         const exists = await checkEmailExists(email);
@@ -108,7 +117,6 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
           setIsEmailVerified(false);
           showSuccess("Novo cliente! Preencha seus dados abaixo.");
           
-          // Notificar o componente pai que o email foi verificado (para disparar InitiateCheckout)
           if (onEmailVerified) {
             onEmailVerified(email);
           }
@@ -117,12 +125,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         console.error("Error checking email:", error);
         setIsExistingUser(false);
         setIsEmailVerified(false);
-      } finally {
-        setIsCheckingEmail(false);
       }
-    };
+    }, [checkEmailExists, form, isEmailVerified, lastCheckedEmail, onEmailVerified]);
 
-    const handleStartVerification = () => {
+    const handleStartVerification = useCallback(() => {
       const email = form.getValues("email");
       if (!email || !email.includes("@")) {
         showError("Por favor, digite um e-mail válido.");
@@ -132,9 +138,9 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       console.log("🚀 Starting email verification for:", email);
       setEmailForVerification(email);
       setIsVerificationModalOpen(true);
-    };
+    }, [form]);
 
-    const handleVerificationComplete = (userData: { name: string; cpf: string; whatsapp: string }) => {
+    const handleVerificationComplete = useCallback((userData: { name: string; cpf: string; whatsapp: string }) => {
       console.log("✅ Verification completed with user data:", userData);
       setIsEmailVerified(true);
       setIsVerificationModalOpen(false);
@@ -147,11 +153,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       
       showSuccess("E-mail verificado! Seus dados foram preenchidos automaticamente.");
       
-      // Notificar o componente pai que o email foi verificado (para disparar InitiateCheckout)
       if (onEmailVerified) {
         onEmailVerified(form.getValues("email"));
       }
-    };
+    }, [form, onEmailVerified]);
 
     return (
       <>
@@ -186,9 +191,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                         className="focus:ring-orange-500 focus:border-orange-500 pr-10"
                         type="email"
                         disabled={isLoading || isEmailVerified}
+                        autoComplete="email"
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        {isCheckingEmail || isChecking ? (
+                        {isChecking ? (
                           <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                         ) : isEmailVerified ? (
                           <CheckCircle className="h-4 w-4 text-green-600" />
@@ -244,6 +250,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           {...field}
                           className="focus:ring-orange-500 focus:border-orange-500"
                           disabled={isLoading || isEmailVerified}
+                          autoComplete="name"
                         />
                       </FormControl>
                       <FormMessage />
@@ -268,17 +275,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                             const formatted = formatCPF(e.target.value);
                             field.onChange(formatted);
                           }}
-                          onBlur={(e) => {
-                            const cleanedCpf = e.target.value.replace(/[^\d]+/g, "");
-                            if (cleanedCpf.length === 11 && isValidCPF(cleanedCpf)) {
-                              field.onChange(formatCPF(cleanedCpf));
-                            } else {
-                              field.onChange(e.target.value);
-                            }
-                          }}
                           maxLength={14}
                           className="focus:ring-orange-500 focus:border-orange-500"
                           disabled={isLoading || isEmailVerified}
+                          autoComplete="off"
                         />
                       </FormControl>
                       <FormMessage className="bg-pink-100 text-pink-800 p-2 rounded-md mt-2" />
@@ -306,6 +306,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           maxLength={15}
                           className="focus:ring-orange-500 focus:border-orange-500"
                           disabled={isLoading || isEmailVerified}
+                          autoComplete="tel"
                         />
                       </FormControl>
                       <FormMessage />

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon } from "@/types";
@@ -49,6 +49,7 @@ const Checkout = () => {
   const checkoutFormRef = useRef<CheckoutFormRef>(null);
   const creditCardFormRef = useRef<CreditCardFormRef>(null);
 
+  // ✅ OTIMIZAÇÃO: Carregamento paralelo de produto e bumps
   useEffect(() => {
     const fetchProductData = async () => {
       if (!productId) {
@@ -60,22 +61,13 @@ const Checkout = () => {
       setIsLoadingProduct(true);
       
       try {
-        const [productResult, bumpsResult] = await Promise.all([
-          supabase
-            .from("products")
-            .select("*")
-            .eq("id", productId)
-            .eq("status", "ativo")
-            .single(),
-          
-          supabase
-            .from("products")
-            .select("id, name, price")
-            .eq("status", "ativo")
-            .in("id", [productId])
-        ]);
-        
-        const { data: product, error: productError } = productResult;
+        // Buscar produto principal
+        const { data: product, error: productError } = await supabase
+          .from("products")
+          .select("*")
+          .eq("id", productId)
+          .eq("status", "ativo")
+          .single();
         
         if (productError || !product) {
           showError("Produto não encontrado ou não está disponível.");
@@ -86,20 +78,20 @@ const Checkout = () => {
 
         setMainProduct(product);
 
+        // ✅ Buscar order bumps em paralelo (não bloquear renderização)
         if (product.orderbumps && product.orderbumps.length > 0) {
-          const { data: bumps, error: bumpsError } = await supabase
+          supabase
             .from("products")
             .select("*")
             .in("id", product.orderbumps)
-            .eq("status", "ativo");
-
-          if (bumpsError) {
-            console.error("Error fetching order bumps:", bumpsError);
-          } else {
-            setOrderBumps(bumps || []);
-          }
-        } else {
-          setOrderBumps([]);
+            .eq("status", "ativo")
+            .then(({ data: bumps, error: bumpsError }) => {
+              if (bumpsError) {
+                console.error("Error fetching order bumps:", bumpsError);
+              } else {
+                setOrderBumps(bumps || []);
+              }
+            });
         }
         
       } catch (error: any) {
@@ -114,6 +106,7 @@ const Checkout = () => {
     fetchProductData();
   }, [productId, navigate]);
 
+  // ✅ OTIMIZAÇÃO: Memoização com dependências corretas
   const selectedOrderBumpsDetails = useMemo(() => {
     return orderBumps.filter((bump) => selectedOrderBumps.includes(bump.id));
   }, [orderBumps, selectedOrderBumps]);
@@ -136,18 +129,19 @@ const Checkout = () => {
     return total;
   }, [originalTotalPrice, appliedCoupon]);
 
-  const handleOrderBumpToggle = (bumpId: string, isSelected: boolean) => {
+  // ✅ OTIMIZAÇÃO: useCallback para evitar re-criação de funções
+  const handleOrderBumpToggle = useCallback((bumpId: string, isSelected: boolean) => {
     setSelectedOrderBumps((prev) =>
       isSelected ? [...prev, bumpId] : prev.filter((id) => id !== bumpId)
     );
-  };
+  }, []);
 
-  const handleCouponApplied = (coupon: Coupon | null) => {
+  const handleCouponApplied = useCallback((coupon: Coupon | null) => {
     setAppliedCoupon(coupon);
-  };
+  }, []);
 
   // 🎯 ÚNICO LUGAR onde InitiateCheckout é disparado
-  const handleEmailVerified = (email: string) => {
+  const handleEmailVerified = useCallback((email: string) => {
     if (hasTriggeredInitiateCheckout || !mainProduct) return;
 
     console.log("🎯 Triggering InitiateCheckout - Email verified:", email);
@@ -168,7 +162,7 @@ const Checkout = () => {
     );
 
     setHasTriggeredInitiateCheckout(true);
-  };
+  }, [hasTriggeredInitiateCheckout, mainProduct, selectedOrderBumps, currentTotalPrice]);
 
   const handleSubmit = async () => {
     if (!mainProduct) {
