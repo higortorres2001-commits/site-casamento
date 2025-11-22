@@ -12,20 +12,35 @@ interface FixedBottomBarProps {
 
 const FixedBottomBar = ({ totalPrice, isSubmitting, onSubmit }: FixedBottomBarProps) => {
   return (
-    <div className="fixed bottom-0 left-0 w-full bg-white shadow-top p-4 border-t border-gray-200 z-50">
-      <div className="max-w-md mx-auto flex flex-col gap-3">
-        <div className="flex justify-between items-center">
-          <span className="text-xl font-bold text-gray-900">Total:</span> {/* Increased font size */}
-          <span className="text-2xl text-gray-500">R$ {totalPrice.toFixed(2)}</span> {/* Ajustado: cinza claro, sem negrito, menor */}
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-[9999] safe-area-inset-bottom">
+      {/* Gradiente sutil para indicar que há conteúdo acima */}
+      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-b from-gray-100/50 to-transparent pointer-events-none"></div>
+      
+      <div className="container mx-auto max-w-2xl px-4 py-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Total Price */}
+          <div className="flex justify-between items-center sm:flex-col sm:items-start">
+            <span className="text-lg font-bold text-gray-900">Total:</span>
+            <span className="text-2xl font-semibold text-orange-600">R$ {totalPrice.toFixed(2)}</span>
+          </div>
+          
+          {/* Submit Button */}
+          <Button
+            type="submit"
+            className="w-full sm:w-auto sm:min-w-[200px] bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-lg py-3 px-6 text-lg font-semibold transition-all duration-200 hover:shadow-xl disabled:opacity-50"
+            disabled={isSubmitting}
+            onClick={onSubmit}
+          >
+            {isSubmitting ? (
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Processando...</span>
+              </div>
+            ) : (
+              "Finalizar Compra"
+            )}
+          </Button>
         </div>
-        <Button
-          type="submit"
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-md py-3 text-lg"
-          disabled={isSubmitting}
-          onClick={onSubmit}
-        >
-          {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Finalizar Compra Agora"}
-        </Button>
       </div>
     </div>
   );

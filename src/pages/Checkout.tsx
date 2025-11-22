@@ -282,8 +282,8 @@ const Checkout = () => {
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <CheckoutHeader backUrl={mainProduct.checkout_return_url || undefined} />
 
-      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-2xl pb-32">
-        <div className="space-y-6">
+      <main className="flex-1 container mx-auto p-4 md:p-8 max-w-2xl">
+        <div className="space-y-6 pb-6">
           <MainProductDisplayCard product={mainProduct} />
 
           <div className="bg-white rounded-xl shadow-lg p-6">
@@ -387,6 +387,9 @@ const Checkout = () => {
               Estamos aqui para ajudar!
             </p>
           </div>
+
+          {/* Espaçamento extra para a barra fixa no mobile */}
+          <div className="h-24 md:h-16"></div>
         </div>
       </main>
 

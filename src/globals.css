@@ -99,3 +99,24 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Safe area support for mobile devices */
+@supports (padding: max(0px)) {
+  .safe-area-inset-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Prevent body scroll when modals are open */
+.modal-open {
+  overflow: hidden;
+}
+
+/* Improve fixed positioning on mobile Safari */
+@supports (-webkit-touch-callout: none) {
+  .fixed-bottom-mobile {
+    position: -webkit-sticky;
+    position: sticky;
+    bottom: 0;
+  }
+}
