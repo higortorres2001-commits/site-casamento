@@ -192,7 +192,7 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
       </CardContent>
     </Card>
   );
-});
+};
 
 CouponInputCard.displayName = "CouponInputCard";
 
