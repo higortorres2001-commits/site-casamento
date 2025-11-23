@@ -1,10 +1,10 @@
 "use client";
 
-import React, { memo } from "react";
-import { Card } from "@/components/ui/card";
+import React from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Product } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"; // Import cn for conditional class names
 
 interface OrderBumpCardProps {
   product: Product;
@@ -12,7 +12,7 @@ interface OrderBumpCardProps {
   onToggle: (productId: string, isSelected: boolean) => void;
 }
 
-const OrderBumpCard = memo(({ product, isSelected, onToggle }: OrderBumpCardProps) => {
+const OrderBumpCard = ({ product, isSelected, onToggle }: OrderBumpCardProps) => {
   return (
     <Card
       className={cn(
@@ -21,9 +21,12 @@ const OrderBumpCard = memo(({ product, isSelected, onToggle }: OrderBumpCardProp
       )}
       onClick={() => onToggle(product.id, !isSelected)}
     >
+      {/* Optional: Image of the bump */}
+      {/* <img src={product.imageUrl} alt={product.name} className="w-16 h-16 object-cover rounded-md" /> */}
       <Checkbox
         id={`order-bump-${product.id}`}
         checked={isSelected}
+        // Prevent event bubbling from checkbox click to card click
         onCheckedChange={(checked) => onToggle(product.id, checked as boolean)}
         className="h-6 w-6 border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
       />
@@ -32,8 +35,8 @@ const OrderBumpCard = memo(({ product, isSelected, onToggle }: OrderBumpCardProp
         className="flex-1 text-base font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
       >
         <div className="flex justify-between items-center">
-          <span className="text-base text-gray-800">Adicionar {product.name} por apenas</span>
-          <span className="font-normal text-gray-700 text-sm">R$ {product.price.toFixed(2)}</span>
+          <span className="text-base text-gray-800">Adicionar {product.name} por apenas</span> {/* Adjusted font size */}
+          <span className="font-normal text-gray-700 text-sm">R$ {product.price.toFixed(2)}</span> {/* Adjusted font size */}
         </div>
         {product.description && (
           <p className="text-sm text-gray-500 mt-1">{product.description}</p>
@@ -41,12 +44,6 @@ const OrderBumpCard = memo(({ product, isSelected, onToggle }: OrderBumpCardProp
       </label>
     </Card>
   );
-}, (prevProps, nextProps) => {
-  // ✅ OTIMIZAÇÃO: Re-render apenas se isSelected mudar
-  return prevProps.isSelected === nextProps.isSelected && 
-         prevProps.product.id === nextProps.product.id;
-});
-
-OrderBumpCard.displayName = "OrderBumpCard";
+};
 
 export default OrderBumpCard;

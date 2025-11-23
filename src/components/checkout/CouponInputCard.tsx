@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
 import { Coupon } from "@/types";
-import { Loader2, Tag, X } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, Tag, X } from "lucide-react";
 
 interface CouponInputCardProps {
   onCouponApplied: (coupon: Coupon | null) => void;
@@ -19,68 +19,49 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // ✅ OTIMIZAÇÃO: useCallback para evitar re-criação
-  const handleApplyCoupon = useCallback(async () => {
+  const handleApplyCoupon = async () => {
     console.log("🎯 CouponInputCard - Aplicando cupom:", couponCode.trim());
     
-    const trimmedCode = couponCode.trim().toUpperCase();
-    
-    if (!trimmedCode) {
+    if (!couponCode.trim()) {
       showError("Por favor, insira um código de cupom.");
       return;
     }
 
     setIsLoading(true);
-    
-    try {
-      const { data, error } = await supabase
-        .from("coupons")
-        .select("*")
-        .eq("code", trimmedCode)
-        .eq("active", true)
-        .single();
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("*")
+      .eq("code", couponCode.trim())
+      .eq("active", true)
+      .single();
 
-      if (error || !data) {
-        console.log("❌ Cupom inválido:", error);
-        showError("Cupom inválido ou inativo.");
-        onCouponApplied(null);
-        console.log("🔄 Cupom removido do estado pai");
-      } else {
-        console.log("✅ Cupom válido encontrado:", data);
-        showSuccess("Cupom aplicado com sucesso!");
-        onCouponApplied(data);
-        console.log("🔄 Cupom aplicado no estado pai:", data);
-        setCouponCode("");
-        setIsExpanded(false); // ✅ Colapsar após aplicar
-      }
-    } catch (err: any) {
-      console.error("Erro ao aplicar cupom:", err);
-      showError("Erro ao validar cupom.");
-    } finally {
-      setIsLoading(false);
+    if (error || !data) {
+      console.log("❌ Cupom inválido:", error);
+      showError("Cupom inválido ou inativo.");
+      onCouponApplied(null); // Clear any previously applied coupon
+      console.log("🔄 Cupom removido do estado pai");
+    } else {
+      console.log("✅ Cupom válido encontrado:", data);
+      showSuccess("Cupom aplicado com sucesso!");
+      onCouponApplied(data); // ✅ PASSANDO O CUPOM VÁLIDO
+      console.log("🔄 Cupom aplicado no estado pai:", data);
+      setCouponCode(""); // Clear input after successful application
     }
-  }, [couponCode, onCouponApplied]);
+    setIsLoading(false);
+  };
 
-  const handleRemoveCoupon = useCallback(() => {
+  const handleRemoveCoupon = () => {
     console.log("🗑️ CouponInputCard - Removendo cupom");
     onCouponApplied(null);
-    setCouponCode("");
-    setIsExpanded(false);
+    setCouponCode(""); // Clear input when removing coupon
+    setIsExpanded(false); // Collapse when removing coupon
     console.log("🔄 Cupom removido do estado pai");
-  }, [onCouponApplied]);
+  };
 
-  const handleToggleExpanded = useCallback(() => {
+  const handleToggleExpanded = () => {
     console.log("🔄 CouponInputCard - Toggle expanded:", !isExpanded);
     setIsExpanded(!isExpanded);
-  }, [isExpanded]);
-
-  // ✅ Enter key para aplicar cupom
-  const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && couponCode.trim()) {
-      e.preventDefault();
-      handleApplyCoupon();
-    }
-  }, [couponCode, handleApplyCoupon]);
+  };
 
   // Se há um cupom aplicado, mostra o cupom aplicado
   if (appliedCoupon) {
@@ -161,7 +142,7 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
             onClick={handleToggleExpanded}
             className="text-gray-500 hover:text-gray-700"
           >
-            <X className="h-4 w-4" />
+            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </div>
       </CardHeader>
@@ -169,13 +150,11 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
         <div className="flex gap-2">
           <Input
             placeholder="Digite seu cupom"
-            className="flex-1 rounded-lg border-gray-300 focus:ring-orange-500 focus:border-orange-500 uppercase"
+            className="flex-1 rounded-lg border-gray-300 focus:ring-orange-500 focus:border-orange-500"
             value={couponCode}
-            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-            onKeyPress={handleKeyPress}
+            onChange={(e) => setCouponCode(e.target.value)}
             disabled={isLoading}
-            autoFocus
-            maxLength={20}
+            autoFocus // Auto focus when expanded
           />
           <Button
             variant="secondary"
@@ -187,13 +166,11 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
           </Button>
         </div>
         <p className="text-xs text-gray-500">
-          Digite o código e pressione Enter ou clique em aplicar.
+          Digite o código e clique em aplicar para validar seu desconto.
         </p>
       </CardContent>
     </Card>
   );
 };
-
-CouponInputCard.displayName = "CouponInputCard";
 
 export default CouponInputCard;
