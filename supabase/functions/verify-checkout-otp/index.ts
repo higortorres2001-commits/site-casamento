@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -53,7 +52,7 @@ serve(async (req) => {
         level: 'error',
         context: 'checkout-otp-verify',
         message: 'OTP verification failed',
-        metadata: { 
+        metadata: {
           email: cleanEmail,
           error: error.message,
           errorType: error.name
@@ -91,7 +90,7 @@ serve(async (req) => {
         level: 'error',
         context: 'checkout-otp-verify',
         message: 'Failed to fetch user profile after OTP verification',
-        metadata: { 
+        metadata: {
           email: cleanEmail,
           userId: data.user.id,
           error: profileError?.message
@@ -107,13 +106,13 @@ serve(async (req) => {
       level: 'info',
       context: 'checkout-otp-verify',
       message: 'OTP verified successfully for checkout',
-      metadata: { 
+      metadata: {
         email: cleanEmail,
         userId: data.user.id
       }
     });
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
       userData: {
         name: profile.name || "",
@@ -131,7 +130,7 @@ serve(async (req) => {
       level: 'error',
       context: 'checkout-otp-verify',
       message: 'Unexpected error verifying OTP',
-      metadata: { 
+      metadata: {
         error: error.message,
         errorStack: error.stack
       }

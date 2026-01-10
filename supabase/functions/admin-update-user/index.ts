@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -32,7 +31,7 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid authentication token' }), {
         status: 401,
@@ -54,13 +53,13 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-update-user-unauthorized',
         message: 'Non-admin user attempted to update user',
-        metadata: { 
+        metadata: {
           adminUserId,
           error: adminProfileError?.message,
           isAdmin: adminProfile?.is_admin
         }
       });
-      
+
       return new Response(JSON.stringify({ error: 'Unauthorized: Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -84,7 +83,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-update-user-start',
       message: 'Admin started user update process',
-      metadata: { 
+      metadata: {
         adminUserId,
         userIdToUpdate,
         requestedChanges: { name, email, access, isAdmin: targetIsAdmin }
@@ -103,13 +102,13 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-update-user-not-found',
         message: 'Target user not found',
-        metadata: { 
+        metadata: {
           adminUserId,
           userIdToUpdate,
           error: currentUserError?.message
         }
       });
-      
+
       return new Response(JSON.stringify({ error: 'User not found' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -133,7 +132,7 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-update-user-profile-error',
         message: 'Failed to update user profile',
-        metadata: { 
+        metadata: {
           adminUserId,
           userIdToUpdate,
           error: profileUpdateError.message,
@@ -141,7 +140,7 @@ serve(async (req) => {
           errorCode: profileUpdateError.code
         }
       });
-      
+
       return new Response(JSON.stringify({ error: 'Failed to update user profile: ' + profileUpdateError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -152,7 +151,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-update-user-profile-success',
       message: 'User profile updated successfully',
-      metadata: { 
+      metadata: {
         adminUserId,
         userIdToUpdate,
         previousData: currentUserData,
@@ -162,7 +161,7 @@ serve(async (req) => {
 
     // 6. Update auth email if it changed
     let authUpdateResult = { success: true, message: 'Profile updated successfully' };
-    
+
     if (email && email.toLowerCase().trim() !== currentUserData.email?.toLowerCase()) {
       try {
         const { error: authUpdateError } = await supabase.auth.admin.updateUserById(
@@ -175,7 +174,7 @@ serve(async (req) => {
             level: 'error',
             context: 'admin-update-user-auth-error',
             message: 'Failed to update auth email',
-            metadata: { 
+            metadata: {
               adminUserId,
               userIdToUpdate,
               oldEmail: currentUserData.email,
@@ -184,7 +183,7 @@ serve(async (req) => {
               errorType: authUpdateError.name
             }
           });
-          
+
           authUpdateResult = {
             success: false,
             message: 'Profile saved, but email could not be updated: ' + authUpdateError.message
@@ -194,7 +193,7 @@ serve(async (req) => {
             level: 'info',
             context: 'admin-update-user-auth-success',
             message: 'Auth email updated successfully',
-            metadata: { 
+            metadata: {
               adminUserId,
               userIdToUpdate,
               oldEmail: currentUserData.email,
@@ -207,14 +206,14 @@ serve(async (req) => {
           level: 'error',
           context: 'admin-update-user-auth-exception',
           message: 'Exception updating auth email',
-          metadata: { 
+          metadata: {
             adminUserId,
             userIdToUpdate,
             error: authError.message,
             errorStack: authError.stack
           }
         });
-        
+
         authUpdateResult = {
           success: false,
           message: 'Profile saved, but email update failed due to an unexpected error'
@@ -227,7 +226,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-update-user-complete',
       message: 'Admin user update process completed',
-      metadata: { 
+      metadata: {
         adminUserId,
         userIdToUpdate,
         authUpdateSuccess: authUpdateResult.success
@@ -260,7 +259,7 @@ serve(async (req) => {
         }
       }
     });
-    
+
     return new Response(JSON.stringify({ error: 'Unexpected error: ' + error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

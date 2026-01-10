@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -37,7 +36,7 @@ serve(async (req) => {
 
     // Verificar se o usuário existe
     const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
-    
+
     if (authError) {
       console.error('Error listing users:', authError);
       return new Response(JSON.stringify({ error: 'Failed to check user existence' }), {
@@ -77,7 +76,7 @@ serve(async (req) => {
         level: 'error',
         context: 'checkout-otp-send',
         message: 'Failed to send OTP',
-        metadata: { 
+        metadata: {
           email: cleanEmail,
           error: otpError.message,
           errorType: otpError.name
@@ -96,7 +95,7 @@ serve(async (req) => {
       metadata: { email: cleanEmail }
     });
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
       message: 'Código enviado com sucesso'
     }), {
@@ -110,7 +109,7 @@ serve(async (req) => {
       level: 'error',
       context: 'checkout-otp-send',
       message: 'Unexpected error sending OTP',
-      metadata: { 
+      metadata: {
         error: error.message,
         errorStack: error.stack
       }

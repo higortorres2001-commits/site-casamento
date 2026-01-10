@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 // Interface para o resultado do pagamento
 interface PaymentResult {
@@ -122,7 +118,7 @@ async function createOrUpdateUser(
 
   if (existingAuthUser) {
     userId = existingAuthUser.id;
-    
+
     // Atualizar perfil existente (UPSERT garante que não falha se não existir)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
@@ -236,7 +232,7 @@ async function updateOrderStatus(
   asaasPaymentId?: string
 ): Promise<void> {
   const updateData: any = { status };
-  
+
   if (asaasPaymentId) {
     updateData.asaas_payment_id = asaasPaymentId;
   }
@@ -332,7 +328,7 @@ async function createPixPayment(
   // Limpar dados do cliente
   const cleanCpf = customerData.cpf.replace(/\D/g, '');
   const cleanPhone = customerData.whatsapp.replace(/\D/g, '');
-  
+
   // ✅ FORMATO CORRETO: Enviar customer como objeto
   const asaasPayload = {
     customer: {
@@ -424,7 +420,7 @@ async function createCreditCardPayment(
   // Limpar dados do cliente
   const cleanCpf = customerData.cpf.replace(/\D/g, '');
   const cleanPhone = customerData.whatsapp.replace(/\D/g, '');
-  
+
   // ✅ FORMATO CORRETO: Enviar customer como objeto
   const asaasPayload: any = {
     customer: {
@@ -492,6 +488,9 @@ async function createCreditCardPayment(
 }
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -502,14 +501,14 @@ serve(async (req) => {
   );
 
   const logger = new Logger(supabase, 'create-payment');
-  
+
   let requestBody: any;
   let userId: string | undefined;
   let orderId: string | undefined;
 
   try {
     requestBody = await req.json();
-    
+
     logger.info('Payment creation started', {
       paymentMethod: requestBody.paymentMethod,
       productCount: requestBody.productIds?.length || 0,
@@ -679,7 +678,7 @@ serve(async (req) => {
       MANUAL_RECOVERY_REQUIRED: true
     });
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       error: error.message,
       orderId: orderId || null,
       userId: userId || null,

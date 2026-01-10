@@ -1,17 +1,13 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 // Função de fallback para calcular parcelas manualmente
 function calculateInstallmentsFallback(totalPrice: number) {
   const installments = [];
   const MAX_INSTALLMENTS = 6;
   const MIN_INSTALLMENT_VALUE = 6.00;
-  
+
   // Taxas de juros por parcela (ajuste conforme necessário)
   const interestRates: Record<number, number> = {
     1: 0,      // À vista sem juros
@@ -50,6 +46,9 @@ function calculateInstallmentsFallback(totalPrice: number) {
 }
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -97,7 +96,7 @@ serve(async (req) => {
       message: `Erro não tratado: ${error.message}`,
       metadata: { errorStack: error.stack }
     });
-    
+
     // Mesmo em caso de erro, retornar parcelas usando fallback
     try {
       const { totalPrice } = await req.json();
@@ -108,8 +107,8 @@ serve(async (req) => {
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-    } catch {}
-    
+    } catch { }
+
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

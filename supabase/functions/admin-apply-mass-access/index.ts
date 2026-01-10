@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -31,7 +30,7 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid authentication token' }), {
         status: 401,
@@ -53,13 +52,13 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-apply-mass-access-unauthorized',
         message: 'Non-admin user attempted to apply mass access',
-        metadata: { 
+        metadata: {
           adminUserId,
           error: adminProfileError?.message,
           isAdmin: adminProfile?.is_admin
         }
       });
-      
+
       return new Response(JSON.stringify({ error: 'Unauthorized: Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -88,7 +87,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-apply-mass-access-start',
       message: 'Admin started mass access application',
-      metadata: { 
+      metadata: {
         adminUserId,
         productIdsCount: productIds.length,
         customerIdsCount: customerIds.length
@@ -106,7 +105,7 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-apply-mass-access-profiles-error',
         message: 'Failed to fetch user profiles',
-        metadata: { 
+        metadata: {
           adminUserId,
           customerIds,
           error: profilesError.message,
@@ -124,7 +123,7 @@ serve(async (req) => {
         level: 'warning',
         context: 'admin-apply-mass-access-no-profiles',
         message: 'No profiles found for the provided customer IDs',
-        metadata: { 
+        metadata: {
           adminUserId,
           customerIds
         }
@@ -139,7 +138,7 @@ serve(async (req) => {
     const updates = profiles.map(profile => {
       const currentAccess = Array.isArray(profile.access) ? profile.access : [];
       const newAccess = [...new Set([...currentAccess, ...productIds])];
-      
+
       return {
         id: profile.id,
         access: newAccess,
@@ -157,7 +156,7 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-apply-mass-access-update-error',
         message: 'Failed to update user profiles with mass access',
-        metadata: { 
+        metadata: {
           adminUserId,
           updatesCount: updates.length,
           error: updateError.message,
@@ -174,7 +173,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-apply-mass-access-success',
       message: 'Mass access applied successfully',
-      metadata: { 
+      metadata: {
         adminUserId,
         updatedProfilesCount: updates.length,
         productIdsCount: productIds.length,
@@ -202,7 +201,7 @@ serve(async (req) => {
         requestBody
       }
     });
-    
+
     return new Response(JSON.stringify({ error: 'Unexpected error: ' + error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -11,7 +11,9 @@ import { Product, ProductAsset } from "@/types";
 import ProductDetailsTab from "./ProductDetailsTab";
 import ProductOrderBumpsTab from "./ProductOrderBumpsTab";
 import ProductAssetsTab from "./ProductAssetsTab";
+import ProductKitTab from "./ProductKitTab";
 import { Form } from "@/components/ui/form";
+import { Package } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "O nome é obrigatório"),
@@ -24,6 +26,10 @@ const formSchema = z.object({
   internal_tag: z.string().optional(),
   checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
   also_buy: z.boolean().default(false),
+  // Kit fields
+  is_kit: z.boolean().default(false),
+  kit_product_ids: z.array(z.string()).optional(),
+  kit_original_value: z.coerce.number().optional().nullable(),
 });
 
 interface ProductEditTabsProps {
@@ -49,32 +55,38 @@ const ProductEditTabs = ({
     resolver: zodResolver(formSchema),
     defaultValues: initialData
       ? {
-          ...initialData,
-          orderbumps: initialData.orderbumps || [],
-          image_url: initialData.image_url || "",
-          status: initialData.status || "draft",
-          internal_tag: (initialData as any).internal_tag ?? "",
-          checkout_return_url: initialData.checkout_return_url || "",
-          also_buy: (initialData as any).also_buy ?? false,
-        }
+        ...initialData,
+        orderbumps: initialData.orderbumps || [],
+        image_url: initialData.image_url || "",
+        status: initialData.status || "draft",
+        internal_tag: (initialData as any).internal_tag ?? "",
+        checkout_return_url: initialData.checkout_return_url || "",
+        also_buy: (initialData as any).also_buy ?? false,
+        is_kit: (initialData as any).is_kit ?? false,
+        kit_product_ids: (initialData as any).kit_product_ids ?? [],
+      }
       : {
-          name: "",
-          price: 0,
-          description: "",
-          memberareaurl: "",
-          orderbumps: [],
-          image_url: "",
-          status: "draft",
-          internal_tag: "",
-          checkout_return_url: "",
-          also_buy: false,
-        },
+        name: "",
+        price: 0,
+        description: "",
+        memberareaurl: "",
+        orderbumps: [],
+        image_url: "",
+        status: "draft",
+        internal_tag: "",
+        checkout_return_url: "",
+        also_buy: false,
+        is_kit: false,
+        kit_product_ids: [],
+      },
   });
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletedAssetIds, setDeletedAssetIds] = useState<string[]>([]);
   const [currentAssets, setCurrentAssets] = useState<ProductAsset[]>(initialData?.assets || []);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+
+  const isKit = form.watch("is_kit");
 
   useEffect(() => {
     if (initialData) {
@@ -86,6 +98,8 @@ const ProductEditTabs = ({
         internal_tag: (initialData as any).internal_tag ?? "",
         checkout_return_url: initialData.checkout_return_url || "",
         also_buy: (initialData as any).also_buy ?? false,
+        is_kit: (initialData as any).is_kit ?? false,
+        kit_product_ids: (initialData as any).kit_product_ids ?? [],
       });
       setCurrentAssets(initialData.assets || []);
       setDeletedAssetIds([]);
@@ -102,6 +116,8 @@ const ProductEditTabs = ({
         internal_tag: "",
         checkout_return_url: "",
         also_buy: false,
+        is_kit: false,
+        kit_product_ids: [],
       });
       setCurrentAssets([]);
       setDeletedAssetIds([]);
@@ -125,21 +141,30 @@ const ProductEditTabs = ({
   };
 
   const handleFormSubmit = (data: z.infer<typeof formSchema>) => {
-    // Log para debug do also_buy
     console.log("ProductEditTabs - Form data before submit:", data);
-    console.log("ProductEditTabs - also_buy value:", data.also_buy);
-    
+    console.log("ProductEditTabs - is_kit value:", data.is_kit);
+    console.log("ProductEditTabs - kit_product_ids:", data.kit_product_ids);
+
     onSubmit(data, selectedFiles, deletedAssetIds, selectedImageFile, initialData?.image_url ?? null);
   };
 
   return (
     <div className="flex flex-col">
       <Tabs defaultValue="details" className="flex flex-col">
-        <TabsList className="grid w-full grid-cols-3 sticky top-0 z-20 bg-white border-b p-2">
-          <TabsTrigger value="details">Detalhes do Produto</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4 sticky top-0 z-20 bg-white border-b p-2">
+          <TabsTrigger value="details">Detalhes</TabsTrigger>
+          <TabsTrigger value="kit" className="flex items-center gap-1">
+            <Package className="h-3 w-3" />
+            Kit
+            {isKit && (
+              <span className="ml-1 bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                ✓
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="order-bumps">Order Bumps</TabsTrigger>
-          <TabsTrigger value="files" disabled={!!initialData}>
-            Arquivos (PDFs)
+          <TabsTrigger value="files" disabled={!initialData}>
+            PDFs
           </TabsTrigger>
         </TabsList>
 
@@ -152,6 +177,14 @@ const ProductEditTabs = ({
                   isLoading={isLoading}
                   onImageFileChange={handleImageFileChange}
                   initialImageUrl={initialData?.image_url}
+                />
+              </TabsContent>
+
+              <TabsContent value="kit">
+                <ProductKitTab
+                  form={form}
+                  isLoading={isLoading}
+                  currentProductId={initialData?.id}
                 />
               </TabsContent>
 

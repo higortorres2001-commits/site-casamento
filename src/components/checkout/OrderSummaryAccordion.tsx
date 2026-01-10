@@ -7,8 +7,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { Product, Coupon } from "@/types";
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Package } from 'lucide-react';
 import CouponInputCard from "./CouponInputCard";
 
 interface OrderSummaryAccordionProps {
@@ -17,7 +18,7 @@ interface OrderSummaryAccordionProps {
   originalTotalPrice: number;
   currentTotalPrice: number;
   appliedCoupon: Coupon | null;
-  onCouponApplied: (coupon: Coupon | null) => void; // ✅ ADICIONADO
+  onCouponApplied: (coupon: Coupon | null) => void;
 }
 
 const OrderSummaryAccordion = ({
@@ -26,9 +27,15 @@ const OrderSummaryAccordion = ({
   originalTotalPrice,
   currentTotalPrice,
   appliedCoupon,
-  onCouponApplied, // ✅ ADICIONADO
+  onCouponApplied,
 }: OrderSummaryAccordionProps) => {
   const discountAmount = originalTotalPrice - currentTotalPrice;
+
+  // Kit info com validações defensivas - funciona mesmo sem os campos do banco
+  const isKit = Boolean((mainProduct as any)?.is_kit);
+  const kitOriginalValue = Number((mainProduct as any)?.kit_original_value) || 0;
+  const productPrice = Number(mainProduct?.price) || 0;
+  const hasKitSavings = isKit && kitOriginalValue > 0 && kitOriginalValue > productPrice;
 
   console.log("🎯 OrderSummary - Cupom aplicado:", appliedCoupon);
   console.log("🎯 OrderSummary - Desconto calculado:", discountAmount);
@@ -38,14 +45,34 @@ const OrderSummaryAccordion = ({
       <AccordionItem value="item-1" className="border-none">
         <div className="bg-blue-100 rounded-xl shadow-md">
           <AccordionTrigger className="flex justify-between items-center p-4 text-xl font-bold text-gray-800 hover:no-underline">
-            <span>Resumo do Pedido</span>
-            {/* Removido o preço e o ícone ChevronDown daqui, o ícone padrão do AccordionTrigger será mantido */}
+            <div className="flex items-center gap-2">
+              <span>Resumo do Pedido</span>
+              {isKit && (
+                <Badge className="bg-purple-100 text-purple-800 border-purple-200 flex items-center gap-1">
+                  <Package className="h-3 w-3" />
+                  Kit
+                </Badge>
+              )}
+            </div>
           </AccordionTrigger>
           <AccordionContent className="p-4 border-t border-blue-200 bg-white rounded-b-xl">
             <div className="space-y-3">
-              <div className="flex justify-between items-center text-gray-700 text-base">
+              <div className="flex justify-between items-start text-gray-700 text-base">
                 <span>{mainProduct.name}</span>
-                <span className="font-normal text-gray-600 text-sm">R$ {mainProduct.price.toFixed(2)}</span>
+                <div className="text-right">
+                  {hasKitSavings ? (
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs text-gray-400 line-through">
+                        de R$ {kitOriginalValue.toFixed(2)}
+                      </span>
+                      <span className="font-semibold text-green-600">
+                        por R$ {mainProduct.price.toFixed(2)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-normal text-gray-600 text-sm">R$ {mainProduct.price.toFixed(2)}</span>
+                  )}
+                </div>
               </div>
               {selectedOrderBumpsDetails.map((bump) => (
                 <div key={bump.id} className="flex justify-between items-center text-gray-600 text-sm">
@@ -67,7 +94,7 @@ const OrderSummaryAccordion = ({
 
             {/* Cupom de Desconto - Integrado dentro do resumo */}
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <CouponInputCard 
+              <CouponInputCard
                 onCouponApplied={onCouponApplied} // ✅ PASSANDO A FUNÇÃO
                 appliedCoupon={appliedCoupon}
               />

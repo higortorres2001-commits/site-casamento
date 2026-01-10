@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, asaas-access-token',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 // Classe para logging
 class Logger {
@@ -76,12 +72,12 @@ class Logger {
 function validateWebhookSignature(req: Request): boolean {
   const asaasToken = req.headers.get('asaas-access-token');
   const expectedToken = Deno.env.get('ASAAS_WEBHOOK_TOKEN');
-  
+
   // Se não houver token configurado, aceitar (para compatibilidade)
   if (!expectedToken) {
     return true;
   }
-  
+
   return asaasToken === expectedToken;
 }
 
@@ -95,7 +91,7 @@ async function updateOrderStatus(
   asaasPaymentId?: string
 ): Promise<void> {
   const updateData: any = { status };
-  
+
   if (asaasPaymentId) {
     updateData.asaas_payment_id = asaasPaymentId;
   }
@@ -109,15 +105,54 @@ async function updateOrderStatus(
     throw new Error(`Erro ao atualizar status do pedido: ${error.message}`);
   }
 }
-
 /**
  * Concede acesso aos produtos de forma atômica e idempotente
+ * Se algum produto for um Kit, expande para incluir todos os produtos do kit
+ * SEGURO: Funciona mesmo se as colunas is_kit/kit_product_ids não existirem
  */
 async function grantProductAccess(
   supabase,
   userId: string,
   productIds: string[]
 ): Promise<void> {
+  // Começar com os IDs originais
+  let expandedProductIds = [...productIds];
+
+  try {
+    // Tentar buscar informações de kit (pode falhar se colunas não existem)
+    const { data: productsData, error: productsError } = await supabase
+      .from('products')
+      .select('id, is_kit, kit_product_ids')
+      .in('id', productIds);
+
+    if (productsError) {
+      // Se erro (ex: coluna não existe), apenas logar e continuar com IDs originais
+      console.warn('Aviso ao buscar info de kit (colunas podem não existir):', productsError.message);
+    } else if (productsData && Array.isArray(productsData)) {
+      // Expandir kits: se um produto é um kit, adicionar todos os produtos do kit
+      for (const product of productsData) {
+        // Validação defensiva: verificar se campos existem e são válidos
+        const isKit = Boolean(product?.is_kit);
+        const kitProductIds = product?.kit_product_ids;
+
+        if (isKit && kitProductIds && Array.isArray(kitProductIds) && kitProductIds.length > 0) {
+          // Filtrar IDs válidos (não nulos, strings não vazias)
+          const validKitIds = kitProductIds.filter((id: any) => id && typeof id === 'string');
+          if (validKitIds.length > 0) {
+            expandedProductIds = [...expandedProductIds, ...validKitIds];
+            console.log(`Kit expandido: ${product.id} -> ${validKitIds.length} produtos`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Qualquer erro na expansão de kit não deve impedir o grant de acesso
+    console.warn('Erro ao processar expansão de kit (continuando com IDs originais):', err);
+  }
+
+  // Remover duplicatas
+  expandedProductIds = [...new Set(expandedProductIds)];
+
   // Buscar acesso atual
   const { data: profile, error: fetchError } = await supabase
     .from('profiles')
@@ -130,11 +165,11 @@ async function grantProductAccess(
   }
 
   const currentAccess = Array.isArray(profile.access) ? profile.access : [];
-  const newAccess = [...new Set([...currentAccess, ...productIds])];
+  const newAccess = [...new Set([...currentAccess, ...expandedProductIds])];
 
   // Verificar se já tem todos os acessos (idempotência)
-  const hasAllAccess = productIds.every(id => currentAccess.includes(id));
-  
+  const hasAllAccess = expandedProductIds.every(id => currentAccess.includes(id));
+
   if (hasAllAccess) {
     return; // Já tem acesso, nada a fazer
   }
@@ -142,7 +177,7 @@ async function grantProductAccess(
   // Atualizar com novo acesso
   const { error: updateError } = await supabase
     .from('profiles')
-    .update({ 
+    .update({
       access: newAccess,
       updated_at: new Date().toISOString()
     })
@@ -163,7 +198,7 @@ async function sendAccessEmail(
   logger: Logger
 ): Promise<void> {
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  
+
   if (!RESEND_API_KEY) {
     logger.warning('Resend API key not configured, skipping email');
     return;
@@ -171,7 +206,7 @@ async function sendAccessEmail(
 
   const appUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.vercel.app') || 'https://seu-app.com';
   const loginUrl = 'https://app.medsemestress.com';
-  
+
   const emailBody = `
     <h2>Parabéns! Seu pagamento foi confirmado 🎉</h2>
     <p>Seu acesso aos produtos foi liberado. Use os dados abaixo para fazer login:</p>
@@ -282,6 +317,9 @@ async function sendMetaPurchaseEvent(
 }
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -305,7 +343,7 @@ serve(async (req) => {
     }
 
     payload = await req.json();
-    
+
     logger.info('Webhook received', {
       event: payload.event,
       paymentId: payload.payment?.id
@@ -321,7 +359,7 @@ serve(async (req) => {
     }
 
     const asaasPaymentId = payload.payment?.id;
-    
+
     if (!asaasPaymentId) {
       throw new Error('Payment ID not found in webhook');
     }
@@ -380,7 +418,7 @@ serve(async (req) => {
     if (profile?.email && profile?.cpf) {
       // Enviar email (não-bloqueante)
       sendAccessEmail(profile.email, profile.name, profile.cpf, logger);
-      
+
       // Enviar evento Meta (não-bloqueante)
       sendMetaPurchaseEvent(order, profile, logger);
     }
@@ -391,7 +429,7 @@ serve(async (req) => {
       event: payload.event
     });
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       message: 'Webhook processed successfully',
       orderId: order.id,
       userId: order.user_id

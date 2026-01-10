@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Edit, Trash2, Loader2, FileText, Copy } from "lucide-react";
+import { Edit, Trash2, Loader2, FileText, Copy, Package } from "lucide-react";
 import { showError, showSuccess } from "@/utils/toast";
 import ProductEditTabs from "@/components/ProductEditTabs";
 import { Product, ProductAsset } from "@/types";
@@ -37,6 +37,9 @@ const formSchema = z.object({
   internal_tag: z.string().optional(),
   checkout_return_url: z.string().url("URL inválida").optional().or(z.literal("")),
   also_buy: z.boolean().default(false),
+  // Kit fields
+  is_kit: z.boolean().default(false),
+  kit_product_ids: z.array(z.string()).optional(),
 });
 
 const Products = () => {
@@ -180,7 +183,7 @@ const Products = () => {
       level: 'info',
       context: 'product-save-debug',
       message: 'Saving product with also_buy field',
-      metadata: { 
+      metadata: {
         productId: currentProductId,
         also_buy: formData.also_buy,
         formData: JSON.stringify(formData),
@@ -283,7 +286,7 @@ const Products = () => {
     }
 
     const productToDeleteData = products.find(p => p.id === productToDelete);
-    
+
     if (productToDeleteData) {
       // Delete image from storage if exists
       if (productToDeleteData.image_url) {
@@ -301,7 +304,7 @@ const Products = () => {
     }
 
     const { error } = await supabase.from("products").delete().eq("id", productToDelete);
-    
+
     if (error) {
       showError("Erro ao excluir produto: " + error.message);
       console.error("Error deleting product:", error);
@@ -309,7 +312,7 @@ const Products = () => {
       showSuccess("Produto excluído com sucesso!");
       fetchProducts();
     }
-    
+
     setProductToDelete(null);
   };
 
@@ -366,6 +369,7 @@ const Products = () => {
             <TableHeader className="bg-gray-50">
               <TableRow>
                 <TableHead>Produto</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Tag Interna</TableHead>
@@ -390,6 +394,17 @@ const Products = () => {
                       {product.name}
                       <p className="text-xs text-gray-500">{product.id}</p>
                     </div>
+                  </TableCell>
+
+                  <TableCell>
+                    {(product as any).is_kit ? (
+                      <Badge className="bg-purple-100 text-purple-800 border-purple-200 flex items-center gap-1 w-fit">
+                        <Package className="h-3 w-3" />
+                        Kit ({(product as any).kit_product_ids?.length || 0})
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-gray-600">Produto</Badge>
+                    )}
                   </TableCell>
 
                   <TableCell>R$ {product.price.toFixed(2)}</TableCell>

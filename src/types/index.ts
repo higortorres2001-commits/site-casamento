@@ -21,6 +21,10 @@ export type Product = {
   internal_tag?: string | null;
   checkout_return_url?: string | null;
   also_buy?: boolean; // New field for "Compre Também" section
+  // Kit (Bundle) fields
+  is_kit?: boolean; // Se true, este produto é um kit/bundle
+  kit_product_ids?: string[] | null; // IDs dos produtos que compõem o kit
+  kit_original_value?: number | null; // Soma dos preços individuais (para mostrar economia no checkout)
 };
 
 export type ProductAsset = {

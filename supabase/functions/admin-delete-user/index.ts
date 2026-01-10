@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -32,7 +31,7 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid authentication token' }), {
         status: 401,
@@ -54,13 +53,13 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-delete-user-unauthorized',
         message: 'Non-admin user attempted to delete user',
-        metadata: { 
+        metadata: {
           adminUserId,
           error: adminProfileError?.message,
           isAdmin: adminProfile?.is_admin
         }
       });
-      
+
       return new Response(JSON.stringify({ error: 'Unauthorized: Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -84,7 +83,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-delete-user-start',
       message: 'Admin started user deletion process',
-      metadata: { 
+      metadata: {
         adminUserId,
         userIdToDelete
       }
@@ -102,13 +101,13 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-delete-user-not-found',
         message: 'Target user not found',
-        metadata: { 
+        metadata: {
           adminUserId,
           userIdToDelete,
           error: userError?.message
         }
       });
-      
+
       return new Response(JSON.stringify({ error: 'User not found' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -126,7 +125,7 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-delete-user-orders-error',
         message: 'Failed to delete user orders',
-        metadata: { 
+        metadata: {
           adminUserId,
           userIdToDelete,
           error: ordersError.message,
@@ -150,7 +149,7 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-delete-user-profile-error',
         message: 'Failed to delete user profile',
-        metadata: { 
+        metadata: {
           adminUserId,
           userIdToDelete,
           error: profileError.message,
@@ -171,7 +170,7 @@ serve(async (req) => {
         level: 'error',
         context: 'admin-delete-user-auth-error',
         message: 'Failed to delete user from auth system',
-        metadata: { 
+        metadata: {
           adminUserId,
           userIdToDelete,
           error: authDeleteError.message,
@@ -188,7 +187,7 @@ serve(async (req) => {
       level: 'info',
       context: 'admin-delete-user-success',
       message: 'User deleted successfully',
-      metadata: { 
+      metadata: {
         adminUserId,
         userIdToDelete,
         deletedUserData: {
@@ -218,7 +217,7 @@ serve(async (req) => {
         requestBody
       }
     });
-    
+
     return new Response(JSON.stringify({ error: 'Unexpected error: ' + error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

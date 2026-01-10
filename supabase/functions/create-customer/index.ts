@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -23,7 +22,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-customer-start',
       message: 'Manual customer creation started',
-      metadata: { 
+      metadata: {
         email: email.toLowerCase().trim(),
         name,
         cpf: cpf ? 'PROVIDED' : 'MISSING',
@@ -37,7 +36,7 @@ serve(async (req) => {
         level: 'error',
         context: 'create-customer-validation',
         message: 'Missing required fields',
-        metadata: { 
+        metadata: {
           hasEmail: !!email,
           hasName: !!name,
           hasCpf: !!cpf,
@@ -52,13 +51,13 @@ serve(async (req) => {
 
     // Clean and validate CPF
     const cleanCpf = cpf.replace(/[^\d]+/g, '');
-    
+
     if (cleanCpf.length !== 11) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer-validation',
         message: 'Invalid CPF format',
-        metadata: { 
+        metadata: {
           originalCpf: cpf,
           cleanCpf,
           cleanCpfLength: cleanCpf.length
@@ -79,13 +78,13 @@ serve(async (req) => {
     });
 
     const { data: authUsers, error: listError } = await supabase.auth.admin.listUsers();
-    
+
     if (listError) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'create-customer-list-error',
         message: 'Failed to list users for email check',
-        metadata: { 
+        metadata: {
           error: listError.message,
           errorType: listError.name
         }
@@ -97,13 +96,13 @@ serve(async (req) => {
     }
 
     const existingUser = authUsers.users.find(u => u.email?.toLowerCase() === email.toLowerCase().trim());
-    
+
     if (existingUser) {
       await supabase.from('logs').insert({
         level: 'warning',
         context: 'create-customer-email-duplicate',
         message: 'Email already exists in auth system',
-        metadata: { 
+        metadata: {
           requestedEmail: email.toLowerCase().trim(),
           existingUserId: existingUser.id,
           existingUserEmail: existingUser.email,
@@ -135,7 +134,7 @@ serve(async (req) => {
         level: 'error',
         context: 'create-customer-cpf-check-error',
         message: 'Error checking CPF in profiles',
-        metadata: { 
+        metadata: {
           cleanCpf,
           error: profileCheckError.message,
           errorCode: profileCheckError.code
@@ -148,7 +147,7 @@ serve(async (req) => {
         level: 'warning',
         context: 'create-customer-cpf-duplicate',
         message: 'CPF already exists in profiles table',
-        metadata: { 
+        metadata: {
           cleanCpf,
           existingProfileId: existingProfile.id,
           existingProfileEmail: existingProfile.email,
@@ -166,7 +165,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-customer-auth-creation',
       message: 'Creating user in auth system',
-      metadata: { 
+      metadata: {
         email: email.toLowerCase().trim(),
         name,
         cleanCpfLength: cleanCpf.length
@@ -177,9 +176,9 @@ serve(async (req) => {
       email: email.toLowerCase().trim(),
       password: cleanCpf,
       email_confirm: true,
-      user_metadata: { 
-        name, 
-        cpf: cleanCpf, 
+      user_metadata: {
+        name,
+        cpf: cleanCpf,
         whatsapp: whatsapp.replace(/\D/g, ''),
         created_via: 'admin_manual'
       },
@@ -190,7 +189,7 @@ serve(async (req) => {
         level: 'error',
         context: 'create-customer-auth-error',
         message: 'Failed to create user in auth system',
-        metadata: { 
+        metadata: {
           email: email.toLowerCase().trim(),
           name,
           cleanCpfLength: cleanCpf.length,
@@ -211,7 +210,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-customer-auth-success',
       message: 'User created successfully in auth system',
-      metadata: { 
+      metadata: {
         userId,
         email: email.toLowerCase().trim(),
         name
@@ -246,7 +245,7 @@ serve(async (req) => {
         level: 'error',
         context: 'create-customer-profile-error',
         message: 'Failed to create user profile',
-        metadata: { 
+        metadata: {
           userId,
           error: profileError.message,
           errorType: profileError.name,
@@ -267,7 +266,7 @@ serve(async (req) => {
       level: 'info',
       context: 'create-customer-success',
       message: 'Manual customer creation completed successfully',
-      metadata: { 
+      metadata: {
         userId,
         email: email.toLowerCase().trim(),
         name,
@@ -275,7 +274,7 @@ serve(async (req) => {
       }
     });
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
       userId,
       email: email.toLowerCase().trim(),
@@ -290,7 +289,7 @@ serve(async (req) => {
       level: 'error',
       context: 'create-customer-unhandled-error',
       message: 'Unhandled error in manual customer creation',
-      metadata: { 
+      metadata: {
         error: error.message,
         errorStack: error.stack
       }
