@@ -75,6 +75,7 @@ const WizardStep5Personalization: React.FC<WizardStep5PersonalizationProps> = ({
                             key={preset.color}
                             type="button"
                             disabled={isSubmitting}
+                            onClick={() => setSelectedColor(preset.color)}
                             className={`
                                 relative aspect-square rounded-xl transition-all duration-200
                                 bg-gradient-to-br ${preset.gradient}
