@@ -224,7 +224,7 @@ const MessageWall: React.FC<MessageWallProps> = ({ weddingListId }) => {
                                 </div>
                             </form>
                         </Form>
-                        <DialogFooter>
+                        <DialogFooter className="justify-center">
                             <Button
                                 onClick={form.handleSubmit(onSubmit)}
                                 disabled={isSubmitting}

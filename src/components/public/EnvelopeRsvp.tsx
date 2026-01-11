@@ -425,11 +425,11 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                         Confirme para abrir o envelope do seu convite
                     </DialogDescription>
                 </DialogHeader>
-                <DialogFooter className="flex-row gap-3 sm:justify-center">
-                    <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+                <DialogFooter className="flex flex-col-reverse sm:flex-row gap-3 justify-center">
+                    <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowConfirmDialog(false)}>
                         Não, buscar outro
                     </Button>
-                    <Button onClick={handleConfirmFamily} className="bg-green-600 hover:bg-green-700 text-white">
+                    <Button onClick={handleConfirmFamily} className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white">
                         Sim, sou eu!
                     </Button>
                 </DialogFooter>
@@ -474,14 +474,14 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                     )}
                 </div>
 
-                <DialogFooter className="flex-col sm:flex-row gap-2">
-                    <Button variant="ghost" onClick={() => setShowVerifyDialog(false)}>
+                <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 justify-center">
+                    <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setShowVerifyDialog(false)}>
                         Cancelar
                     </Button>
                     <Button
                         onClick={handleVerifySubmit}
                         disabled={verificationDigits.length !== 4 || isVerifying}
-                        className="bg-green-600 hover:bg-green-700 text-white"
+                        className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white"
                     >
                         {isVerifying && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                         Verificar

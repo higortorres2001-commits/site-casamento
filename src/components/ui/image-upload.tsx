@@ -1,8 +1,9 @@
 import React, { useState, useRef, useCallback } from "react";
-import { Upload, X, ImagePlus, Loader2 } from "lucide-react";
+import { Upload, X, ImagePlus, Loader2, Crop } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { showUserError } from "@/utils/toast";
+import ImageCropper from "@/components/ui/image-cropper";
 
 interface ImageUploadProps {
     value?: string | null;
@@ -13,6 +14,9 @@ interface ImageUploadProps {
     aspectRatio?: "square" | "video" | "wide" | "auto";
     className?: string;
     helperText?: string;
+    enableCropping?: boolean;
+    cropShape?: "round" | "rect";
+    onUploadComplete?: () => void;
 }
 
 const ImageUpload: React.FC<ImageUploadProps> = ({
@@ -23,10 +27,16 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     label = "Imagem",
     aspectRatio = "square",
     className = "",
-    helperText
+    helperText,
+    enableCropping = true,
+    cropShape = "rect",
+    onUploadComplete,
 }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [showCropper, setShowCropper] = useState(false);
+    const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+    const [originalFile, setOriginalFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const getAspectRatioClass = () => {
@@ -39,7 +49,17 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         }
     };
 
-    const optimizeImage = (file: File): Promise<File> => {
+    const getAspectRatioNumber = (): number => {
+        switch (aspectRatio) {
+            case "square": return 1;
+            case "video": return 16 / 9;
+            case "wide": return 3 / 1;
+            case "auto": return 1; // Default to square for auto
+            default: return 1;
+        }
+    };
+
+    const optimizeImage = (file: File | Blob): Promise<File> => {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.src = URL.createObjectURL(file);
@@ -76,7 +96,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 canvas.toBlob(
                     (blob) => {
                         if (blob) {
-                            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
+                            const fileName = file instanceof File ? file.name : "cropped-image";
+                            const newFile = new File([blob], fileName.replace(/\.[^/.]+$/, "") + ".webp", {
                                 type: "image/webp",
                                 lastModified: Date.now(),
                             });
@@ -93,7 +114,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         });
     };
 
-    const processFile = async (file: File) => {
+    const uploadFile = async (file: File | Blob) => {
         setIsLoading(true);
         try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -116,6 +137,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 .getPublicUrl(filePath);
 
             onChange(publicUrl);
+
+            // Trigger callback after successful upload
+            if (onUploadComplete) {
+                onUploadComplete();
+            }
         } catch (error: any) {
             console.error("Upload error:", error);
             showUserError("Erro ao fazer upload da imagem", error);
@@ -126,7 +152,36 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) processFile(file);
+        if (file) {
+            if (enableCropping && aspectRatio !== "auto") {
+                // Open cropper
+                const reader = new FileReader();
+                reader.onload = () => {
+                    setImageToCrop(reader.result as string);
+                    setOriginalFile(file);
+                    setShowCropper(true);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                // Direct upload without cropping
+                uploadFile(file);
+            }
+        }
+        // Reset input to allow re-selecting the same file
+        e.target.value = "";
+    };
+
+    const handleCropComplete = (croppedBlob: Blob) => {
+        setShowCropper(false);
+        setImageToCrop(null);
+        setOriginalFile(null);
+        uploadFile(croppedBlob);
+    };
+
+    const handleCropCancel = () => {
+        setShowCropper(false);
+        setImageToCrop(null);
+        setOriginalFile(null);
     };
 
     const handleDrop = useCallback((e: React.DragEvent) => {
@@ -134,9 +189,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         setIsDragging(false);
         const file = e.dataTransfer.files?.[0];
         if (file && file.type.startsWith("image/")) {
-            processFile(file);
+            if (enableCropping && aspectRatio !== "auto") {
+                // Open cropper
+                const reader = new FileReader();
+                reader.onload = () => {
+                    setImageToCrop(reader.result as string);
+                    setOriginalFile(file);
+                    setShowCropper(true);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                uploadFile(file);
+            }
         }
-    }, []);
+    }, [enableCropping, aspectRatio]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -158,6 +224,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
     return (
         <>
+            {/* Image Cropper Modal */}
+            {showCropper && imageToCrop && (
+                <ImageCropper
+                    isOpen={showCropper}
+                    imageSrc={imageToCrop}
+                    aspectRatio={getAspectRatioNumber()}
+                    cropShape={cropShape}
+                    onCropComplete={handleCropComplete}
+                    onCancel={handleCropCancel}
+                />
+            )}
+
             {/* Global Blocking Loader */}
             {isLoading && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-wait">
@@ -181,6 +259,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                     <label className="text-sm font-medium flex items-center gap-2 text-gray-700">
                         <ImagePlus className="h-4 w-4 text-pink-500" />
                         {label}
+                        {enableCropping && aspectRatio !== "auto" && (
+                            <span className="text-xs text-gray-400 font-normal">(com ajuste de corte)</span>
+                        )}
                     </label>
                 )}
 
@@ -217,8 +298,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                                         className="flex-1 bg-white/90 hover:bg-white text-gray-800 shadow-lg text-xs h-8"
                                         disabled={isLoading}
                                     >
-                                        <Upload className="h-3 w-3 mr-1.5" />
-                                        Trocar
+                                        {enableCropping && aspectRatio !== "auto" ? (
+                                            <><Crop className="h-3 w-3 mr-1.5" />Trocar</>
+                                        ) : (
+                                            <><Upload className="h-3 w-3 mr-1.5" />Trocar</>
+                                        )}
                                     </Button>
                                     <Button
                                         type="button"
@@ -236,7 +320,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                     ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center cursor-pointer hover:bg-pink-50/30 transition-colors">
                             <div className="bg-pink-50 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform duration-300">
-                                <Upload className="h-6 w-6 text-pink-500" />
+                                {enableCropping && aspectRatio !== "auto" ? (
+                                    <Crop className="h-6 w-6 text-pink-500" />
+                                ) : (
+                                    <Upload className="h-6 w-6 text-pink-500" />
+                                )}
                             </div>
                             <p className="text-sm text-gray-700 font-medium group-hover:text-pink-600 transition-colors">
                                 Clique para enviar

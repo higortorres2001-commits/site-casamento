@@ -62,16 +62,16 @@ export default async function handler(request: Request) {
         if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
             console.error('Supabase credentials not configured');
             return generateBotHtml({
-                title: 'Operação Casamento',
-                description: 'Crie sua lista de presentes de casamento personalizada.',
-                image: `${url.origin}/og-default.jpg`,
+                title: 'DuetLove - Crie sua Lista de Casamento',
+                description: 'Crie sua lista de presentes de casamento online. Grátis e fácil de usar!',
+                image: `${url.origin}/logo.png`,
                 url: url.toString(),
             });
         }
 
         // Query wedding list by slug
         const response = await fetch(
-            `${SUPABASE_URL}/rest/v1/wedding_lists?slug=eq.${encodeURIComponent(slug)}&select=bride_name,groom_name,cover_image_url,wedding_date,custom_message&is_public=eq.true`,
+            `${SUPABASE_URL}/rest/v1/wedding_lists?slug=eq.${encodeURIComponent(slug)}&select=bride_name,groom_name,couple_profile_image,cover_image_url,wedding_date,description&is_public=eq.true`,
             {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -83,9 +83,9 @@ export default async function handler(request: Request) {
         if (!response.ok) {
             console.error('Failed to fetch wedding list:', response.status);
             return generateBotHtml({
-                title: 'Operação Casamento',
+                title: 'DuetLove - Crie sua Lista de Casamento',
                 description: 'Confira a lista de presentes de casamento.',
-                image: `${url.origin}/og-default.jpg`,
+                image: `${url.origin}/logo.png`,
                 url: url.toString(),
             });
         }
@@ -94,21 +94,28 @@ export default async function handler(request: Request) {
 
         if (!data || data.length === 0) {
             return generateBotHtml({
-                title: 'Operação Casamento',
-                description: 'Lista não encontrada.',
-                image: `${url.origin}/og-default.jpg`,
+                title: 'DuetLove - Lista não encontrada',
+                description: 'Esta lista de casamento não foi encontrada.',
+                image: `${url.origin}/logo.png`,
                 url: url.toString(),
             });
         }
 
         const weddingList = data[0];
 
+        // Extract first names only
+        const brideFirstName = weddingList.bride_name?.split(' ')[0] || weddingList.bride_name;
+        const groomFirstName = weddingList.groom_name?.split(' ')[0] || weddingList.groom_name;
+
         // Build meta values
-        const coupleNames = `${weddingList.bride_name} & ${weddingList.groom_name}`;
-        const title = `${coupleNames} | Operação Casamento`;
-        const description = weddingList.custom_message
-            || `Confira a lista de presentes de casamento de ${coupleNames}. Presenteie o casal de forma especial! 💒🎁`;
-        const image = weddingList.cover_image_url || `${url.origin}/og-default.jpg`;
+        const coupleNames = `${brideFirstName} & ${groomFirstName}`;
+        const title = coupleNames;
+        const description = `Estamos nos casando! 💒✨ Confirme sua presença e confira todos os detalhes do nosso grande dia. Será uma honra tê-lo(a) conosco!`;
+
+        // Prefer couple profile image, fallback to cover image, then default
+        const image = weddingList.couple_profile_image
+            || weddingList.cover_image_url
+            || `${url.origin}/logo.png`;
         const fullUrl = `${url.origin}/lista/${slug}`;
 
         return generateBotHtml({ title, description, image, url: fullUrl });
@@ -116,9 +123,9 @@ export default async function handler(request: Request) {
     } catch (error) {
         console.error('OG Preview error:', error);
         return generateBotHtml({
-            title: 'Lista de Casamento',
-            description: 'Crie sua lista de presentes de casamento personalizada.',
-            image: `${url.origin}/og-default.jpg`,
+            title: 'DuetLove - Crie sua Lista de Casamento',
+            description: 'Crie sua lista de presentes de casamento online. Grátis e fácil de usar!',
+            image: `${url.origin}/logo.png`,
             url: url.toString(),
         });
     }
@@ -146,7 +153,7 @@ function generateBotHtml(meta: {
   <meta property="og:description" content="${escapeHtml(meta.description)}">
   <meta property="og:image" content="${escapeHtml(meta.image)}">
   <meta property="og:url" content="${escapeHtml(meta.url)}">
-  <meta property="og:site_name" content="Operação Casamento">
+  <meta property="og:site_name" content="DuetLove">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   

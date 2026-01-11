@@ -247,6 +247,56 @@ const WeddingListSettings = () => {
         }
     };
 
+    // Auto-save after image upload to prevent data loss
+    const handleAutoSave = async () => {
+        // Small delay to ensure form state is updated with new image URL
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Submit the form programmatically
+        form.handleSubmit(async (data) => {
+            if (!user?.id) return;
+
+            try {
+                const slug = weddingList?.slug || generateCoupleSlug(data.bride_name, data.groom_name);
+
+                const listData = {
+                    ...data,
+                    slug,
+                    user_id: user.id,
+                    is_public: true,
+                    wedding_date: data.wedding_date || null,
+                    party_date: data.party_date || null,
+                };
+
+                if (weddingList?.id) {
+                    const { data: updated, error } = await supabase
+                        .from("wedding_lists")
+                        .update(listData)
+                        .eq("id", weddingList.id)
+                        .select()
+                        .single();
+
+                    if (error) throw error;
+                    setWeddingList(updated as WeddingList);
+                    showSuccess("Alterações salvas automaticamente!");
+                } else {
+                    const { data: created, error } = await supabase
+                        .from("wedding_lists")
+                        .insert(listData)
+                        .select()
+                        .single();
+
+                    if (error) throw error;
+                    setWeddingList(created as WeddingList);
+                    showSuccess("Lista criada e salva!");
+                }
+            } catch (error: any) {
+                console.error("Auto-save error:", error);
+                // Silent fail for auto-save - don't alarm user, they can still manually save
+            }
+        })();
+    };
+
     const copyLink = async () => {
         if (!weddingList?.slug) return;
         const link = `${window.location.origin}/lista/${weddingList.slug}`;
@@ -287,16 +337,35 @@ const WeddingListSettings = () => {
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                         <Tabs defaultValue="essential" className="w-full">
-                            <TabsList className="grid w-full grid-cols-4 mb-8">
-                                <TabsTrigger value="essential">Essencial</TabsTrigger>
-                                <TabsTrigger value="personalization">Personalização</TabsTrigger>
-                                <TabsTrigger value="ceremony">Cerimônia</TabsTrigger>
+                            <TabsList className="flex w-full overflow-x-auto sm:grid sm:grid-cols-4 mb-8 gap-1 p-1 scrollbar-hide scroll-smooth">
+                                <TabsTrigger value="essential" className="flex items-center gap-1.5 flex-shrink-0 px-3 sm:px-4">
+                                    <Heart className="h-5 w-5 sm:h-4 sm:w-4" />
+                                    <span className="text-xs sm:text-sm">
+                                        <span className="sm:hidden">Info</span>
+                                        <span className="hidden sm:inline">Essencial</span>
+                                    </span>
+                                </TabsTrigger>
+                                <TabsTrigger value="personalization" className="flex items-center gap-1.5 flex-shrink-0 px-3 sm:px-4">
+                                    <Palette className="h-5 w-5 sm:h-4 sm:w-4" />
+                                    <span className="text-xs sm:text-sm">
+                                        <span className="sm:hidden">Visual</span>
+                                        <span className="hidden sm:inline">Personalização</span>
+                                    </span>
+                                </TabsTrigger>
+                                <TabsTrigger value="ceremony" className="flex items-center gap-1.5 flex-shrink-0 px-3 sm:px-4">
+                                    <Calendar className="h-5 w-5 sm:h-4 sm:w-4" />
+                                    <span className="text-xs sm:text-sm">
+                                        <span className="sm:hidden">Evento</span>
+                                        <span className="hidden sm:inline">Cerimônia</span>
+                                    </span>
+                                </TabsTrigger>
                                 <TabsTrigger
                                     value="party"
                                     disabled={!form.watch("has_party")}
-                                    className="data-[state=active]:bg-orange-50 data-[state=active]:text-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="flex items-center gap-1.5 flex-shrink-0 px-3 sm:px-4 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Festa
+                                    <MapPin className="h-5 w-5 sm:h-4 sm:w-4" />
+                                    <span className="text-xs sm:text-sm">Festa</span>
                                 </TabsTrigger>
                             </TabsList>
 
@@ -424,6 +493,8 @@ const WeddingListSettings = () => {
                                                             value={field.value}
                                                             onChange={field.onChange}
                                                             aspectRatio="square"
+                                                            cropShape="round"
+                                                            onUploadComplete={handleAutoSave}
                                                         />
                                                     </FormItem>
                                                 )}
@@ -447,6 +518,7 @@ const WeddingListSettings = () => {
                                                             onChange={field.onChange}
                                                             aspectRatio="square"
                                                             helperText="Ideal para smartphones"
+                                                            onUploadComplete={handleAutoSave}
                                                         />
                                                     </FormItem>
                                                 )}
@@ -462,6 +534,7 @@ const WeddingListSettings = () => {
                                                             onChange={field.onChange}
                                                             aspectRatio="wide"
                                                             helperText="Ideal para computadores"
+                                                            onUploadComplete={handleAutoSave}
                                                         />
                                                     </FormItem>
                                                 )}
@@ -509,6 +582,7 @@ const WeddingListSettings = () => {
                                                                         field.onChange(newGallery);
                                                                     }}
                                                                     aspectRatio="square"
+                                                                    onUploadComplete={handleAutoSave}
                                                                 />
                                                                 <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">
                                                                     {index + 1}
@@ -526,6 +600,7 @@ const WeddingListSettings = () => {
                                                                     }
                                                                 }}
                                                                 aspectRatio="square"
+                                                                onUploadComplete={handleAutoSave}
                                                             />
                                                         )}
                                                     </div>
@@ -642,6 +717,7 @@ const WeddingListSettings = () => {
                                                         value={field.value}
                                                         onChange={field.onChange}
                                                         aspectRatio="video"
+                                                        onUploadComplete={handleAutoSave}
                                                     />
                                                 </FormItem>
                                             )}
@@ -728,6 +804,7 @@ const WeddingListSettings = () => {
                                                         value={field.value}
                                                         onChange={field.onChange}
                                                         aspectRatio="video"
+                                                        onUploadComplete={handleAutoSave}
                                                     />
                                                 </FormItem>
                                             )}
