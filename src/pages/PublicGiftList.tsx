@@ -72,7 +72,12 @@ const PublicGiftList = () => {
         // Safety timeout: ensure loading never stays forever
         const timeout = setTimeout(() => {
             if (loadingRef.current) {
-                console.error("PublicGiftList: Loading timeout exceeded (10s)");
+                console.error("PublicGiftList: Loading timeout exceeded", {
+                    slug,
+                    timeout: "10s",
+                    timestamp: new Date().toISOString(),
+                    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'SSR',
+                });
                 setLoading(false);
                 setNotFound(true);
             }

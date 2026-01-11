@@ -70,10 +70,28 @@ const CoupleHero: React.FC<CoupleHeroProps> = ({ weddingList }) => {
         return () => clearInterval(interval);
     }, [weddingList.wedding_date, weddingList.ceremony_time]);
 
-    // Determine cover image
-    const coverImage = window.innerWidth >= 768
-        ? (weddingList.cover_image_desktop || weddingList.cover_image_mobile)
-        : (weddingList.cover_image_mobile || weddingList.cover_image_desktop);
+    // Helper to add Supabase Image Transform params
+    const getOptimizedImageUrl = (url: string | null | undefined, isMobile: boolean): string | null => {
+        if (!url) return null;
+
+        // Only transform Supabase Storage URLs
+        if (!url.includes('supabase') || !url.includes('/storage/')) {
+            return url;
+        }
+
+        // Add transform params
+        const width = isMobile ? 800 : 1200;
+        const height = isMobile ? 600 : 800;
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}width=${width}&height=${height}&resize=cover&quality=75`;
+    };
+
+    // Determine cover image with responsive optimization
+    const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
+    const rawCoverImage = isMobileView
+        ? (weddingList.cover_image_mobile || weddingList.cover_image_desktop)
+        : (weddingList.cover_image_desktop || weddingList.cover_image_mobile);
+    const coverImage = getOptimizedImageUrl(rawCoverImage, isMobileView);
 
     return (
         <div className="relative w-full h-[600px] flex items-center justify-center overflow-hidden">
