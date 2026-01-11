@@ -513,7 +513,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                             <Input
                                 placeholder="Ex: Carlos, Ana, Família Silva..."
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onChange={(e) => handleSearch(e.target.value)}
                                 className="pl-10 h-12 text-lg focus-visible:ring-[var(--brand-color)]"
                                 autoFocus
                             />
@@ -547,9 +547,15 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                             </div>
                         )}
 
-                        {searchQuery.length >= 2 && searchResults.length === 0 && !isSearching && (
+                        {searchQuery.length >= 4 && searchResults.length === 0 && !isSearching && (
                             <p className="text-center text-gray-500 py-4">
                                 Nenhum resultado encontrado. Verifique a grafia.
+                            </p>
+                        )}
+
+                        {searchQuery.length > 0 && searchQuery.length < 4 && (
+                            <p className="text-center text-gray-400 py-4 text-sm">
+                                Digite pelo menos 4 caracteres para buscar
                             </p>
                         )}
                     </CardContent>
