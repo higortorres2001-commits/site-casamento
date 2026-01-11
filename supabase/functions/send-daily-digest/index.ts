@@ -2,6 +2,9 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { generateDailyDigestEmail, sendEmail } from '../_shared/email-templates.ts';
+import { Sentry, initSentry } from '../_shared/sentry.ts';
+
+initSentry();
 
 /**
  * Send Daily Digest Email
@@ -202,6 +205,7 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error('Error in send-daily-digest:', error);
+        Sentry.captureException(error);
         return new Response(JSON.stringify({
             success: false,
             error: error.message
