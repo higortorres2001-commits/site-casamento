@@ -240,13 +240,13 @@ const Gifts = () => {
                     </Button>
                 </div>
 
-                {/* Gifts Table */}
+                {/* Gifts List */}
                 {gifts.length === 0 ? (
-                    <div className="bg-white rounded-2xl shadow-lg p-12 text-center border-2 border-dashed border-pink-200">
-                        <div className="bg-gradient-to-br from-pink-100 to-purple-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <Wand2 className="h-12 w-12 text-pink-500" />
+                    <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12 text-center border-2 border-dashed border-pink-200">
+                        <div className="bg-gradient-to-br from-pink-100 to-purple-100 w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Wand2 className="h-10 w-10 md:h-12 md:w-12 text-pink-500" />
                         </div>
-                        <h3 className="text-2xl font-bold text-gray-800 mb-3">
+                        <h3 className="text-xl md:text-2xl font-bold text-gray-800 mb-3">
                             Sua lista está vazia ✨
                         </h3>
                         <p className="text-gray-600 mb-2 max-w-md mx-auto">
@@ -266,7 +266,8 @@ const Gifts = () => {
                     </div>
                 ) : (
                     <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-100">
-                        <div className="overflow-x-auto">
+                        {/* Desktop Table */}
+                        <div className="hidden md:block overflow-x-auto">
                             <Table>
                                 <TableHeader className="bg-gray-50">
                                     <TableRow>
@@ -349,12 +350,64 @@ const Gifts = () => {
                                 </TableBody>
                             </Table>
                         </div>
+
+                        {/* Mobile Cards */}
+                        <div className="md:hidden divide-y divide-gray-100">
+                            {gifts.map((gift) => (
+                                <div key={gift.id} className="p-4 flex items-start gap-3">
+                                    {gift.image_url ? (
+                                        <img
+                                            src={gift.image_url}
+                                            alt={gift.name}
+                                            className="w-16 h-16 object-cover rounded-md flex-shrink-0"
+                                        />
+                                    ) : (
+                                        <div className="w-16 h-16 bg-pink-100 rounded-md flex items-center justify-center flex-shrink-0">
+                                            <GiftIcon className="h-8 w-8 text-pink-400" />
+                                        </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <h4 className="font-semibold text-gray-800 truncate pr-2">{gift.name}</h4>
+                                            <div className="flex gap-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-gray-500"
+                                                    onClick={() => handleEditGift(gift)}
+                                                >
+                                                    <Edit className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <p className="text-pink-600 font-bold mb-1">R$ {gift.price.toFixed(2)}</p>
+                                        <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-2">
+                                            <span className="bg-gray-100 px-2 py-0.5 rounded">Qtd: {gift.quantity_total}</span>
+                                            <span className="bg-gray-100 px-2 py-0.5 rounded">{getCategoryLabel(gift.category)}</span>
+                                            {gift.quantity_reserved > 0 && (
+                                                <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">Reserved: {gift.quantity_reserved}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex justify-end pt-1">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleConfirmDelete(gift.id)}
+                                                className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 px-2"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5 mr-1" /> Excluir
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 
                 {/* Edit Modal */}
                 <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                    <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <DialogContent className="w-[95vw] sm:w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
                                 <Sparkles className="h-5 w-5 text-pink-500" />

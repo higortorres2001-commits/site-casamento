@@ -416,7 +416,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
     // Confirm Dialog
     const confirmDialog = (
         <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="w-[95vw] sm:w-full sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle className="text-center text-xl">
                         ✨ Você é da {groupName}?
@@ -444,7 +444,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
             if (!open) setVerifyingGuest(null);
             setShowVerifyDialog(open);
         }}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="w-[95vw] sm:w-full sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle className="text-center">🔒 Verificação de Segurança</DialogTitle>
                     <DialogDescription className="text-center">
@@ -481,7 +481,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                     <Button
                         onClick={handleVerifySubmit}
                         disabled={verificationDigits.length !== 4 || isVerifying}
-                        className="bg-[var(--brand-color)] text-white"
+                        className="bg-green-600 hover:bg-green-700 text-white"
                     >
                         {isVerifying && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                         Verificar
@@ -749,7 +749,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                                     setPendingSubmission(true);
                                     handleSubmit(true);
                                 }}
-                                className="bg-brand-orange hover:bg-brand-orange/90 text-white"
+                                className="bg-green-600 hover:bg-green-700 text-white"
                             >
                                 Enviar assim mesmo
                             </AlertDialogAction>

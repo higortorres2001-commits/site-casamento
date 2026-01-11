@@ -131,7 +131,7 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="w-[95vw] sm:w-full max-w-3xl max-h-[90vh] flex flex-col p-4 sm:p-6">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-xl">
                         {envelope.group_name}
@@ -144,88 +144,147 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="mt-4">
+                <div className="flex-1 overflow-y-auto mt-4 pr-1">
                     {loading ? (
                         <div className="text-center py-8">
                             <Loader2 className="w-8 h-8 animate-spin mx-auto text-pink-500" />
                         </div>
                     ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Nome</TableHead>
-                                    <TableHead>Tipo</TableHead>
-                                    <TableHead>WhatsApp</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead className="text-right">Ações</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
+                        <>
+                            {/* Desktop Table */}
+                            <div className="hidden sm:block">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Nome</TableHead>
+                                            <TableHead>Tipo</TableHead>
+                                            <TableHead>WhatsApp</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead className="text-right">Ações</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {envelope.guests.map((guest) => {
+                                            const rsvp = rsvps[guest.id];
+                                            return (
+                                                <TableRow key={guest.id}>
+                                                    <TableCell className="font-medium">{guest.name}</TableCell>
+                                                    <TableCell>
+                                                        {guest.guest_type === "child" ? (
+                                                            <div className="flex items-center gap-1 text-gray-500">
+                                                                <Baby className="w-4 h-4" /> Criança
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1 text-gray-500">
+                                                                <User className="w-4 h-4" /> Adulto
+                                                            </div>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {(guest.whatsapp || rsvp?.guest_phone) ? (
+                                                            <div className="flex items-center gap-1 text-green-600">
+                                                                <MessageCircle className="w-4 h-4" />
+                                                                <span className="text-xs">
+                                                                    {guest.whatsapp || rsvp?.guest_phone}
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">-</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <StatusBadge rsvp={rsvp} />
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {rsvp?.attending === "yes" && rsvp?.validation_status === "pending" && (
+                                                            <div className="flex justify-end gap-2">
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                    onClick={() => handleValidate(guest.id, "rejected")}
+                                                                    disabled={!!processingId}
+                                                                    title="Rejeitar"
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </Button>
+                                                                <Button
+                                                                    size="sm"
+                                                                    className="h-8 w-8 p-0 bg-green-600 hover:bg-green-700 text-white"
+                                                                    onClick={() => handleValidate(guest.id, "validated")}
+                                                                    disabled={!!processingId}
+                                                                    title="Validar"
+                                                                >
+                                                                    {processingId === guest.id ? (
+                                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                                    ) : (
+                                                                        <Check className="w-4 h-4" />
+                                                                    )}
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </div>
+
+                            {/* Mobile List (Cards) */}
+                            <div className="space-y-4 sm:hidden">
                                 {envelope.guests.map((guest) => {
                                     const rsvp = rsvps[guest.id];
                                     return (
-                                        <TableRow key={guest.id}>
-                                            <TableCell className="font-medium">{guest.name}</TableCell>
-                                            <TableCell>
-                                                {guest.guest_type === "child" ? (
-                                                    <div className="flex items-center gap-1 text-gray-500">
-                                                        <Baby className="w-4 h-4" /> Criança
+                                        <div key={guest.id} className="bg-gray-50 rounded-lg p-3 border border-gray-100 flex flex-col gap-3">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <p className="font-semibold text-gray-800">{guest.name}</p>
+                                                    <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                                        <span>{guest.guest_type === "child" ? "👶 Criança" : "👤 Adulto"}</span>
+                                                        {(guest.whatsapp || rsvp?.guest_phone) && (
+                                                            <span className="flex items-center gap-1 text-green-600">
+                                                                <MessageCircle className="w-3 h-3" />
+                                                                {guest.whatsapp || rsvp?.guest_phone}
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <div className="flex items-center gap-1 text-gray-500">
-                                                        <User className="w-4 h-4" /> Adulto
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                            <TableCell>
-                                                {(guest.whatsapp || rsvp?.guest_phone) ? (
-                                                    <div className="flex items-center gap-1 text-green-600">
-                                                        <MessageCircle className="w-4 h-4" />
-                                                        <span className="text-xs">
-                                                            {guest.whatsapp || rsvp?.guest_phone}
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-400 text-xs">-</span>
-                                                )}
-                                            </TableCell>
-                                            <TableCell>
+                                                </div>
                                                 <StatusBadge rsvp={rsvp} />
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {rsvp?.attending === "yes" && rsvp?.validation_status === "pending" && (
-                                                    <div className="flex justify-end gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                            onClick={() => handleValidate(guest.id, "rejected")}
-                                                            disabled={!!processingId}
-                                                            title="Rejeitar"
-                                                        >
-                                                            <X className="w-4 h-4" />
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            className="h-8 w-8 p-0 bg-green-600 hover:bg-green-700 text-white"
-                                                            onClick={() => handleValidate(guest.id, "validated")}
-                                                            disabled={!!processingId}
-                                                            title="Validar"
-                                                        >
-                                                            {processingId === guest.id ? (
-                                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <Check className="w-4 h-4" />
-                                                            )}
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
+                                            </div>
+
+                                            {rsvp?.attending === "yes" && rsvp?.validation_status === "pending" && (
+                                                <div className="flex gap-2 mt-1">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50 h-9"
+                                                        onClick={() => handleValidate(guest.id, "rejected")}
+                                                        disabled={!!processingId}
+                                                    >
+                                                        <X className="w-4 h-4 mr-2" /> Rejeitar
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        className="flex-1 bg-green-600 hover:bg-green-700 text-white h-9"
+                                                        onClick={() => handleValidate(guest.id, "validated")}
+                                                        disabled={!!processingId}
+                                                    >
+                                                        {processingId === guest.id ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                        ) : (
+                                                            <>
+                                                                <Check className="w-4 h-4 mr-2" /> Validar
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
                                     );
                                 })}
-                            </TableBody>
-                        </Table>
+                            </div>
+                        </>
                     )}
                 </div>
             </DialogContent>

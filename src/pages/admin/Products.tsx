@@ -365,128 +365,204 @@ const Products = () => {
         </p>
       ) : (
         <div className="rounded-md border bg-white shadow-lg">
-          <Table>
-            <TableHeader className="bg-gray-50">
-              <TableRow>
-                <TableHead>Produto</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Preço</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Tag Interna</TableHead>
-                <TableHead>Compre Também</TableHead>
-                <TableHead>Bumps</TableHead>
-                <TableHead>Materiais</TableHead>
-                <TableHead className="text-right w-[220px]">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id} className="hover:bg-gray-50">
-                  <TableCell className="font-medium flex items-center gap-3">
-                    {product.image_url && (
-                      <img
-                        src={product.image_url}
-                        alt={product.name}
-                        className="w-10 h-10 object-cover rounded-md shrink-0"
-                      />
-                    )}
-                    <div className="truncate max-w-[180px]">
-                      {product.name}
-                      <p className="text-xs text-gray-500">{product.id}</p>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    {(product as any).is_kit ? (
-                      <Badge className="bg-purple-100 text-purple-800 border-purple-200 flex items-center gap-1 w-fit">
-                        <Package className="h-3 w-3" />
-                        Kit ({(product as any).kit_product_ids?.length || 0})
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-gray-600">Produto</Badge>
-                    )}
-                  </TableCell>
-
-                  <TableCell>R$ {product.price.toFixed(2)}</TableCell>
-
-                  <TableCell>{getStatusBadge(product.status)}</TableCell>
-
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
-                        onClick={() => openTagModalForProduct(product)}
-                        title={product.internal_tag ? "Editar tag deste produto" : "Criar tag para este produto"}
-                      >
-                        {product.internal_tag ?? "CRIAR TAG"}
-                      </button>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge className={product.also_buy ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-                      {product.also_buy ? "Sim" : "Não"}
-                    </Badge>
-                  </TableCell>
-
-                  <TableCell>{product.orderbumps?.length ?? 0}</TableCell>
-
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenAssetManager(product)}
-                      className="flex items-center gap-1"
-                    >
-                      <FileText className="h-4 w-4" />
-                      {product.assetCount ?? 0} Arquivo(s)
-                    </Button>
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleCopyCheckoutLink(product.id)}
-                          className="mr-1 text-gray-600 hover:text-blue-600"
-                          title="Copiar link de checkout"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Copiar link do checkout</TooltipContent>
-                    </Tooltip>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEditProduct(product.id)}
-                      className="mr-1 text-gray-600 hover:text-orange-500"
-                      title="Editar Produto"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleConfirmDelete(product.id)}
-                      className="text-red-500 hover:text-red-700"
-                      title="Excluir Produto"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+          {/* Desktop Table */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader className="bg-gray-50">
+                <TableRow>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Preço</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Tag Interna</TableHead>
+                  <TableHead>Compre Também</TableHead>
+                  <TableHead>Bumps</TableHead>
+                  <TableHead>Materiais</TableHead>
+                  <TableHead className="text-right w-[220px]">Ações</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {products.map((product) => (
+                  <TableRow key={product.id} className="hover:bg-gray-50">
+                    <TableCell className="font-medium flex items-center gap-3">
+                      {product.image_url && (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="w-10 h-10 object-cover rounded-md shrink-0"
+                        />
+                      )}
+                      <div className="truncate max-w-[180px]">
+                        {product.name}
+                        <p className="text-xs text-gray-500">{product.id}</p>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      {(product as any).is_kit ? (
+                        <Badge className="bg-purple-100 text-purple-800 border-purple-200 flex items-center gap-1 w-fit">
+                          <Package className="h-3 w-3" />
+                          Kit ({(product as any).kit_product_ids?.length || 0})
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-600">Produto</Badge>
+                      )}
+                    </TableCell>
+
+                    <TableCell>R$ {product.price.toFixed(2)}</TableCell>
+
+                    <TableCell>{getStatusBadge(product.status)}</TableCell>
+
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs"
+                          onClick={() => openTagModalForProduct(product)}
+                          title={product.internal_tag ? "Editar tag deste produto" : "Criar tag para este produto"}
+                        >
+                          {product.internal_tag ?? "CRIAR TAG"}
+                        </button>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <Badge className={product.also_buy ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                        {product.also_buy ? "Sim" : "Não"}
+                      </Badge>
+                    </TableCell>
+
+                    <TableCell>{product.orderbumps?.length ?? 0}</TableCell>
+
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenAssetManager(product)}
+                        className="flex items-center gap-1"
+                      >
+                        <FileText className="h-4 w-4" />
+                        {product.assetCount ?? 0} Arquivo(s)
+                      </Button>
+                    </TableCell>
+
+                    <TableCell className="text-right">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCopyCheckoutLink(product.id)}
+                            className="mr-1 text-gray-600 hover:text-blue-600"
+                            title="Copiar link de checkout"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Copiar link do checkout</TooltipContent>
+                      </Tooltip>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditProduct(product.id)}
+                        className="mr-1 text-gray-600 hover:text-orange-500"
+                        title="Editar Produto"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleConfirmDelete(product.id)}
+                        className="text-red-500 hover:text-red-700"
+                        title="Excluir Produto"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile Cards */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {products.map((product) => (
+              <div key={product.id} className="p-4 flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                  {product.image_url ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="w-16 h-16 object-cover rounded-md shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 bg-gray-100 rounded-md flex items-center justify-center shrink-0">
+                      <Package className="h-8 w-8 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-gray-800 leading-tight mb-1">{product.name}</h4>
+                    <p className="text-sm text-gray-500 font-mono mb-2">{product.id.substring(0, 8)}...</p>
+
+                    <div className="flex flex-wrap gap-2">
+                      {getStatusBadge(product.status)}
+                      {(product as any).is_kit && (
+                        <Badge className="bg-purple-100 text-purple-800 border-purple-200">Kit</Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="bg-gray-50 p-2 rounded">
+                    <p className="text-gray-500 text-xs">Preço</p>
+                    <p className="font-medium">R$ {product.price.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-gray-50 p-2 rounded">
+                    <p className="text-gray-500 text-xs">Arquivos</p>
+                    <div className="flex items-center gap-1 font-medium" onClick={() => handleOpenAssetManager(product)}>
+                      <FileText className="h-3 w-3" />
+                      {product.assetCount ?? 0}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2 border-t mt-1 gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleCopyCheckoutLink(product.id)}
+                    className="h-8 w-8"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEditProduct(product.id)}
+                    className="h-8 w-8 text-orange-500"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleConfirmDelete(product.id)}
+                    className="h-8 w-8 text-red-500"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       <Dialog open={isModalOpen} onOpenChange={(open) => !open && handleCancelEdit()}>
-        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-[90vw] sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
           <ProductEditTabs
             initialData={editingProduct}
             onSubmit={handleSaveProduct}
@@ -497,7 +573,7 @@ const Products = () => {
       </Dialog>
 
       <Dialog open={isAssetModalOpen} onOpenChange={setIsAssetModalOpen}>
-        <DialogContent className="sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:w-[90vw] sm:max-w-4xl lg:max-w-5xl p-0 max-h-[90vh] overflow-y-auto">
           {assetManagementProduct && (
             <ProductAssetManager
               productId={assetManagementProduct.id}

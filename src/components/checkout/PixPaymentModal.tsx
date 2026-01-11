@@ -141,7 +141,7 @@ const PixPaymentModal = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md p-6 text-center max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] sm:w-full sm:max-w-md p-6 text-center max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-4">
           <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
           <DialogTitle className="text-3xl font-bold text-gray-800">

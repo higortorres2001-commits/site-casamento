@@ -55,6 +55,12 @@
     --sidebar-border: 220 13% 91%;
 
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Fallback brand colors */
+    --brand-color: #f97316;
+    /* orange-500 */
+    --brand-color-bg: #fff7ed;
+    /* orange-50 */
   }
 
   .dark {

@@ -228,7 +228,7 @@ const MessageWall: React.FC<MessageWallProps> = ({ weddingListId }) => {
                             <Button
                                 onClick={form.handleSubmit(onSubmit)}
                                 disabled={isSubmitting}
-                                className="bg-[var(--brand-color)] hover:opacity-90 text-white w-full sm:w-auto"
+                                className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
                             >
                                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
                                 Enviar Mensagem

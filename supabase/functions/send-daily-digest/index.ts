@@ -1,4 +1,7 @@
+// @ts-ignore
+declare const Deno: any;
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+// @ts-ignore
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { generateDailyDigestEmail, sendEmail } from '../_shared/email-templates.ts';
@@ -16,7 +19,7 @@ initSentry();
  * Security: Should be called with a secret token to prevent abuse.
  */
 
-serve(async (req) => {
+serve(async (req: Request) => {
     const origin = req.headers.get('origin');
     const corsHeaders = getCorsHeaders(origin);
 
@@ -101,26 +104,7 @@ serve(async (req) => {
                 .gt('created_at', sinceDate);
 
             // Fetch new gift purchases since last digest
-            const { data: newReservations } = await supabase
-                .from('gift_reservations')
-                .select(`
-          guest_name,
-          quantity,
-          total_price,
-          gifts(name, price)
-        `)
-                .eq('status', 'purchased')
-                .gt('payment_confirmed_at', sinceDate);
-
-            // Filter reservations for this wedding list's gifts
-            const { data: listGifts } = await supabase
-                .from('gifts')
-                .select('id')
-                .eq('wedding_list_id', list.id);
-
-            const listGiftIds = new Set((listGifts || []).map(g => g.id));
-
-            // We need to get reservations for this list's gifts
+            // We need to get reservations for this list's gifts (filtered below)
             const { data: giftReservations } = await supabase
                 .from('gift_reservations')
                 .select(`
@@ -133,7 +117,15 @@ serve(async (req) => {
                 .eq('status', 'purchased')
                 .gt('payment_confirmed_at', sinceDate);
 
-            const relevantReservations = (giftReservations || []).filter(r =>
+            // Filter reservations for this wedding list's gifts
+            const { data: listGifts } = await supabase
+                .from('gifts')
+                .select('id')
+                .eq('wedding_list_id', list.id);
+
+            const listGiftIds = new Set((listGifts || []).map((g: { id: string }) => g.id));
+
+            const relevantReservations = (giftReservations || []).filter((r: { gift_id: string }) =>
                 listGiftIds.has(r.gift_id)
             );
 
@@ -147,18 +139,18 @@ serve(async (req) => {
             // Prepare digest data
             const digestData = {
                 coupleNames,
-                newRsvps: (newRsvps || []).map(r => ({
+                newRsvps: (newRsvps || []).map((r: { guest_name: string; companions_count: number }) => ({
                     name: r.guest_name,
                     companions: r.companions_count
                 })),
-                newGifts: relevantReservations.map(r => ({
-                    name: (r as any).gifts?.name || 'Presente',
+                newGifts: relevantReservations.map((r: any) => ({
+                    name: r.gifts?.name || 'Presente',
                     guestName: r.guest_name,
-                    amount: r.total_price || (r as any).gifts?.price || 0
+                    amount: r.total_price || r.gifts?.price || 0
                 })),
                 newMessages: newMessagesCount || 0,
-                totalGiftAmount: relevantReservations.reduce((sum, r) =>
-                    sum + (r.total_price || (r as any).gifts?.price || 0), 0
+                totalGiftAmount: relevantReservations.reduce((sum: number, r: any) =>
+                    sum + (r.total_price || r.gifts?.price || 0), 0
                 ),
                 dashboardUrl: `${APP_URL}/dashboard`,
             };
