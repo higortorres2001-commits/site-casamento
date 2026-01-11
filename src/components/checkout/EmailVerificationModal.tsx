@@ -5,7 +5,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Loader2, Mail, ArrowLeft, CheckCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError, showSuccess, showUserError } from "@/utils/toast";
+import { GUEST_MESSAGES, AUTH_MESSAGES } from "@/constants/messages";
 
 interface EmailVerificationModalProps {
   email: string;
@@ -27,20 +28,20 @@ const EmailVerificationModal = ({
   const [timeLeft, setTimeLeft] = useState(30);
   const [canResend, setCanResend] = useState(false);
   const [verificationStep, setVerificationStep] = useState<'sending' | 'input' | 'verifying' | 'success'>('sending');
-  
+
   // Referências para os inputs
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  
+
   // ID de sessão para persistência
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 15));
-  
+
   // Efeito para enviar o código OTP quando o modal abre
   useEffect(() => {
     if (isOpen && verificationStep === 'sending') {
       sendOtpCode();
     }
   }, [isOpen]);
-  
+
   // Timer para reenvio
   useEffect(() => {
     if (timeLeft > 0 && verificationStep === 'input') {
@@ -50,7 +51,7 @@ const EmailVerificationModal = ({
       setCanResend(true);
     }
   }, [timeLeft, verificationStep]);
-  
+
   // Auto-focus no primeiro input quando estiver no passo de input
   useEffect(() => {
     if (verificationStep === 'input' && inputRefs.current[0]) {
@@ -64,7 +65,7 @@ const EmailVerificationModal = ({
   const sendOtpCode = async () => {
     console.log("📧 Sending OTP to:", email);
     setIsResending(true);
-    
+
     try {
       const { data, error } = await supabase.functions.invoke("send-checkout-otp", {
         body: { email: email.toLowerCase().trim() }
@@ -72,7 +73,7 @@ const EmailVerificationModal = ({
 
       if (error) {
         console.error("Error sending OTP:", error);
-        showError("Erro ao enviar código. Tente novamente.");
+        showUserError(GUEST_MESSAGES.error.GENERIC, error);
         setVerificationStep('sending');
       } else if (data?.error) {
         console.error("Function returned error:", data.error);
@@ -87,7 +88,7 @@ const EmailVerificationModal = ({
       }
     } catch (error: any) {
       console.error("Unexpected error sending OTP:", error);
-      showError("Erro inesperado. Tente novamente.");
+      showUserError(GUEST_MESSAGES.error.GENERIC, error);
       setVerificationStep('sending');
     } finally {
       setIsResending(false);
@@ -97,20 +98,20 @@ const EmailVerificationModal = ({
   // Verificar código OTP usando a função específica
   const verifyOtpCode = async () => {
     const otpCode = otp.join("");
-    
+
     if (otpCode.length !== 6) {
       showError("Por favor, digite os 6 dígitos do código.");
       return;
     }
-    
+
     setIsVerifying(true);
     setVerificationStep('verifying');
 
     try {
       console.log("🔐 Verifying OTP code:", otpCode);
-      
+
       const { data, error } = await supabase.functions.invoke("verify-checkout-otp", {
-        body: { 
+        body: {
           email: email.toLowerCase().trim(),
           token: otpCode
         }
@@ -118,7 +119,7 @@ const EmailVerificationModal = ({
 
       if (error) {
         console.error("OTP verification error:", error);
-        showError("Erro ao verificar código. Tente novamente.");
+        showUserError(GUEST_MESSAGES.error.GENERIC, error);
         setOtp(Array(6).fill(""));
         setVerificationStep('input');
         if (inputRefs.current[0]) {
@@ -136,21 +137,21 @@ const EmailVerificationModal = ({
         console.log("✅ OTP verified successfully");
         showSuccess("Código verificado com sucesso!");
         setVerificationStep('success');
-        
+
         // Limpar a sessão do localStorage
         localStorage.removeItem(`otp_session_${sessionId.current}`);
-        
+
         // Notificar o componente pai
         setTimeout(() => {
           onVerified(data.userData);
         }, 1000);
       } else {
-        showError("Resposta inválida do servidor.");
+        showError(GUEST_MESSAGES.error.GENERIC);
         setVerificationStep('input');
       }
     } catch (error: any) {
       console.error("Unexpected error during OTP verification:", error);
-      showError("Erro inesperado. Por favor, tente novamente.");
+      showUserError(GUEST_MESSAGES.error.GENERIC, error);
       setVerificationStep('input');
     } finally {
       setIsVerifying(false);
@@ -161,7 +162,7 @@ const EmailVerificationModal = ({
   const handleOtpChange = (index: number, value: string) => {
     // Permitir apenas números
     const numericValue = value.replace(/\D/g, "").slice(0, 1);
-    
+
     const newOtp = [...otp];
     newOtp[index] = numericValue;
     setOtp(newOtp);
@@ -188,16 +189,16 @@ const EmailVerificationModal = ({
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    
+
     if (pastedData.length === 6) {
       const newOtp = pastedData.split("");
       setOtp(newOtp);
-      
+
       // Focus no último input
       if (inputRefs.current[5]) {
         inputRefs.current[5]?.focus();
       }
-      
+
       // Auto-submit
       setTimeout(() => verifyOtpCode(), 300);
     }
@@ -225,7 +226,7 @@ const EmailVerificationModal = ({
             </p>
           </div>
         );
-        
+
       case 'input':
         return (
           <>
@@ -239,12 +240,12 @@ const EmailVerificationModal = ({
               Enviamos um código de 6 dígitos para:<br />
               <span className="font-semibold text-blue-600">{email}</span>
             </p>
-            
+
             <div className="text-center mb-6">
               <p className="text-sm text-gray-600 mb-4">
                 Digite o código abaixo:
               </p>
-              
+
               <div className="flex justify-center gap-2">
                 {otp.map((digit, index) => (
                   <input
@@ -263,7 +264,7 @@ const EmailVerificationModal = ({
                 ))}
               </div>
             </div>
-            
+
             <div className="space-y-4">
               <Button
                 onClick={verifyOtpCode}
@@ -314,7 +315,7 @@ const EmailVerificationModal = ({
             </div>
           </>
         );
-        
+
       case 'verifying':
         return (
           <div className="flex flex-col items-center justify-center py-8">
@@ -325,7 +326,7 @@ const EmailVerificationModal = ({
             </p>
           </div>
         );
-        
+
       case 'success':
         return (
           <div className="flex flex-col items-center justify-center py-8">

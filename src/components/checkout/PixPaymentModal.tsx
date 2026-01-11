@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { showError, showSuccess } from "@/utils/toast";
+import { GUEST_MESSAGES, ADMIN_MESSAGES } from "@/constants/messages";
 import { supabase } from "@/integrations/supabase/client"; // Import supabase client
 
 interface PixPaymentModalProps {
@@ -51,7 +52,7 @@ const PixPaymentModal = ({
         console.error("Error checking payment status:", error);
         // showError("Erro ao verificar status do pagamento."); // Avoid spamming toasts
       } else if (data && (data.status === "CONFIRMED" || data.status === "RECEIVED")) {
-        showSuccess("Seu pagamento foi confirmado!");
+        showSuccess(GUEST_MESSAGES.success.PAYMENT_CONFIRMED);
         stopPolling();
         onClose(); // Close the modal
         navigate("/confirmacao");
@@ -112,7 +113,7 @@ const PixPaymentModal = ({
   const copyToClipboard = (text: string, message: string) => {
     navigator.clipboard.writeText(text)
       .then(() => showSuccess(message))
-      .catch(() => showError("Falha ao copiar."));
+      .catch(() => showError(GUEST_MESSAGES.error.GENERIC));
   };
 
   const handleGoToProcessing = () => {

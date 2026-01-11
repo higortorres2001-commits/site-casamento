@@ -24,7 +24,7 @@ const AdminLayout = () => {
       const isAdminRoute = location.pathname.startsWith('/admin');
       if (isAdminRoute && user.email !== ADMIN_EMAIL) {
         showError("Você não tem permissão para acessar esta área.");
-        navigate('/meus-produtos');
+        navigate('/dashboard');
       }
     }
   }, [location.pathname, user, isSessionLoading, navigate]);

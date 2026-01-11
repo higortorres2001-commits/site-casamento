@@ -19,6 +19,7 @@ import { isValidCPF, formatCPF } from "@/utils/cpfValidation";
 import { formatWhatsapp, isValidWhatsapp } from "@/utils/whatsappValidation";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
+import { VALIDATION_MESSAGES, AUTH_MESSAGES } from "@/constants/messages";
 import EmailVerificationModal from "./EmailVerificationModal";
 import { useEmailExistence } from "@/hooks/use-email-existence";
 
@@ -52,16 +53,17 @@ interface CheckoutFormProps {
     whatsapp?: string | null;
   };
   onEmailVerified?: (email: string) => void;
+  onPhoneLookup?: (phone: string) => void;
 }
 
 const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
-  ({ onSubmit, isLoading, initialData, onEmailVerified }, ref) => {
+  ({ onSubmit, isLoading, initialData, onEmailVerified, onPhoneLookup }, ref) => {
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [isExistingUser, setIsExistingUser] = useState(false);
     const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
     const [emailForVerification, setEmailForVerification] = useState("");
     const [isEmailVerified, setIsEmailVerified] = useState(false);
-    
+
     const { checkEmailExists, isChecking } = useEmailExistence();
 
     const form = useForm<z.infer<typeof formSchema>>({
@@ -77,7 +79,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
     useImperativeHandle(ref, () => ({
       submitForm: async () => {
         if (isExistingUser && !isEmailVerified) {
-          showError("Por favor, verifique seu e-mail antes de continuar.");
+          showError(VALIDATION_MESSAGES.INVALID_EMAIL);
           return false;
         }
         return form.trigger();
@@ -92,13 +94,13 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
         setIsEmailVerified(false);
         return;
       }
-      
+
       setIsCheckingEmail(true);
       try {
         console.log("🔍 Checking email on blur:", email);
         const exists = await checkEmailExists(email);
         console.log("📧 Email exists:", exists);
-        
+
         if (exists && !isEmailVerified) {
           setIsExistingUser(true);
           setIsEmailVerified(false);
@@ -107,7 +109,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
           setIsExistingUser(false);
           setIsEmailVerified(false);
           showSuccess("Novo cliente! Preencha seus dados abaixo.");
-          
+
           // Notificar o componente pai que o email foi verificado (para disparar InitiateCheckout)
           if (onEmailVerified) {
             onEmailVerified(email);
@@ -125,10 +127,10 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
     const handleStartVerification = () => {
       const email = form.getValues("email");
       if (!email || !email.includes("@")) {
-        showError("Por favor, digite um e-mail válido.");
+        showError(VALIDATION_MESSAGES.INVALID_EMAIL);
         return;
       }
-      
+
       console.log("🚀 Starting email verification for:", email);
       setEmailForVerification(email);
       setIsVerificationModalOpen(true);
@@ -138,15 +140,15 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
       console.log("✅ Verification completed with user data:", userData);
       setIsEmailVerified(true);
       setIsVerificationModalOpen(false);
-      
+
       form.setValue("name", userData.name);
       form.setValue("cpf", formatCPF(userData.cpf));
       form.setValue("whatsapp", formatWhatsapp(userData.whatsapp));
-      
+
       form.trigger();
-      
+
       showSuccess("E-mail verificado! Seus dados foram preenchidos automaticamente.");
-      
+
       // Notificar o componente pai que o email foi verificado (para disparar InitiateCheckout)
       if (onEmailVerified) {
         onEmailVerified(form.getValues("email"));
@@ -162,9 +164,9 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                 {isEmailVerified ? "Dados Confirmados" : isExistingUser ? "Bem-vindo de volta!" : "Preencha seus dados"}
               </h3>
               <p className="text-sm text-gray-600">
-                {isEmailVerified 
+                {isEmailVerified
                   ? "Seus dados foram verificados e preenchidos automaticamente. Você pode prosseguir com o pagamento."
-                  : isExistingUser 
+                  : isExistingUser
                     ? "Vimos que você já é nosso cliente. Para sua segurança, precisamos verificar seu e-mail."
                     : "Preencha os dados abaixo para continuar com sua compra."
                 }
@@ -216,7 +218,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                     Para sua segurança, precisamos verificar seu e-mail antes de continuar.
                   </p>
                 </div>
-                
+
                 <Button
                   type="button"
                   onClick={handleStartVerification}
@@ -250,7 +252,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="cpf"
@@ -285,7 +287,7 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="whatsapp"
@@ -302,6 +304,11 @@ const CheckoutForm = forwardRef<CheckoutFormRef, CheckoutFormProps>(
                           onChange={(e) => {
                             const formatted = formatWhatsapp(e.target.value);
                             field.onChange(formatted);
+                          }}
+                          onBlur={() => {
+                            if (onPhoneLookup && field.value) {
+                              onPhoneLookup(field.value);
+                            }
                           }}
                           maxLength={15}
                           className="focus:ring-orange-500 focus:border-orange-500"

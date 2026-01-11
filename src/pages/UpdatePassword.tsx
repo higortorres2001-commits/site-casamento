@@ -16,7 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError, showSuccess, showUserError } from "@/utils/toast";
+import { AUTH_MESSAGES } from "@/constants/messages";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
@@ -31,8 +32,8 @@ const formSchema = z.object({
         const hasDigit = /\d/.test(password);
         return hasMinLength && hasLetter && hasDigit;
       },
-      { 
-        message: "A senha não atende aos requisitos" 
+      {
+        message: "A senha não atende aos requisitos"
       }
     ),
   confirmPassword: z.string(),
@@ -65,7 +66,7 @@ const UpdatePassword = () => {
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     if (!user) {
-      showError("Você precisa estar logado para trocar a senha.");
+      showError(AUTH_MESSAGES.error.NOT_LOGGED_IN);
       navigate("/login");
       return;
     }
@@ -81,22 +82,22 @@ const UpdatePassword = () => {
           level: 'error',
           context: 'update-password',
           message: 'Failed to update password in auth',
-          metadata: { 
-            userId: user.id, 
-            errorType: updateAuthError.name, 
-            errorMessage: updateAuthError.message 
+          metadata: {
+            userId: user.id,
+            errorType: updateAuthError.name,
+            errorMessage: updateAuthError.message
           }
         });
-        showError("Erro ao atualizar a senha: " + updateAuthError.message);
+        showUserError(AUTH_MESSAGES.error.PASSWORD_UPDATE_FAILED, updateAuthError);
         console.error("Update password error:", updateAuthError);
         return;
       }
 
       const { error: updateProfileError } = await supabase
         .from('profiles')
-        .update({ 
+        .update({
           has_changed_password: true,
-          primeiro_acesso: false 
+          primeiro_acesso: false
         })
         .eq('id', user.id);
 
@@ -105,13 +106,13 @@ const UpdatePassword = () => {
           level: 'error',
           context: 'update-password',
           message: 'Failed to update profile after password change',
-          metadata: { 
-            userId: user.id, 
-            errorType: updateProfileError.name, 
-            errorMessage: updateProfileError.message 
+          metadata: {
+            userId: user.id,
+            errorType: updateProfileError.name,
+            errorMessage: updateProfileError.message
           }
         });
-        showError("Erro ao registrar a troca de senha no perfil: " + updateProfileError.message);
+        showUserError(AUTH_MESSAGES.error.PROFILE_SAVE_FAILED, updateProfileError);
         console.error("Update profile has_changed_password error:", updateProfileError);
       }
 
@@ -122,20 +123,20 @@ const UpdatePassword = () => {
         metadata: { userId: user.id }
       });
 
-      showSuccess("Senha atualizada com sucesso! Você será redirecionado.");
+      showSuccess(AUTH_MESSAGES.success.PASSWORD_UPDATED);
       navigate("/meus-produtos");
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'update-password',
         message: 'Unexpected error during password update',
-        metadata: { 
-          userId: user.id, 
-          errorMessage: error.message, 
-          errorStack: error.stack 
+        metadata: {
+          userId: user.id,
+          errorMessage: error.message,
+          errorStack: error.stack
         }
       });
-      showError("Erro inesperado: " + error.message);
+      showUserError(AUTH_MESSAGES.error.PASSWORD_UPDATE_FAILED, error);
       console.error("Unexpected error:", error);
     } finally {
       setIsLoading(false);

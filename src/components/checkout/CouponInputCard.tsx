@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess } from "@/utils/toast";
+import { GUEST_MESSAGES, VALIDATION_MESSAGES } from "@/constants/messages";
 import { Coupon } from "@/types";
 import { Loader2, ChevronDown, ChevronUp, Tag, X } from "lucide-react";
 
@@ -21,9 +22,9 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
 
   const handleApplyCoupon = async () => {
     console.log("🎯 CouponInputCard - Aplicando cupom:", couponCode.trim());
-    
+
     if (!couponCode.trim()) {
-      showError("Por favor, insira um código de cupom.");
+      showError(VALIDATION_MESSAGES.REQUIRED_FIELDS);
       return;
     }
 
@@ -37,12 +38,12 @@ const CouponInputCard = ({ onCouponApplied, appliedCoupon }: CouponInputCardProp
 
     if (error || !data) {
       console.log("❌ Cupom inválido:", error);
-      showError("Cupom inválido ou inativo.");
+      showError(GUEST_MESSAGES.error.GENERIC);
       onCouponApplied(null); // Clear any previously applied coupon
       console.log("🔄 Cupom removido do estado pai");
     } else {
       console.log("✅ Cupom válido encontrado:", data);
-      showSuccess("Cupom aplicado com sucesso!");
+      showSuccess(GUEST_MESSAGES.success.RESERVATION_CREATED);
       onCouponApplied(data); // ✅ PASSANDO O CUPOM VÁLIDO
       console.log("🔄 Cupom aplicado no estado pai:", data);
       setCouponCode(""); // Clear input after successful application

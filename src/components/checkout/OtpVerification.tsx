@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, Mail, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError, showSuccess, showUserError } from "@/utils/toast";
+import { GUEST_MESSAGES, ADMIN_MESSAGES } from "@/constants/messages";
 
 interface OtpVerificationProps {
   email: string;
@@ -43,7 +44,7 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
   const handleInputChange = (index: number, value: string) => {
     // Apenas permite números
     const numericValue = value.replace(/\D/g, "").slice(0, 1);
-    
+
     const newOtp = [...otp];
     newOtp[index] = numericValue;
     setOtp(newOtp);
@@ -68,16 +69,16 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    
+
     if (pastedData.length === 6) {
       const newOtp = pastedData.split("");
       setOtp(newOtp);
-      
+
       // Focus no último input
       if (inputRefs.current[5]) {
         inputRefs.current[5]?.focus();
       }
-      
+
       // Auto-submit
       setTimeout(() => handleVerifyOtp(pastedData), 100);
     }
@@ -85,7 +86,7 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
 
   const handleVerifyOtp = async (otpCode?: string) => {
     const codeToVerify = otpCode || otp.join("");
-    
+
     if (codeToVerify.length !== 6) {
       showError("Por favor, digite os 6 dígitos do código.");
       return;
@@ -102,8 +103,8 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
 
       if (error) {
         console.error("OTP verification error:", error);
-        showError("Código inválido. Por favor, verifique e tente novamente.");
-        
+        showUserError(GUEST_MESSAGES.error.GENERIC, error);
+
         // Limpa todos os campos
         setOtp(["", "", "", "", "", "", ""]);
         if (inputRefs.current[0]) {
@@ -111,7 +112,7 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
         }
       } else if (data.user) {
         showSuccess("Código verificado com sucesso!");
-        
+
         // Buscar dados do usuário no perfil
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
@@ -121,7 +122,7 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
 
         if (profileError || !profile) {
           console.error("Error fetching user profile:", profileError);
-          showError("Erro ao carregar seus dados. Por favor, tente novamente.");
+          showUserError(ADMIN_MESSAGES.error.LOAD_PROFILE_FAILED, profileError);
         } else {
           // Passa os dados do usuário para o componente pai
           onUserDataLoaded({
@@ -129,14 +130,14 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
             cpf: profile.cpf || "",
             whatsapp: profile.whatsapp || ""
           });
-          
+
           // Informa que o usuário foi verificado
           onVerified();
         }
       }
     } catch (error: any) {
       console.error("Unexpected error during OTP verification:", error);
-      showError("Erro inesperado. Por favor, tente novamente.");
+      showUserError(GUEST_MESSAGES.error.GENERIC, error);
     } finally {
       setIsVerifying(false);
     }
@@ -144,7 +145,7 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
 
   const handleResendOtp = async () => {
     setIsResending(true);
-    
+
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email
@@ -152,14 +153,14 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
 
       if (error) {
         console.error("Error resending OTP:", error);
-        showError("Erro ao reenviar o código. Por favor, tente novamente.");
+        showUserError(GUEST_MESSAGES.error.GENERIC, error);
       } else {
         showSuccess("Código reenviado com sucesso!");
-        
+
         // Reset timer
         setTimeLeft(35);
         setCanResend(false);
-        
+
         // Limpa campos e focus no primeiro
         setOtp(["", "", "", "", "", "", ""]);
         if (inputRefs.current[0]) {
@@ -168,7 +169,7 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
       }
     } catch (error: any) {
       console.error("Unexpected error resending OTP:", error);
-      showError("Erro inesperado. Por favor, tente novamente.");
+      showUserError(GUEST_MESSAGES.error.GENERIC, error);
     } finally {
       setIsResending(false);
     }
@@ -188,13 +189,13 @@ const OtpVerification = ({ email, onVerified, onBack, onUserDataLoaded }: OtpVer
           <span className="font-semibold text-blue-600">{email}</span>
         </p>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         <div className="text-center">
           <p className="text-sm text-gray-600 mb-4">
             Digite o código abaixo:
           </p>
-          
+
           <div className="flex justify-center gap-2">
             {otp.map((digit, index) => (
               <Input

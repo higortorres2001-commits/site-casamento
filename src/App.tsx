@@ -2,10 +2,18 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+import Gifts from "./pages/Gifts";
+import WeddingListSettings from "./pages/WeddingListSettings";
+import GuestManagement from "./pages/GuestManagement";
+import PublicGiftList from "./pages/PublicGiftList";
+import GiftCheckout from "./pages/GiftCheckout";
+import MagicRsvp from "./pages/MagicRsvp";
 import Products from "./pages/admin/Products";
 import Coupons from "./pages/admin/Coupons";
 import Customers from "./pages/admin/Customers";
@@ -19,6 +27,8 @@ import ProcessingPayment from "./pages/ProcessingPayment";
 import Logs from "./pages/admin/Logs";
 import UpdatePassword from "./pages/UpdatePassword";
 import ResetPassword from "./pages/ResetPassword";
+import Onboarding from "./pages/Onboarding";
+import Profile from "./pages/Profile";
 import AdminLayout from "./components/layout/AdminLayout";
 import PublicLayout from "./components/layout/PublicLayout";
 import { SessionContextProvider } from "./components/SessionContextProvider";
@@ -35,9 +45,14 @@ const AppContent = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/cadastro" element={<Navigate to="/onboarding" replace />} />
       <Route path="/checkout/:productId" element={<Checkout />} />
       <Route path="/primeira-senha" element={<UpdatePassword />} />
       <Route path="/update-password" element={<ResetPassword />} />
+      <Route path="/lista/:slug" element={<PublicGiftList />} />
+      <Route path="/lista/:slug/rsvp/:envelopeSlug" element={<MagicRsvp />} />
+      <Route path="/presente/:giftId" element={<GiftCheckout />} />
+      <Route path="/onboarding" element={<Onboarding />} />
 
       <Route element={<AdminLayout />}>
         <Route path="/admin/products" element={<Products />} />
@@ -50,12 +65,19 @@ const AppContent = () => {
       </Route>
 
       <Route element={<PublicLayout />}>
-        <Route path="/" element={<Index />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/presentes" element={<Gifts />} />
+        <Route path="/minha-lista" element={<WeddingListSettings />} />
+        <Route path="/convidados" element={<GuestManagement />} />
         <Route path="/meus-produtos" element={<MyProducts />} />
+        <Route path="/meu-perfil" element={<Profile />} />
         <Route path="/produto/:productId" element={<ProductDetails />} />
         <Route path="/confirmacao" element={<Confirmation />} />
         <Route path="/processando-pagamento" element={<ProcessingPayment />} />
       </Route>
+
+      {/* Home route redirects to login */}
+      <Route path="/" element={<Login />} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

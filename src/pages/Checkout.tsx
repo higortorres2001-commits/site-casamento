@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Product, Coupon } from "@/types";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError, showSuccess, showUserError } from "@/utils/toast";
+import { GUEST_MESSAGES, VALIDATION_MESSAGES } from "@/constants/messages";
 import { Loader2 } from "lucide-react";
 import CheckoutHeader from "@/components/checkout/CheckoutHeader";
 import MainProductDisplayCard from "@/components/checkout/MainProductDisplayCard";
@@ -52,13 +53,13 @@ const Checkout = () => {
   useEffect(() => {
     const fetchProductData = async () => {
       if (!productId) {
-        showError("ID do produto não fornecido.");
+        showError(GUEST_MESSAGES.error.GIFT_NOT_FOUND);
         navigate("/");
         return;
       }
 
       setIsLoadingProduct(true);
-      
+
       try {
         const [productResult, bumpsResult] = await Promise.all([
           supabase
@@ -67,18 +68,18 @@ const Checkout = () => {
             .eq("id", productId)
             .eq("status", "ativo")
             .single(),
-          
+
           supabase
             .from("products")
             .select("id, name, price")
             .eq("status", "ativo")
             .in("id", [productId])
         ]);
-        
+
         const { data: product, error: productError } = productResult;
-        
+
         if (productError || !product) {
-          showError("Produto não encontrado ou não está disponível.");
+          showUserError(GUEST_MESSAGES.error.GIFT_NOT_FOUND, productError);
           console.error("Error fetching product:", productError);
           navigate("/");
           return;
@@ -101,10 +102,10 @@ const Checkout = () => {
         } else {
           setOrderBumps([]);
         }
-        
+
       } catch (error: any) {
         console.error("Unexpected error in fetchProductData:", error);
-        showError("Erro ao carregar dados do produto.");
+        showUserError(GUEST_MESSAGES.error.LOAD_GIFT_FAILED, error);
         navigate("/");
       } finally {
         setIsLoadingProduct(false);
@@ -172,19 +173,19 @@ const Checkout = () => {
 
   const handleSubmit = async () => {
     if (!mainProduct) {
-      showError("Produto não carregado.");
+      showError(GUEST_MESSAGES.error.GIFT_NOT_FOUND);
       return;
     }
 
     const checkoutFormValid = await checkoutFormRef.current?.submitForm();
     if (!checkoutFormValid) {
-      showError("Por favor, preencha todos os campos obrigatórios.");
+      showError(VALIDATION_MESSAGES.REQUIRED_FIELDS);
       return;
     }
 
     const checkoutFormData = checkoutFormRef.current?.getValues();
     if (!checkoutFormData) {
-      showError("Erro ao obter dados do formulário.");
+      showError(GUEST_MESSAGES.error.GENERIC);
       return;
     }
 
@@ -192,7 +193,7 @@ const Checkout = () => {
     if (paymentMethod === "CREDIT_CARD") {
       const creditCardFormValid = await creditCardFormRef.current?.submitForm();
       if (!creditCardFormValid) {
-        showError("Por favor, preencha todos os campos do cartão.");
+        showError(VALIDATION_MESSAGES.CARD_FIELDS_REQUIRED);
         return;
       }
       creditCardData = creditCardFormRef.current?.getValues();
@@ -227,16 +228,14 @@ const Checkout = () => {
 
       if (error) {
         if (error.message?.includes('recuperável') || error.message?.includes('temporário')) {
-          showError("Erro temporário. Seus dados foram salvos e entraremos em contato em breve.");
-        } else {
-          showError("Erro ao processar pagamento: " + error.message);
+          showUserError(GUEST_MESSAGES.error.PAYMENT_FAILED, error);
         }
         console.error("Payment error:", error);
         return;
       }
 
       if (data?.error) {
-        showError(data.error);
+        showUserError(GUEST_MESSAGES.error.PAYMENT_FAILED, { message: data.error });
         return;
       }
 
@@ -247,15 +246,15 @@ const Checkout = () => {
         setIsPixModalOpen(true);
       } else if (paymentMethod === "CREDIT_CARD") {
         if (data.status === "CONFIRMED" || data.status === "RECEIVED") {
-          showSuccess("Pagamento confirmado!");
+          showSuccess(GUEST_MESSAGES.success.PAYMENT_CONFIRMED);
           navigate("/confirmacao", { state: { orderId: data.orderId, totalPrice: currentTotalPrice } });
         } else {
-          showSuccess("Pedido criado! Aguardando confirmação.");
+          showSuccess(GUEST_MESSAGES.success.ORDER_CREATED);
           navigate("/processando-pagamento");
         }
       }
     } catch (err: any) {
-      showError("Erro inesperado: " + err.message);
+      showUserError(GUEST_MESSAGES.error.GENERIC, err);
       console.error("Checkout error:", err);
     } finally {
       setIsSubmitting(false);
@@ -290,7 +289,7 @@ const Checkout = () => {
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Informações do Comprador</h2>
             <CheckoutForm
               ref={checkoutFormRef}
-              onSubmit={() => {}}
+              onSubmit={() => { }}
               isLoading={isSubmitting}
               onEmailVerified={handleEmailVerified}
             />
@@ -381,9 +380,9 @@ const Checkout = () => {
 
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <p className="text-xs text-gray-500 text-center leading-relaxed">
-              O pagamento será processado para <strong>CNPJ: 44.962.282/0001-83</strong>. 
-              Em caso de qualquer dúvida ou dificuldade no acesso aos materiais, 
-              clique no botão do WhatsApp para entrar em contato conosco. 
+              O pagamento será processado para <strong>CNPJ: 44.962.282/0001-83</strong>.
+              Em caso de qualquer dúvida ou dificuldade no acesso aos materiais,
+              clique no botão do WhatsApp para entrar em contato conosco.
               Estamos aqui para ajudar!
             </p>
           </div>

@@ -38,9 +38,15 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       '/processando-pagamento',
       '/primeira-senha', // Adicionado como rota pública
       '/update-password', // Adicionado como rota pública
+      '/cadastro',
+      '/dashboard',
+      '/presentes',
+      '/minha-lista',
+      '/lista/', // Dynamic path for public gift lists
+      '/presente/', // Dynamic path for gift checkout
     ];
 
-    const isPublicPath = publicPaths.some(path => 
+    const isPublicPath = publicPaths.some(path =>
       path.endsWith('/') ? location.pathname.startsWith(path) : location.pathname === path
     );
 
@@ -56,8 +62,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
         const currentUserState = latestUserRef.current;
 
         // Verifica se a sessão ou o usuário realmente mudaram
-        const hasSessionChanged = 
-          currentSession?.user?.id !== currentUserState?.id || 
+        const hasSessionChanged =
+          currentSession?.user?.id !== currentUserState?.id ||
           currentSession?.expires_at !== currentSessionState?.expires_at ||
           (currentSession === null && currentSessionState !== null) || // Detecta logout
           (currentSession !== null && currentSessionState === null); // Detecta login
@@ -80,8 +86,8 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
           }
         } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           if (currentSession && location.pathname === '/login') {
-            console.log('SessionContextProvider DEBUG: SIGNED_IN/INITIAL_SESSION, on /login. Redirecting to /meus-produtos.');
-            navigate('/meus-produtos');
+            console.log('SessionContextProvider DEBUG: SIGNED_IN/INITIAL_SESSION, on /login. Redirecting to /dashboard.');
+            navigate('/dashboard');
           }
         }
       }
@@ -89,12 +95,12 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
 
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       console.log('SessionContextProvider DEBUG: Initial session check. Session:', initialSession ? 'exists' : 'null', 'User object reference:', initialSession?.user);
-      
+
       // Aplica a mesma lógica de detecção de mudança para a sessão inicial
       const currentSessionState = latestSessionRef.current;
       const currentUserState = latestUserRef.current;
-      const hasInitialSessionChanged = 
-        initialSession?.user?.id !== currentUserState?.id || 
+      const hasInitialSessionChanged =
+        initialSession?.user?.id !== currentUserState?.id ||
         initialSession?.expires_at !== currentSessionState?.expires_at ||
         (initialSession === null && currentSessionState !== null) ||
         (initialSession !== null && currentSessionState === null);
@@ -124,7 +130,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
       authListener.subscription.unsubscribe();
     };
   }, [navigate, location.pathname]); // As dependências deste useEffect são apenas navigate e location.pathname
-                                    // session e user são acessados via refs para evitar loops de re-renderização.
+  // session e user são acessados via refs para evitar loops de re-renderização.
 
   return (
     <SessionContext.Provider value={{ session, user, isLoading }}>

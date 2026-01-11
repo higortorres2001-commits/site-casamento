@@ -2,18 +2,28 @@
 
 import React from "react";
 
-const Brand = () => {
+interface BrandProps {
+  size?: "sm" | "md" | "lg" | "xl";
+  className?: string;
+  showText?: boolean;
+}
+
+const Brand: React.FC<BrandProps> = ({ size = "md", className, showText = true }) => {
+  const sizes = {
+    sm: { logo: "h-8" },
+    md: { logo: "h-10" },
+    lg: { logo: "h-16" },
+    xl: { logo: "h-24" },
+  };
+
   return (
-    <span
-      style={{
-        fontFamily: '"Poppins", ui-sans-serif, system-ui',
-        fontWeight: 700,
-        color: "#f472b6",
-      }}
-      className="text-xl md:text-2xl"
-    >
-      SemEstress
-    </span>
+    <div className="flex items-center justify-center gap-2">
+      <img
+        src="/logo.png"
+        alt="DuetLove"
+        className={`${className ?? sizes[size].logo} object-contain`}
+      />
+    </div>
   );
 };
 

@@ -16,7 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError, showSuccess, showUserError } from "@/utils/toast";
+import { AUTH_MESSAGES } from "@/constants/messages";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import PasswordRequirements from "@/components/PasswordRequirements";
@@ -30,8 +31,8 @@ const formSchema = z.object({
         const hasDigit = /\d/.test(password);
         return hasMinLength && hasLetter && hasDigit;
       },
-      { 
-        message: "A senha não atende aos requisitos" 
+      {
+        message: "A senha não atende aos requisitos"
       }
     ),
   confirmPassword: z.string(),
@@ -67,13 +68,13 @@ const ResetPassword = () => {
           level: 'error',
           context: 'reset-password',
           message: 'Failed to reset password',
-          metadata: { 
-            errorType: error.name, 
-            errorMessage: error.message 
+          metadata: {
+            errorType: error.name,
+            errorMessage: error.message
           }
         });
 
-        showError("Erro ao redefinir a senha: " + error.message);
+        showUserError(AUTH_MESSAGES.error.PASSWORD_UPDATE_FAILED, error);
         console.error("Reset password error:", error);
         return;
       }
@@ -84,20 +85,20 @@ const ResetPassword = () => {
         message: 'Password successfully reset',
       });
 
-      showSuccess("Senha redefinida com sucesso!");
+      showSuccess(AUTH_MESSAGES.success.PASSWORD_RESET);
       navigate("/login");
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'reset-password',
         message: 'Unexpected error during password reset',
-        metadata: { 
-          errorMessage: error.message, 
-          errorStack: error.stack 
+        metadata: {
+          errorMessage: error.message,
+          errorStack: error.stack
         }
       });
 
-      showError("Erro inesperado: " + error.message);
+      showUserError(AUTH_MESSAGES.error.PASSWORD_UPDATE_FAILED, error);
       console.error("Unexpected error:", error);
     } finally {
       setIsLoading(false);

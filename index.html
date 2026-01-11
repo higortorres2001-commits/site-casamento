@@ -1,42 +1,64 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SemEstress</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  </head>
 
-  <body>
-    <!-- Meta Pixel Base Code with Advanced Matching -->
-    <script>
-      !function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuetLove - Lista de Presentes de Casamento</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+
+  <!-- Open Graph / Social Sharing Meta Tags (replaced dynamically by middleware for bots) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="DuetLove - Lista de Presentes de Casamento" />
+  <meta property="og:description" content="__META_DESCRIPTION__" />
+  <meta property="og:image" content="__META_IMAGE__" />
+  <meta property="og:url" content="__META_URL__" />
+  <meta property="og:site_name" content="DuetLove" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DuetLove - Lista de Presentes de Casamento" />
+  <meta name="twitter:description" content="__META_DESCRIPTION__" />
+  <meta name="twitter:image" content="__META_IMAGE__" />
+
+  <!-- WhatsApp specific -->
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+</head>
+
+<body>
+  <!-- Meta Pixel Base Code with Advanced Matching -->
+  <script>
+    !function (f, b, e, v, n, t, s) {
+      if (f.fbq) return; n = f.fbq = function () {
+        n.callMethod ?
+          n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+      };
+      if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+      n.queue = []; t = b.createElement(e); t.async = !0;
+      t.src = v; s = b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t, s)
+    }(window, document, 'script',
       'https://connect.facebook.net/en_US/fbevents.js');
-      
-      // Initialize Pixel with your ID: 1158437629373079
-      fbq('init', '1158437629373079', {
-        // Advanced Matching parameters will be added dynamically
-        // em: 'user@email.com',   // Will be hashed automatically
-        // ph: '1234567890',      // Will be hashed automatically
-        // fn: 'John',             // Will be hashed automatically
-        // ln: 'Doe'              // Will be hashed automatically
-      });
-      
-      // Track initial page view
-      fbq('track', 'PageView');
-    </script>
-    <noscript><img height="1" width="1" style="display:none"
-      src="https://www.facebook.com/tr?id=1158437629373079&ev=PageView&noscript=1"
-    /></noscript>
-    <!-- End Meta Pixel Base Code -->
-    
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+    // Initialize Pixel with your ID: 1158437629373079
+    fbq('init', '1158437629373079', {
+      // Advanced Matching parameters will be added dynamically
+      // em: 'user@email.com',   // Will be hashed automatically
+      // ph: '1234567890',      // Will be hashed automatically
+      // fn: 'John',             // Will be hashed automatically
+      // ln: 'Doe'              // Will be hashed automatically
+    });
+
+    // Track initial page view
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=1158437629373079&ev=PageView&noscript=1" /></noscript>
+  <!-- End Meta Pixel Base Code -->
+
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

@@ -16,7 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError, showSuccess, showUserError } from "@/utils/toast";
+import { AUTH_MESSAGES, VALIDATION_MESSAGES } from "@/constants/messages";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEmailExistence } from "@/hooks/use-email-existence";
@@ -57,14 +58,14 @@ const LoginForm = () => {
           level: 'error',
           context: 'login',
           message: 'Login failed',
-          metadata: { 
+          metadata: {
             email: data.email,
             errorType: error.name,
-            errorMessage: error.message 
+            errorMessage: error.message
           }
         });
 
-        showError("Erro ao fazer login: " + error.message);
+        showUserError(AUTH_MESSAGES.error.LOGIN_FAILED, error);
         console.error("Login error:", error);
         return;
       }
@@ -76,21 +77,21 @@ const LoginForm = () => {
         metadata: { email: data.email }
       });
 
-      showSuccess("Login realizado com sucesso!");
-      navigate("/meus-produtos");
+      showSuccess(AUTH_MESSAGES.success.LOGIN);
+      navigate("/dashboard");
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'login',
         message: 'Unexpected login error',
-        metadata: { 
+        metadata: {
           email: data.email,
           errorMessage: error.message,
-          errorStack: error.stack 
+          errorStack: error.stack
         }
       });
 
-      showError("Erro inesperado: " + error.message);
+      showUserError(AUTH_MESSAGES.error.LOGIN_FAILED, error);
       console.error("Unexpected error:", error);
     } finally {
       setIsLoading(false);
@@ -99,9 +100,9 @@ const LoginForm = () => {
 
   const handleForgotPassword = async () => {
     const email = form.getValues("email");
-    
+
     if (!email || !z.string().email().safeParse(email).success) {
-      showError("Por favor, insira um email válido para recuperar a senha.");
+      showError(VALIDATION_MESSAGES.INVALID_EMAIL);
       return;
     }
 
@@ -116,14 +117,14 @@ const LoginForm = () => {
           level: 'error',
           context: 'password-reset',
           message: 'Password reset request failed',
-          metadata: { 
+          metadata: {
             email,
             errorType: error.name,
-            errorMessage: error.message 
+            errorMessage: error.message
           }
         });
 
-        showError("Erro ao solicitar redefinição de senha: " + error.message);
+        showUserError(AUTH_MESSAGES.error.PASSWORD_RESET_FAILED, error);
         console.error("Password reset error:", error);
         return;
       }
@@ -135,20 +136,20 @@ const LoginForm = () => {
         metadata: { email }
       });
 
-      showSuccess("Email de redefinição de senha enviado!");
+      showSuccess(AUTH_MESSAGES.success.PASSWORD_RESET_EMAIL);
     } catch (error: any) {
       await supabase.from('logs').insert({
         level: 'error',
         context: 'password-reset',
         message: 'Unexpected password reset error',
-        metadata: { 
+        metadata: {
           email,
           errorMessage: error.message,
-          errorStack: error.stack 
+          errorStack: error.stack
         }
       });
 
-      showError("Erro inesperado: " + error.message);
+      showUserError(AUTH_MESSAGES.error.PASSWORD_RESET_FAILED, error);
       console.error("Unexpected error:", error);
     } finally {
       setIsResetting(false);
@@ -171,7 +172,7 @@ const LoginForm = () => {
                     {...field}
                     type="email"
                     disabled={isLoading}
-                    className="focus:ring-orange-500 focus:border-orange-500"
+                    className="focus:ring-pink-500 focus:border-pink-500"
                   />
                   {isChecking && (
                     <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -187,7 +188,7 @@ const LoginForm = () => {
             </FormItem>
           )}
         />
-        
+
         <FormField
           control={form.control}
           name="password"
@@ -201,7 +202,7 @@ const LoginForm = () => {
                     placeholder="Sua senha"
                     {...field}
                     disabled={isLoading}
-                    className="focus:ring-orange-500 focus:border-orange-500 pr-10"
+                    className="focus:ring-pink-500 focus:border-pink-500 pr-10"
                   />
                   <button
                     type="button"
@@ -219,20 +220,20 @@ const LoginForm = () => {
         />
 
         <div className="flex justify-between items-center">
-          <Button 
-            type="button" 
-            variant="link" 
+          <Button
+            type="button"
+            variant="link"
             onClick={handleForgotPassword}
             disabled={isLoading || isResetting}
-            className="text-sm text-orange-600 hover:text-orange-700"
+            className="text-sm text-pink-600 hover:text-pink-700"
           >
             {isResetting ? "Enviando..." : "Esqueci minha senha"}
           </Button>
         </div>
 
-        <Button 
-          type="submit" 
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+        <Button
+          type="submit"
+          className="w-full bg-pink-500 hover:bg-pink-600 text-white"
           disabled={isLoading}
         >
           {isLoading ? (
@@ -241,6 +242,13 @@ const LoginForm = () => {
             "Entrar"
           )}
         </Button>
+
+        <div className="text-center text-sm text-gray-600 mt-4">
+          Não tem uma conta?{" "}
+          <Link to="/cadastro" className="text-pink-600 hover:text-pink-700 font-medium">
+            Criar lista de presentes
+          </Link>
+        </div>
       </form>
     </Form>
   );

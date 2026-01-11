@@ -408,7 +408,8 @@ async function createCreditCardPayment(
     installmentCount?: number;
   },
   totalPrice: number,
-  clientIp: string
+  clientIp: string,
+  externalReferenceOverride?: string
 ): Promise<PaymentResult> {
   const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
   const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
@@ -432,7 +433,7 @@ async function createCreditCardPayment(
     notificationDisabled: true,
     value: parseFloat(totalPrice.toFixed(2)),
     description: `Pedido #${orderId.substring(0, 8)}`,
-    externalReference: orderId,
+    externalReference: externalReferenceOverride || orderId,
     dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     billingType: 'CREDIT_CARD',
     creditCard: {
@@ -509,6 +510,166 @@ serve(async (req) => {
   try {
     requestBody = await req.json();
 
+    // ==================== CHECK IF GIFT PAYMENT ====================
+    const isGiftPayment = requestBody.isGiftPayment === true;
+
+    if (isGiftPayment) {
+      // ==================== GIFT PAYMENT FLOW ====================
+      const {
+        name, email, cpf, whatsapp,
+        giftId, giftName, giftReservationId,
+        totalPrice, weddingListId, quantity,
+        paymentMethod, creditCard, metaTrackingData
+      } = requestBody;
+
+      logger.info('Gift payment creation started', {
+        paymentMethod,
+        giftId,
+        giftReservationId,
+        totalPrice,
+        quantity
+      });
+
+      if (!name || !email || !cpf || !whatsapp || !giftId || !giftReservationId || !paymentMethod) {
+        throw new Error('Campos obrigatórios ausentes para pagamento de presente');
+      }
+
+      if (!['PIX', 'CREDIT_CARD'].includes(paymentMethod)) {
+        throw new Error('Método de pagamento inválido');
+      }
+
+      if (paymentMethod === 'CREDIT_CARD' && !creditCard) {
+        throw new Error('Dados do cartão são obrigatórios');
+      }
+
+      // Use reservation ID as order reference
+      orderId = giftReservationId;
+
+      // Prepare customer data
+      const customerData = {
+        name,
+        email,
+        cpf: cpf.replace(/\D/g, ''),
+        whatsapp: whatsapp.replace(/\D/g, '')
+      };
+
+      // Get client IP
+      const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
+
+      let paymentResult;
+
+      if (paymentMethod === 'PIX') {
+        // Create PIX payment using gift reservation ID as reference
+        const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
+        const ASAAS_BASE_URL = Deno.env.get('ASAAS_API_URL');
+
+        if (!ASAAS_API_KEY || !ASAAS_BASE_URL) {
+          throw new Error('Configuração de pagamento não encontrada');
+        }
+
+        const asaasPayload = {
+          customer: {
+            name: customerData.name,
+            email: customerData.email,
+            cpfCnpj: customerData.cpf,
+            phone: customerData.whatsapp,
+            notificationDisabled: true,
+          },
+          value: parseFloat(totalPrice.toFixed(2)),
+          description: `Presente: ${giftName} - #${giftReservationId.substring(0, 8)}`,
+          externalReference: `gift_${giftReservationId}`,
+          dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+          billingType: 'PIX',
+        };
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'access_token': ASAAS_API_KEY,
+        };
+
+        const response = await fetch(`${ASAAS_BASE_URL}/payments`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(asaasPayload)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`Erro ao criar pagamento: ${errorData.errors?.[0]?.description || response.statusText}`);
+        }
+
+        const paymentData = await response.json();
+
+        // Get QR Code
+        const qrCodeResponse = await fetch(
+          `${ASAAS_BASE_URL}/payments/${paymentData.id}/pixQrCode`,
+          { method: 'GET', headers }
+        );
+
+        if (!qrCodeResponse.ok) {
+          throw new Error('Erro ao gerar QR Code PIX');
+        }
+
+        const qrCodeData = await qrCodeResponse.json();
+
+        paymentResult = {
+          id: paymentData.id,
+          orderId: giftReservationId,
+          status: paymentData.status,
+          payload: qrCodeData.payload,
+          encodedImage: qrCodeData.encodedImage,
+        };
+
+        logger.info('Gift PIX payment created', {
+          giftId,
+          giftReservationId,
+          paymentId: paymentResult.id,
+          status: paymentResult.status
+        });
+
+      } else {
+        // Credit card payment for gift
+        paymentResult = await createCreditCardPayment(
+          giftReservationId,
+          customerData,
+          creditCard,
+          totalPrice,
+          clientIp,
+          `gift_${giftReservationId}` // Override external reference for webhook detection
+        );
+
+        logger.info('Gift credit card payment created', {
+          giftId,
+          giftReservationId,
+          paymentId: paymentResult.id,
+          status: paymentResult.status
+        });
+      }
+
+      // Update reservation with payment ID
+      await supabase
+        .from('gift_reservations')
+        .update({
+          payment_id: paymentResult.id,
+          status: paymentMethod === 'PIX' ? 'pending' : 'processing'
+        })
+        .eq('id', giftReservationId);
+
+      logger.info('Gift payment creation completed successfully', {
+        giftId,
+        giftReservationId,
+        paymentId: paymentResult.id,
+        paymentMethod,
+        totalPrice
+      });
+
+      return new Response(JSON.stringify(paymentResult), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==================== REGULAR PRODUCT PAYMENT FLOW ====================
     logger.info('Payment creation started', {
       paymentMethod: requestBody.paymentMethod,
       productCount: requestBody.productIds?.length || 0,

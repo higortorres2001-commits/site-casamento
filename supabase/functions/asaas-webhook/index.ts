@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { getCorsHeaders } from '../_shared/cors.ts';
+import {
+  generateGiftReceiptEmail,
+  generateFirstGiftEmail,
+  sendEmail
+} from '../_shared/email-templates.ts';
 
 // Classe para logging
 class Logger {
@@ -359,11 +364,198 @@ serve(async (req) => {
     }
 
     const asaasPaymentId = payload.payment?.id;
+    const externalReference = payload.payment?.externalReference || '';
 
     if (!asaasPaymentId) {
       throw new Error('Payment ID not found in webhook');
     }
 
+    // ==================== CHECK IF GIFT PAYMENT ====================
+    if (externalReference.startsWith('gift_')) {
+      const giftReservationId = externalReference.replace('gift_', '');
+
+      logger.info('Processing gift payment confirmation', {
+        asaasPaymentId,
+        giftReservationId
+      });
+
+      // Fetch gift reservation
+      const { data: reservation, error: reservationError } = await supabase
+        .from('gift_reservations')
+        .select('id, gift_id, quantity, status')
+        .eq('id', giftReservationId)
+        .single();
+
+      if (reservationError || !reservation) {
+        logger.warning('Gift reservation not found', { giftReservationId });
+        return new Response(JSON.stringify({ message: 'Gift reservation not found' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Check if already processed (idempotency)
+      if (reservation.status === 'purchased') {
+        logger.info('Gift reservation already processed (idempotent)', { giftReservationId });
+        return new Response(JSON.stringify({ message: 'Already processed' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update reservation status to purchased
+      await supabase
+        .from('gift_reservations')
+        .update({
+          status: 'purchased',
+          payment_confirmed_at: new Date().toISOString()
+        })
+        .eq('id', giftReservationId);
+
+      // Update gift quantity_purchased
+      const { data: gift } = await supabase
+        .from('gifts')
+        .select('id, quantity_purchased, wedding_list_id')
+        .eq('id', reservation.gift_id)
+        .single();
+
+      if (gift) {
+        await supabase
+          .from('gifts')
+          .update({
+            quantity_purchased: (gift.quantity_purchased || 0) + reservation.quantity
+          })
+          .eq('id', gift.id);
+
+        logger.info('Gift quantity updated', {
+          giftId: gift.id,
+          addedQuantity: reservation.quantity,
+          newTotal: (gift.quantity_purchased || 0) + reservation.quantity
+        });
+
+        // ==================== EMAIL NOTIFICATIONS ====================
+        const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+        const EMAIL_FROM = Deno.env.get('EMAIL_FROM') || 'Lista de Casamento <noreply@listadecasamento.com>';
+        const APP_URL = Deno.env.get('APP_URL') || 'https://listadecasamento.com';
+
+        if (RESEND_API_KEY) {
+          // Fetch full reservation data for email
+          const { data: fullReservation } = await supabase
+            .from('gift_reservations')
+            .select('guest_name, guest_email, total_price, quantity')
+            .eq('id', giftReservationId)
+            .single();
+
+          // Fetch gift and wedding list details
+          const { data: giftDetails } = await supabase
+            .from('gifts')
+            .select(`
+              name, 
+              price,
+              wedding_list_id,
+              wedding_lists(
+                id,
+                bride_name, 
+                groom_name, 
+                user_id, 
+                first_gift_notified,
+                notification_email,
+                profiles!wedding_lists_user_id_fkey(email)
+              )
+            `)
+            .eq('id', gift.id)
+            .single();
+
+          if (giftDetails && fullReservation) {
+            const weddingList = (giftDetails as any).wedding_lists;
+            const coupleNames = `${weddingList.bride_name} & ${weddingList.groom_name}`;
+            const coupleEmail = weddingList.notification_email || weddingList.profiles?.email;
+
+            // 1. Send receipt to guest (immediate - trust/anti-fraud)
+            if (fullReservation.guest_email) {
+              const receiptEmail = generateGiftReceiptEmail({
+                guestName: fullReservation.guest_name,
+                giftName: giftDetails.name,
+                amount: fullReservation.total_price || giftDetails.price,
+                quantity: fullReservation.quantity,
+                coupleNames,
+              });
+
+              const receiptResult = await sendEmail(
+                RESEND_API_KEY,
+                fullReservation.guest_email,
+                receiptEmail,
+                { from: EMAIL_FROM }
+              );
+
+              if (receiptResult.success) {
+                logger.info('Gift receipt sent to guest', {
+                  email: fullReservation.guest_email
+                });
+              } else {
+                logger.warning('Failed to send gift receipt', {
+                  error: receiptResult.error
+                });
+              }
+            }
+
+            // 2. Check if this is the FIRST gift (send celebration immediately)
+            if (coupleEmail && !weddingList.first_gift_notified) {
+              const firstGiftEmail = generateFirstGiftEmail({
+                coupleNames,
+                guestName: fullReservation.guest_name,
+                giftName: giftDetails.name,
+                amount: fullReservation.total_price || giftDetails.price,
+                dashboardUrl: `${APP_URL}/dashboard`,
+              });
+
+              const firstGiftResult = await sendEmail(
+                RESEND_API_KEY,
+                coupleEmail,
+                firstGiftEmail,
+                { from: EMAIL_FROM }
+              );
+
+              if (firstGiftResult.success) {
+                logger.info('First gift celebration email sent', {
+                  email: coupleEmail
+                });
+
+                // Mark as notified (prevent duplicate first-gift emails)
+                await supabase
+                  .from('wedding_lists')
+                  .update({ first_gift_notified: true })
+                  .eq('id', weddingList.id);
+              } else {
+                logger.warning('Failed to send first gift email', {
+                  error: firstGiftResult.error
+                });
+              }
+            }
+            // If NOT first gift, it will be included in the Daily Digest
+          }
+        } else {
+          logger.warning('RESEND_API_KEY not configured, skipping email notifications');
+        }
+      }
+
+      logger.info('Gift payment processed successfully', {
+        giftReservationId,
+        giftId: reservation.gift_id,
+        quantity: reservation.quantity
+      });
+
+      return new Response(JSON.stringify({
+        message: 'Gift payment processed successfully',
+        giftReservationId,
+        giftId: reservation.gift_id
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==================== REGULAR ORDER PAYMENT FLOW ====================
     // ==================== BUSCAR PEDIDO ====================
     const { data: order, error: orderError } = await supabase
       .from('orders')

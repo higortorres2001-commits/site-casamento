@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/components/SessionContextProvider";
 import { supabase } from "@/integrations/supabase/client";
-import { showError } from "@/utils/toast";
+import { showUserError } from "@/utils/toast";
+import { ADMIN_MESSAGES } from "@/constants/messages";
 import { Profile } from "@/types";
 
 const Confirmation = () => {
@@ -46,7 +47,7 @@ const Confirmation = () => {
             .single();
           if (orderError) {
             console.error("Error fetching order total price:", orderError);
-            showError("Erro ao carregar detalhes do pedido.");
+            showUserError(ADMIN_MESSAGES.error.LOAD_FAILED, orderError);
           } else if (orderData) {
             currentTotalPrice = orderData.total_price;
             setTotalPrice(currentTotalPrice);
@@ -64,7 +65,7 @@ const Confirmation = () => {
 
         if (error) {
           console.error("Error fetching user profile:", error);
-          showError("Erro ao carregar dados do seu perfil.");
+          showUserError(ADMIN_MESSAGES.error.LOAD_PROFILE_FAILED, error);
         } else if (data) {
           setUserProfile(data);
         }
