@@ -139,3 +139,27 @@ Para rodar o projeto localmente:
 
 ---
 **Dúvidas?** Consulte a documentação oficial do [Supabase](https://supabase.com/docs) ou dos serviços integrados.
+
+---
+
+## 7. Monitoramento de Erros (Sentry)
+
+O sistema usa o Sentry para monitorar erros no Frontend (React) e Backend (Edge Functions).
+
+### Configuração:
+
+#### A. Frontend (Vercel)
+Adicione nas **Environment Variables** do projeto na Vercel:
+
+| Nome da Variável | Descrição | Exemplo |
+| :--- | :--- | :--- |
+| `VITE_SENTRY_DSN` | DSN do projeto React no Sentry. | `https://xxxx@yyy.ingest.sentry.io/zzzz` |
+
+#### B. Backend (Supabase)
+Adicione nos **Secrets** das Edge Functions no Supabase Dashboard:
+
+| Nome da Variável | Descrição | Exemplo |
+| :--- | :--- | :--- |
+| `SENTRY_DSN` | DSN do projeto Deno/Node no Sentry. | `https://xxxx@yyy.ingest.sentry.io/zzzz` |
+
+> **Nota:** Você pode usar a mesma DSN para ambos ou criar projetos separados no Sentry (recomendado) para melhor organização.
