@@ -62,8 +62,23 @@ const PublicGiftList = () => {
     const [selectedCategory, setSelectedCategory] = useState("all");
     const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0 });
 
+    // Track loading state with ref for timeout closure
+    const loadingRef = React.useRef(loading);
+    React.useEffect(() => { loadingRef.current = loading; }, [loading]);
+
     useEffect(() => {
         loadData();
+
+        // Safety timeout: ensure loading never stays forever
+        const timeout = setTimeout(() => {
+            if (loadingRef.current) {
+                console.error("PublicGiftList: Loading timeout exceeded (10s)");
+                setLoading(false);
+                setNotFound(true);
+            }
+        }, 10000);
+
+        return () => clearTimeout(timeout);
     }, [slug]);
 
     // Update countdown
