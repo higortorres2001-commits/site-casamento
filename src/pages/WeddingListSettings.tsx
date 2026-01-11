@@ -29,8 +29,8 @@ import type { WeddingList } from "@/types";
 
 const listSchema = z.object({
     // Essential
-    bride_name: z.string().min(2, "Nome da noiva é obrigatório"),
-    groom_name: z.string().min(2, "Nome do noivo é obrigatório"),
+    bride_name: z.string().min(2, "Seu nome é obrigatório"),
+    groom_name: z.string().min(2, "Nome do seu amor é obrigatório"),
     wedding_date: z.string().min(1, "Data do casamento é obrigatória"),
     description: z.string().optional(),
     is_public: z.boolean().default(true),
@@ -317,7 +317,7 @@ const WeddingListSettings = () => {
                                                 name="bride_name"
                                                 render={({ field }) => (
                                                     <FormItem>
-                                                        <FormLabel>Nome da Noiva *</FormLabel>
+                                                        <FormLabel>Seu Nome *</FormLabel>
                                                         <FormControl>
                                                             <Input placeholder="Maria" {...field} />
                                                         </FormControl>
@@ -330,7 +330,7 @@ const WeddingListSettings = () => {
                                                 name="groom_name"
                                                 render={({ field }) => (
                                                     <FormItem>
-                                                        <FormLabel>Nome do Noivo *</FormLabel>
+                                                        <FormLabel>Nome do Seu Amor *</FormLabel>
                                                         <FormControl>
                                                             <Input placeholder="João" {...field} />
                                                         </FormControl>

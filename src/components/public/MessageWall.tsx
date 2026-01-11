@@ -165,7 +165,7 @@ const MessageWall: React.FC<MessageWallProps> = ({ weddingListId }) => {
                         Mural de Recados
                     </h3>
                     <p className="text-gray-500 text-sm">
-                        Deixe uma mensagem de carinho para os noivos!
+                        Deixe uma mensagem de carinho para o casal!
                     </p>
                 </div>
 

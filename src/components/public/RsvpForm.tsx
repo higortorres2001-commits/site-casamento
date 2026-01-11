@@ -93,7 +93,7 @@ const RsvpForm: React.FC<RsvpFormProps> = ({ weddingListId }) => {
                     </div>
                     <h3 className="text-2xl font-semibold text-gray-800">Obrigado pela resposta!</h3>
                     <p className="text-gray-600 max-w-sm mx-auto">
-                        Os noivos foram notificados. Se precisar alterar algo, entre em contato diretamente com eles.
+                        O casal foi notificado. Se precisar alterar algo, entre em contato diretamente.
                     </p>
                     <Button
                         variant="outline"
@@ -242,7 +242,7 @@ const RsvpForm: React.FC<RsvpFormProps> = ({ weddingListId }) => {
                             name="message"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>Mensagem para os Noivos (Opcional)</FormLabel>
+                                    <FormLabel>Mensagem para o Casal (Opcional)</FormLabel>
                                     <FormControl>
                                         <Textarea
                                             placeholder="Deixe um recado carinhoso..."

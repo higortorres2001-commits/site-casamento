@@ -3,7 +3,7 @@
  * 
  * Organizado por tipo de usuário:
  * - GUEST_MESSAGES: Para convidados (páginas públicas)
- * - ADMIN_MESSAGES: Para noivos/admin (páginas privadas)
+ * - ADMIN_MESSAGES: Para o casal (páginas privadas)
  * - AUTH_MESSAGES: Autenticação (compartilhado)
  * - VALIDATION_MESSAGES: Validações de formulários
  */
@@ -37,7 +37,7 @@ export const GUEST_MESSAGES = {
 } as const;
 
 // ============================================================================
-// ADMIN MESSAGES - Para noivos/administradores
+// ADMIN MESSAGES - Para o casal/administradores
 // ============================================================================
 export const ADMIN_MESSAGES = {
     success: {
@@ -139,7 +139,7 @@ export const UI_MESSAGES = {
         DATA: "Carregando...",
     },
     emptyState: {
-        NO_GIFTS_YET: "Os noivos ainda estão montando a lista. Volte em breve!",
+        NO_GIFTS_YET: "O casal ainda está montando a lista. Volte em breve!",
         NO_GIFTS_CATEGORY: "Nenhum presente encontrado nesta categoria.",
         NO_ACTIVITY: "Nenhuma atividade ainda.",
         SHARE_TO_START: "Compartilhe sua lista para começar!",

@@ -24,7 +24,7 @@ interface WizardFormData {
 
 const STEPS_AUTH = [
     { id: 0, label: "Conta", icon: "👤" },
-    { id: 1, label: "Noivos", icon: "💒" },
+    { id: 1, label: "Casal", icon: "💒" },
     { id: 2, label: "Link", icon: "🔗" },
     { id: 3, label: "Cerimônia", icon: "⛪" },
     { id: 4, label: "Festa", icon: "🎉" },
@@ -32,7 +32,7 @@ const STEPS_AUTH = [
 ];
 
 const STEPS_NO_AUTH = [
-    { id: 1, label: "Noivos", icon: "💒" },
+    { id: 1, label: "Casal", icon: "💒" },
     { id: 2, label: "Link", icon: "🔗" },
     { id: 3, label: "Cerimônia", icon: "⛪" },
     { id: 4, label: "Festa", icon: "🎉" },

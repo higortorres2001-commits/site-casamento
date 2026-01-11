@@ -448,7 +448,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                 <DialogHeader>
                     <DialogTitle className="text-center">🔒 Verificação de Segurança</DialogTitle>
                     <DialogDescription className="text-center">
-                        Para confirmar a presença deste convidado, confirme os <b>4 últimos dígitos</b> do número de telefone cadastrado pelos noivos.
+                        Para confirmar a presença deste convidado, confirme os <b>4 últimos dígitos</b> do número de telefone cadastrado pelo casal.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -469,7 +469,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                     </div>
                     {verificationError && (
                         <p className="text-sm text-red-500 font-medium text-center">
-                            Dígitos incorretos. <br />Tente novamente ou fale com os noivos.
+                            Dígitos incorretos. <br />Tente novamente ou fale com o casal.
                         </p>
                     )}
                 </div>

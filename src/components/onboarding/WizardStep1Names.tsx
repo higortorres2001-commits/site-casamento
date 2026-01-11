@@ -16,8 +16,8 @@ import { Calendar, Sparkles } from "lucide-react";
 import Brand from "@/components/Brand";
 
 const step1Schema = z.object({
-    bride_name: z.string().min(2, "Nome da noiva é obrigatório"),
-    groom_name: z.string().min(2, "Nome do noivo é obrigatório"),
+    bride_name: z.string().min(2, "Seu nome é obrigatório"),
+    groom_name: z.string().min(2, "Nome do seu amor é obrigatório"),
     wedding_date: z.string().min(1, "Data do casamento é obrigatória"),
 });
 
@@ -48,7 +48,7 @@ const WizardStep1Names: React.FC<WizardStep1NamesProps> = ({ initialData, onNext
                     Vamos começar! 💒
                 </h2>
                 <p className="text-gray-500 text-sm">
-                    Conte-nos sobre os noivos e a data especial
+                    Conte-nos sobre vocês e a data especial
                 </p>
             </div>
 
@@ -60,7 +60,7 @@ const WizardStep1Names: React.FC<WizardStep1NamesProps> = ({ initialData, onNext
                         render={({ field }) => (
                             <FormItem>
                                 <FormLabel className="flex items-center gap-2 text-gray-700">
-                                    <span className="text-lg">👰</span> Nome da Noiva
+                                    <span className="text-lg">💕</span> Seu Nome
                                 </FormLabel>
                                 <FormControl>
                                     <Input
@@ -80,7 +80,7 @@ const WizardStep1Names: React.FC<WizardStep1NamesProps> = ({ initialData, onNext
                         render={({ field }) => (
                             <FormItem>
                                 <FormLabel className="flex items-center gap-2 text-gray-700">
-                                    <span className="text-lg">🤵</span> Nome do Noivo
+                                    <span className="text-lg">❤️</span> Nome do Seu Amor
                                 </FormLabel>
                                 <FormControl>
                                     <Input
