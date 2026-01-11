@@ -481,7 +481,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                     <Button
                         onClick={handleVerifySubmit}
                         disabled={verificationDigits.length !== 4 || isVerifying}
-                        className="bg-[var(--brand-color)]"
+                        className="bg-[var(--brand-color)] text-white"
                     >
                         {isVerifying && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                         Verificar
@@ -749,7 +749,7 @@ const EnvelopeRsvp: React.FC<EnvelopeRsvpProps> = ({ weddingListId, weddingSlug,
                                     setPendingSubmission(true);
                                     handleSubmit(true);
                                 }}
-                                className="bg-brand-orange hover:bg-brand-orange/90"
+                                className="bg-brand-orange hover:bg-brand-orange/90 text-white"
                             >
                                 Enviar assim mesmo
                             </AlertDialogAction>

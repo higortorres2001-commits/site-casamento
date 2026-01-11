@@ -23,6 +23,7 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
@@ -218,14 +219,21 @@ const MessageWall: React.FC<MessageWallProps> = ({ weddingListId }) => {
                                     )}
                                 />
 
-                                <div className="flex justify-end pt-2">
-                                    <Button type="submit" disabled={isSubmitting} className="bg-[var(--brand-color)] hover:opacity-90 text-white">
-                                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                                        Enviar Mensagem
-                                    </Button>
+                                <div className="pt-2">
+                                    {/* Content moved to footer */}
                                 </div>
                             </form>
                         </Form>
+                        <DialogFooter>
+                            <Button
+                                onClick={form.handleSubmit(onSubmit)}
+                                disabled={isSubmitting}
+                                className="bg-[var(--brand-color)] hover:opacity-90 text-white w-full sm:w-auto"
+                            >
+                                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                                Enviar Mensagem
+                            </Button>
+                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             </div>
