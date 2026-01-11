@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -12,10 +12,12 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form";
-import { User, Mail, Lock, Eye, EyeOff, Sparkles, Loader2, KeyRound, Timer, ArrowLeft } from "lucide-react";
+import { User, Mail, Lock, Eye, EyeOff, Sparkles, Loader2, KeyRound, Timer, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { showSuccess, showUserError, showError } from "@/utils/toast";
 import { AUTH_MESSAGES } from "@/constants/messages";
+import { useEmailExistence } from "@/hooks/use-email-existence";
+import { useDebouncedCallback } from "use-debounce";
 
 const step0Schema = z.object({
     full_name: z.string().min(2, "Nome completo é obrigatório"),
@@ -36,6 +38,10 @@ interface WizardStep0AuthProps {
 const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [emailExistsMode, setEmailExistsMode] = useState(false);
+
+    // Email existence check
+    const { checkEmailExists, isChecking, emailExists } = useEmailExistence();
 
     // OTP States
     const [isOtpMode, setIsOtpMode] = useState(false);
@@ -55,6 +61,24 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
             confirmPassword: "",
         },
     });
+
+    // Debounced email check
+    const debouncedCheckEmail = useDebouncedCallback(
+        async (email: string) => {
+            if (email && email.includes("@") && email.includes(".")) {
+                const exists = await checkEmailExists(email);
+                setEmailExistsMode(exists);
+            } else {
+                setEmailExistsMode(false);
+            }
+        },
+        500
+    );
+
+    const handleEmailChange = useCallback((email: string) => {
+        setEmailExistsMode(false); // Reset while typing
+        debouncedCheckEmail(email);
+    }, [debouncedCheckEmail]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -343,14 +367,71 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
                                     <Mail className="w-4 h-4 text-rose-500" /> Email
                                 </FormLabel>
                                 <FormControl>
-                                    <Input
-                                        type="email"
-                                        placeholder="seu@email.com"
-                                        {...field}
-                                        disabled={isLoading}
-                                        className="h-12 border-2 focus:border-rose-400"
-                                    />
+                                    <div className="relative">
+                                        <Input
+                                            type="email"
+                                            placeholder="seu@email.com"
+                                            {...field}
+                                            onChange={(e) => {
+                                                field.onChange(e);
+                                                handleEmailChange(e.target.value);
+                                            }}
+                                            disabled={isLoading}
+                                            className={`h-12 border-2 focus:border-rose-400 pr-10 ${emailExistsMode ? "border-amber-400 bg-amber-50" : ""}`}
+                                        />
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                            {isChecking && (
+                                                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                                            )}
+                                            {!isChecking && emailExistsMode && (
+                                                <AlertCircle className="w-5 h-5 text-amber-500" />
+                                            )}
+                                            {!isChecking && emailExists === false && field.value.includes("@") && (
+                                                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                            )}
+                                        </div>
+                                    </div>
                                 </FormControl>
+                                {emailExistsMode && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-2 text-sm">
+                                        <div className="flex items-start gap-2">
+                                            <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <p className="text-amber-800 font-medium">Este e-mail já está cadastrado!</p>
+                                                <p className="text-amber-700 text-xs mt-1">
+                                                    Você pode entrar usando um código enviado por e-mail.
+                                                </p>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="mt-2 border-amber-400 text-amber-700 hover:bg-amber-100"
+                                                    onClick={async () => {
+                                                        setIsLoading(true);
+                                                        const email = form.getValues("email");
+                                                        setOtpEmail(email);
+                                                        const { error } = await supabase.auth.signInWithOtp({ email });
+                                                        setIsLoading(false);
+                                                        if (error) {
+                                                            showError("Erro ao enviar código: " + error.message);
+                                                        } else {
+                                                            showSuccess("Código enviado! Verifique seu e-mail. 📧");
+                                                            setIsOtpMode(true);
+                                                        }
+                                                    }}
+                                                    disabled={isLoading}
+                                                >
+                                                    {isLoading ? (
+                                                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                                    ) : (
+                                                        <KeyRound className="w-4 h-4 mr-1" />
+                                                    )}
+                                                    Entrar com Código
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 <FormMessage />
                             </FormItem>
                         )}
