@@ -204,7 +204,29 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
         setIsLoading(true);
 
         try {
-            // Try to sign up first
+            // CRITICAL: Check if email exists BEFORE attempting signup
+            // This catches cases where user clicked submit before debounced check completed
+            const emailExistsNow = await checkEmailExists(data.email);
+            if (emailExistsNow) {
+                // Email already exists - redirect to OTP login
+                setOtpEmail(data.email);
+                const { error: otpError } = await supabase.auth.signInWithOtp({
+                    email: data.email,
+                });
+
+                if (otpError) {
+                    showUserError("Erro ao enviar código de verificação.", otpError);
+                    setIsLoading(false);
+                    return;
+                }
+
+                showSuccess("E-mail já cadastrado. Enviamos um código para você entrar! 📧");
+                setIsOtpMode(true);
+                setIsLoading(false);
+                return;
+            }
+
+            // Try to sign up (email is confirmed to be new)
             const { data: authData, error: authError } = await supabase.auth.signUp({
                 email: data.email,
                 password: data.password,
