@@ -50,6 +50,12 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
     const [timeLeft, setTimeLeft] = useState(35);
     const [canResend, setCanResend] = useState(false);
 
+    // Email confirmation pending state
+    const [pendingConfirmation, setPendingConfirmation] = useState(false);
+    const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+    const [pendingFullName, setPendingFullName] = useState("");
+    const [pendingEmail, setPendingEmail] = useState("");
+
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
     const form = useForm<Step0Data>({
@@ -91,6 +97,22 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
         }
         return () => clearInterval(interval);
     }, [isOtpMode, timeLeft]);
+
+    // Listen for auth state changes when pending confirmation
+    useEffect(() => {
+        if (!pendingConfirmation) return;
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+            async (event, session) => {
+                if (event === 'SIGNED_IN' && session?.user) {
+                    showSuccess("Email confirmado com sucesso! 🎉");
+                    onNext(session.user.id, pendingFullName, pendingEmail);
+                }
+            }
+        );
+
+        return () => subscription.unsubscribe();
+    }, [pendingConfirmation, pendingFullName, pendingEmail, onNext]);
 
     const handleOtpChange = (index: number, value: string) => {
         if (!/^\d*$/.test(value)) return;
@@ -229,7 +251,21 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
 
             if (profileError) console.error("Profile creation error:", profileError);
 
-            showSuccess("Conta criada! Verifique seu email para confirmar. 📧");
+            // Check if email confirmation is required
+            // Supabase returns session=null when email confirmation is pending
+            if (!authData.session) {
+                // Email confirmation required - show pending state
+                setPendingUserId(userId);
+                setPendingFullName(data.full_name);
+                setPendingEmail(data.email);
+                setPendingConfirmation(true);
+                showSuccess("Conta criada! Verifique seu email para confirmar. 📧");
+                setIsLoading(false);
+                return;
+            }
+
+            // If session exists, email confirmation is disabled - proceed immediately
+            showSuccess("Conta criada com sucesso! 🎉");
             onNext(userId, data.full_name, data.email);
         } catch (err: any) {
             console.error("Auth error:", err);
@@ -238,6 +274,85 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
             setIsLoading(false);
         }
     };
+
+    // Pending email confirmation state
+    if (pendingConfirmation) {
+        return (
+            <div className="space-y-6">
+                <div className="text-center space-y-2">
+                    <div className="flex justify-center">
+                        <div className="w-16 h-16 bg-gradient-to-br from-amber-100 to-amber-200 rounded-full flex items-center justify-center">
+                            <Mail className="w-8 h-8 text-amber-500" />
+                        </div>
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-800">
+                        Confirme seu Email 📧
+                    </h2>
+                    <p className="text-gray-500 text-sm">
+                        Enviamos um link de confirmação para <br />
+                        <span className="font-medium text-gray-700">{pendingEmail}</span>
+                    </p>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+                    <Loader2 className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-4" />
+                    <p className="text-amber-800 font-medium">
+                        Aguardando confirmação...
+                    </p>
+                    <p className="text-amber-700 text-sm mt-2">
+                        Clique no link enviado para seu email para continuar. <br />
+                        <span className="text-xs text-amber-600">Verifique também a pasta de spam.</span>
+                    </p>
+                </div>
+
+                <div className="flex flex-col items-center gap-3 pt-2">
+                    <p className="text-xs text-gray-400">
+                        Não recebeu o email?
+                    </p>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                            setIsLoading(true);
+                            const { error } = await supabase.auth.resend({
+                                type: 'signup',
+                                email: pendingEmail,
+                            });
+                            setIsLoading(false);
+                            if (error) {
+                                showError("Erro ao reenviar: " + error.message);
+                            } else {
+                                showSuccess("Email reenviado! Verifique sua caixa de entrada.");
+                            }
+                        }}
+                        disabled={isLoading}
+                        className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                    >
+                        {isLoading ? (
+                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                            <Mail className="w-4 h-4 mr-1" />
+                        )}
+                        Reenviar Email
+                    </Button>
+
+                    <button
+                        onClick={() => {
+                            setPendingConfirmation(false);
+                            setPendingUserId(null);
+                            setPendingFullName("");
+                            setPendingEmail("");
+                        }}
+                        className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                        <ArrowLeft className="w-3 h-3" />
+                        Voltar para cadastro
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     if (isOtpMode) {
         return (
@@ -492,13 +607,18 @@ const WizardStep0Auth: React.FC<WizardStep0AuthProps> = ({ onNext }) => {
 
                     <Button
                         type="submit"
-                        disabled={isLoading}
-                        className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5"
+                        disabled={isLoading || emailExistsMode}
+                        className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isLoading ? (
                             <>
                                 <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                                 Criando conta...
+                            </>
+                        ) : emailExistsMode ? (
+                            <>
+                                <AlertCircle className="w-5 h-5 mr-2" />
+                                Use o botão acima para entrar
                             </>
                         ) : (
                             <>
