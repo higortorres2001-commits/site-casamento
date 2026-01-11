@@ -33,6 +33,7 @@ export const SessionContextProvider = ({ children }: { children: React.ReactNode
   useEffect(() => {
     const publicPaths = [
       '/login',
+      '/onboarding', // Wizard for new users
       '/checkout/', // Dynamic path, check with startsWith
       '/confirmacao',
       '/processando-pagamento',
