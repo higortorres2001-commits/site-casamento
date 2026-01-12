@@ -22,8 +22,8 @@ import {
     ArrowLeft,
     Baby,
     User,
-    MessageCircle,
 } from "lucide-react";
+import WhatsAppIcon from "@/components/ui/whatsapp-icon";
 
 import EnvelopeFormModal from "@/components/guests/EnvelopeFormModal";
 import FamilyDetailsModal from "@/components/guests/FamilyDetailsModal";
@@ -247,7 +247,7 @@ const GuestManagement = () => {
                         <CardContent className="pt-4">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-green-100 rounded-lg">
-                                    <MessageCircle className="w-5 h-5 text-green-600" />
+                                    <WhatsAppIcon className="w-5 h-5 text-green-600" />
                                 </div>
                                 <div>
                                     <p className="text-2xl font-bold">{totalWithWhatsApp}</p>
@@ -340,7 +340,7 @@ const GuestManagement = () => {
                                                     }}
                                                     title="Enviar Link Mágico via WhatsApp"
                                                 >
-                                                    <MessageCircle className="h-4 w-4" />
+                                                    <WhatsAppIcon className="h-4 w-4" />
                                                 </Button>
                                                 {getStatusBadge(envelope.send_status)}
                                             </div>
@@ -432,7 +432,7 @@ const GuestManagement = () => {
                                             )}
                                             {stats.withWhatsApp > 0 && (
                                                 <span className="flex items-center gap-1 text-green-600">
-                                                    <MessageCircle className="w-3 h-3" />
+                                                    <WhatsAppIcon className="w-3 h-3" />
                                                     {stats.withWhatsApp}
                                                 </span>
                                             )}
@@ -462,6 +462,7 @@ const GuestManagement = () => {
                     onClose={() => setIsDetailsModalOpen(false)}
                     envelope={selectedEnvelope}
                     weddingListId={weddingList.id}
+                    weddingListSlug={weddingList.slug}
                     onUpdate={loadData}
                 />
             )}

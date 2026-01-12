@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/carousel";
 import { cn } from "@/lib/utils";
 import type { WeddingList } from "@/types";
+import { formatDateBR } from "@/utils/date";
 
 interface CoupleStoryProps {
     weddingList: WeddingList;
@@ -156,7 +157,7 @@ const CoupleStory: React.FC<CoupleStoryProps> = ({ weddingList }) => {
                                                         {weddingList.wedding_date && (
                                                             <div className="flex items-center gap-3 text-gray-700">
                                                                 <Calendar className="h-5 w-5 text-pink-500" />
-                                                                <span className="text-lg">{new Date(weddingList.wedding_date).toLocaleDateString('pt-BR')}</span>
+                                                                <span className="text-lg">{formatDateBR(weddingList.wedding_date)}</span>
                                                             </div>
                                                         )}
                                                         {weddingList.ceremony_time && (
@@ -234,7 +235,14 @@ const CoupleStory: React.FC<CoupleStoryProps> = ({ weddingList }) => {
                                                         {weddingList.wedding_date && (
                                                             <div className="flex items-center gap-2 text-gray-600">
                                                                 <Calendar className="h-4 w-4 text-pink-500" />
-                                                                <span>{new Date(weddingList.wedding_date).toLocaleDateString('pt-BR')}</span>
+                                                                <span>
+                                                                    {(() => {
+                                                                        const dateStr = String(weddingList.wedding_date).split('T')[0];
+                                                                        const [y, m, d] = dateStr.split('-').map(Number);
+                                                                        const date = new Date(y, m - 1, d);
+                                                                        return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+                                                                    })()}
+                                                                </span>
                                                             </div>
                                                         )}
                                                         {weddingList.ceremony_time && (
@@ -307,7 +315,7 @@ const CoupleStory: React.FC<CoupleStoryProps> = ({ weddingList }) => {
                                                         {weddingList.party_date && (
                                                             <div className="flex items-center gap-2 text-gray-600">
                                                                 <Calendar className="h-4 w-4 text-orange-500" />
-                                                                <span>{new Date(weddingList.party_date).toLocaleDateString('pt-BR')}</span>
+                                                                <span>{formatDateBR(weddingList.party_date)}</span>
                                                             </div>
                                                         )}
                                                         {weddingList.party_time && (

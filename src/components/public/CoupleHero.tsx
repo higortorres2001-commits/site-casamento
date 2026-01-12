@@ -127,10 +127,24 @@ const CoupleHero: React.FC<CoupleHeroProps> = ({ weddingList }) => {
                     </h1>
                 </div>
 
-                <div className={`flex items-center justify-center gap-4 uppercase tracking-[0.2em] text-sm font-medium ${coverImage ? 'text-white/80' : 'text-white/90'}`}>
-                    <span className={`h-[1px] w-12 ${coverImage ? 'bg-white/50' : 'bg-white/60'}`}></span>
-                    <span>Save The Date</span>
-                    <span className={`h-[1px] w-12 ${coverImage ? 'bg-white/50' : 'bg-white/60'}`}></span>
+                <div className="flex flex-col items-center justify-center gap-1">
+                    <div className={`flex items-center justify-center gap-4 ${coverImage ? 'text-white/90' : 'text-white/90'}`}>
+                        <span className={`h-[1px] w-8 md:w-12 ${coverImage ? 'bg-white/50' : 'bg-white/60'}`}></span>
+                        <span className="font-cursive text-3xl md:text-5xl drop-shadow-sm">Save The Date</span>
+                        <span className={`h-[1px] w-8 md:w-12 ${coverImage ? 'bg-white/50' : 'bg-white/60'}`}></span>
+                    </div>
+                    {weddingList.wedding_date && (
+                        <span className={`text-base md:text-xl font-light tracking-wide uppercase mt-1 ${coverImage ? 'text-white/90' : 'text-white/90'}`}>
+                            {(() => {
+                                // Robust date formatting to avoid timezone issues (UTC vs Local)
+                                // Always treats the date string as local date components
+                                const dateStr = String(weddingList.wedding_date).split('T')[0];
+                                const [y, m, d] = dateStr.split('-').map(Number);
+                                const date = new Date(y, m - 1, d); // Local time constructor
+                                return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+                            })()}
+                        </span>
+                    )}
                 </div>
 
                 {weddingList.wedding_date && (

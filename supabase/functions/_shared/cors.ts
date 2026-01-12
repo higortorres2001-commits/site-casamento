@@ -8,6 +8,10 @@ const ALLOWED_ORIGINS = [
     'https://app.medsemestress.com',
     'https://vetsemestresse.com.br',
     'https://app.vetsemestresse.com.br',
+    'https://site-casamento-fawn.vercel.app',
+    'https://casei.sejatudoqueveiopraser.com.br', // Domínio personalizado do casamento
+    'http://localhost:5173', // Desenvolvimento local
+    'http://localhost:3000', // Desenvolvimento local
 ];
 
 /**
@@ -16,7 +20,18 @@ const ALLOWED_ORIGINS = [
  * @returns CORS headers object
  */
 export function getCorsHeaders(origin: string | null): Record<string, string> {
-    const validOrigin = origin && ALLOWED_ORIGINS.includes(origin)
+    // Se não há origin (webhooks externos como Asaas), permite a requisição
+    if (!origin) {
+        return {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, asaas-access-token',
+            'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+            'Access-Control-Max-Age': '86400',
+        };
+    }
+
+    // Para requisições do frontend, valida o origin
+    const validOrigin = ALLOWED_ORIGINS.includes(origin)
         ? origin
         : ALLOWED_ORIGINS[0];
 

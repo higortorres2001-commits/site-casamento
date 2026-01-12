@@ -144,6 +144,12 @@ const PublicGiftList = () => {
                 return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             });
 
+            // DEBUG: Log raw date from Supabase
+            console.log('[DEBUG] wedding_date from Supabase:', {
+                raw: listData.wedding_date,
+                type: typeof listData.wedding_date,
+            });
+
             setWeddingList(listData);
             setGifts(sortedGifts);
 

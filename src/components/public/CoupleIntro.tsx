@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/carousel";
 import { Card, CardContent } from "@/components/ui/card";
 import type { WeddingList } from "@/types";
+import { formatDateBR, parseDateLocal } from "@/utils/date";
 
 interface CoupleIntroProps {
     weddingList: WeddingList;
@@ -29,7 +30,8 @@ const CoupleIntro: React.FC<CoupleIntroProps> = ({ weddingList }) => {
         if (!weddingList.wedding_date) return;
 
         const interval = setInterval(() => {
-            const weddingDate = new Date(weddingList.wedding_date!);
+            const weddingDate = parseDateLocal(weddingList.wedding_date, weddingList.ceremony_time);
+            if (!weddingDate) return;
             const now = new Date();
             const diff = weddingDate.getTime() - now.getTime();
 
@@ -189,7 +191,7 @@ const CoupleIntro: React.FC<CoupleIntroProps> = ({ weddingList }) => {
                                             {weddingList.wedding_date && (
                                                 <p className="flex items-center gap-2">
                                                     <Calendar className="h-4 w-4" />
-                                                    {new Date(weddingList.wedding_date).toLocaleDateString('pt-BR')}
+                                                    {formatDateBR(weddingList.wedding_date)}
                                                 </p>
                                             )}
                                             {weddingList.ceremony_time && (
@@ -245,7 +247,7 @@ const CoupleIntro: React.FC<CoupleIntroProps> = ({ weddingList }) => {
                                             {weddingList.party_date && (
                                                 <p className="flex items-center gap-2">
                                                     <Calendar className="h-4 w-4" />
-                                                    {new Date(weddingList.party_date).toLocaleDateString('pt-BR')}
+                                                    {formatDateBR(weddingList.party_date)}
                                                 </p>
                                             )}
                                             {weddingList.party_time && (
