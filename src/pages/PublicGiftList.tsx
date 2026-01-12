@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,30 @@ import {
     Sparkles,
     AlertCircle,
     MessageSquare,
-    CalendarCheck
+    CalendarCheck,
+    Loader2
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { WeddingList, Gift as GiftType } from "@/types";
+import { useSession } from "@/components/SessionContextProvider";
+import { UI_MESSAGES } from "@/constants/messages";
+import { updateMetaTags } from "@/utils/seo";
+import { hexToRgba } from "@/utils/colors";
+
+// Static imports instead of lazy to fix Vite bundling issue with duplicate bindings
 import EnvelopeRsvp from "@/components/public/EnvelopeRsvp";
 import MessageWall from "@/components/public/MessageWall";
 import RsvpForm from "@/components/public/RsvpForm";
 import OpenRsvpModal from "@/components/public/OpenRsvpModal";
-import { useSession } from "@/components/SessionContextProvider";
 import CoupleHero from "@/components/public/CoupleHero";
 import CoupleStory from "@/components/public/CoupleStory";
-import { UI_MESSAGES } from "@/constants/messages";
-import { updateMetaTags } from "@/utils/seo";
-import { hexToRgba } from "@/utils/colors";
+
+// Loading fallback component (kept for potential future use)
+const LoadingFallback = () => (
+    <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-pink-500" />
+    </div>
+);
 
 const CATEGORIES = [
     { value: "all", label: "Todos" },
@@ -265,7 +275,9 @@ const PublicGiftList = () => {
             style={cssVariables}
         >
             {/* Hero Section (Always visible) */}
-            <CoupleHero weddingList={weddingList} />
+            <Suspense fallback={<LoadingFallback />}>
+                <CoupleHero weddingList={weddingList} />
+            </Suspense>
 
             {/* Navigation Tabs */}
             <div className="max-w-6xl mx-auto px-3 sm:px-6 -mt-8 relative z-20">
@@ -488,21 +500,27 @@ const PublicGiftList = () => {
                                             Confirmar Presença
                                         </Button>
                                     </div>
-                                    <OpenRsvpModal
-                                        open={isOpenRsvpModalOpen}
-                                        onOpenChange={setIsOpenRsvpModalOpen}
-                                        weddingListId={weddingList.id}
-                                    />
+                                    <Suspense fallback={<LoadingFallback />}>
+                                        <OpenRsvpModal
+                                            open={isOpenRsvpModalOpen}
+                                            onOpenChange={setIsOpenRsvpModalOpen}
+                                            weddingListId={weddingList.id}
+                                        />
+                                    </Suspense>
                                 </div>
                             ) : (
-                                <EnvelopeRsvp weddingListId={weddingList.id} weddingSlug={weddingList.slug} />
+                                <Suspense fallback={<LoadingFallback />}>
+                                    <EnvelopeRsvp weddingListId={weddingList.id} weddingSlug={weddingList.slug} />
+                                </Suspense>
                             )}
                         </div>
                     </TabsContent>
 
                     <TabsContent value="messages" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="py-4">
-                            <MessageWall weddingListId={weddingList.id} />
+                            <Suspense fallback={<LoadingFallback />}>
+                                <MessageWall weddingListId={weddingList.id} />
+                            </Suspense>
                         </div>
                     </TabsContent>
                 </Tabs>

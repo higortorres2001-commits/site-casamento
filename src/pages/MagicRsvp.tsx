@@ -20,36 +20,51 @@ const MagicRsvp: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        const loadWeddingList = async () => {
-            if (!slug) {
-                setError("Lista não encontrada");
+        const loadData = async () => {
+            if (!slug || !envelopeSlug) {
+                setError("Link inválido");
                 setIsLoading(false);
                 return;
             }
 
             try {
-                const { data, error: dbError } = await supabase
+                // 1. Get Wedding List
+                const { data: listData, error: listError } = await supabase
                     .from("wedding_lists")
                     .select("id")
                     .eq("slug", slug)
                     .eq("is_public", true)
                     .single();
 
-                if (dbError || !data) {
+                if (listError || !listData) {
                     setError("Lista não encontrada");
                     return;
                 }
 
-                setWeddingListId(data.id);
+                // 2. Validate Envelope
+                const { data: envelopeData, error: envelopeError } = await supabase
+                    .from("envelopes")
+                    .select("id")
+                    .eq("slug", envelopeSlug)
+                    .eq("wedding_list_id", listData.id)
+                    .maybeSingle();
+
+                if (envelopeError || !envelopeData) {
+                    setError("Convite não encontrado ou inválido para esta lista");
+                    return;
+                }
+
+                setWeddingListId(listData.id);
             } catch (err) {
-                setError("Erro ao carregar lista");
+                console.error("Error loading magic RSVP:", err);
+                setError("Erro ao carregar dados");
             } finally {
                 setIsLoading(false);
             }
         };
 
-        loadWeddingList();
-    }, [slug]);
+        loadData();
+    }, [slug, envelopeSlug]);
 
     if (isLoading) {
         return (

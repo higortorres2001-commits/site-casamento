@@ -94,6 +94,9 @@ const AppContent = () => {
           <Route path="/processando-pagamento" element={<ProcessingPayment />} />
         </Route>
 
+        {/* Redirect /convites to /convidados */}
+        <Route path="/convites" element={<Navigate to="/convidados" replace />} />
+
         {/* Home route redirects to login */}
         <Route path="/" element={<Login />} />
 

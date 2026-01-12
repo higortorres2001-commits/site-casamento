@@ -139,7 +139,7 @@ export type RSVPResponse = {
   id: string;
   wedding_list_id: string;
   guest_name: string;
-  guest_email: string;
+  guest_email?: string | null;
   guest_phone?: string | null;
   attending: 'yes' | 'no' | 'maybe';
   companions: number;

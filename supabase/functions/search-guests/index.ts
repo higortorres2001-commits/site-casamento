@@ -67,9 +67,14 @@ Deno.serve(async (req) => {
             );
         }
 
-        // 3. Perform Secure Search using DB RPC or strict select filters
-        // Using "ilike" with limits to prevent full list dumping
-        const { data: guests, error } = await supabaseClient
+        // 3. Perform Secure Search using two parallel queries
+        // Search by guest name AND by envelope group_name (family name)
+        // This ensures "Família Torres" finds all guests in that group
+
+        const searchPattern = `%${query}%`;
+
+        // Query 1: Search by guest name
+        const guestsByNamePromise = supabaseClient
             .from("guests")
             .select(`
                 id,
@@ -82,14 +87,47 @@ Deno.serve(async (req) => {
                 )
             `)
             .eq("envelopes.wedding_list_id", weddingListId)
-            .ilike("name", `%${query}%`)
-            .limit(10); // LIMIT results to prevent scraping
+            .ilike("name", searchPattern)
+            .limit(10);
 
-        if (error) throw error;
+        // Query 2: Search by envelope group_name
+        const guestsByGroupPromise = supabaseClient
+            .from("guests")
+            .select(`
+                id,
+                name,
+                guest_type,
+                envelope_id,
+                envelopes!inner (
+                    wedding_list_id,
+                    group_name
+                )
+            `)
+            .eq("envelopes.wedding_list_id", weddingListId)
+            .ilike("envelopes.group_name", searchPattern)
+            .limit(10);
+
+        // Run both queries in parallel
+        const [guestsByNameResult, guestsByGroupResult] = await Promise.all([
+            guestsByNamePromise,
+            guestsByGroupPromise
+        ]);
+
+        if (guestsByNameResult.error) throw guestsByNameResult.error;
+        if (guestsByGroupResult.error) throw guestsByGroupResult.error;
+
+        // Combine and deduplicate results
+        const allGuests = [...(guestsByNameResult.data || []), ...(guestsByGroupResult.data || [])];
+        const seenIds = new Set<string>();
+        const uniqueGuests = allGuests.filter((g: any) => {
+            if (seenIds.has(g.id)) return false;
+            seenIds.add(g.id);
+            return true;
+        }).slice(0, 10); // Keep limit to prevent scraping
 
         // Map results to be client-friendly/safe
         // Do NOT expose phone numbers or emails here
-        const safeGuests = guests.map((g: any) => ({
+        const safeGuests = uniqueGuests.map((g: any) => ({
             id: g.id,
             name: g.name,
             guest_type: g.guest_type,

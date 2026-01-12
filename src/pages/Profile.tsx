@@ -1,5 +1,8 @@
 "use client";
 
+import { cleanPhoneNumber } from "@/utils/phone-formatter";
+import PageLoader from "@/components/ui/page-loader";
+
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -218,7 +221,7 @@ const Profile = () => {
                     birth_date: birthDate || null,
                     email: email,
                     cpf: cpf || null,
-                    whatsapp: whatsapp || null,
+                    whatsapp: whatsapp ? cleanPhoneNumber(whatsapp) : null,
                 }, { onConflict: 'id' });
 
             if (error) throw error;
@@ -304,11 +307,7 @@ const Profile = () => {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 flex items-center justify-center">
-                <Loader2 className="w-10 h-10 text-pink-500 animate-spin" />
-            </div>
-        );
+        return <PageLoader message="Carregando perfil..." />;
     }
 
     return (
@@ -562,8 +561,8 @@ const Profile = () => {
                                         <button
                                             onClick={() => setFilterDays(7)}
                                             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filterDays === 7
-                                                    ? "bg-white text-pink-600 shadow-sm"
-                                                    : "text-gray-500 hover:text-gray-900"
+                                                ? "bg-white text-pink-600 shadow-sm"
+                                                : "text-gray-500 hover:text-gray-900"
                                                 }`}
                                         >
                                             7 dias
@@ -571,8 +570,8 @@ const Profile = () => {
                                         <button
                                             onClick={() => setFilterDays(30)}
                                             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filterDays === 30
-                                                    ? "bg-white text-pink-600 shadow-sm"
-                                                    : "text-gray-500 hover:text-gray-900"
+                                                ? "bg-white text-pink-600 shadow-sm"
+                                                : "text-gray-500 hover:text-gray-900"
                                                 }`}
                                         >
                                             30 dias
@@ -580,8 +579,8 @@ const Profile = () => {
                                         <button
                                             onClick={() => setFilterDays(60)}
                                             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filterDays === 60
-                                                    ? "bg-white text-pink-600 shadow-sm"
-                                                    : "text-gray-500 hover:text-gray-900"
+                                                ? "bg-white text-pink-600 shadow-sm"
+                                                : "text-gray-500 hover:text-gray-900"
                                                 }`}
                                         >
                                             60 dias

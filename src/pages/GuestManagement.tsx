@@ -5,6 +5,7 @@ import { useSession } from "@/components/SessionContextProvider";
 import { showError, showUserError } from "@/utils/toast";
 import { ADMIN_MESSAGES } from "@/constants/messages";
 import type { Envelope, Guest, WeddingList } from "@/types";
+import PageLoader from "@/components/ui/page-loader";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,7 @@ import {
     User,
     X,
     FileDown,
+    Loader2,
 } from "lucide-react";
 import WhatsAppIcon from "@/components/ui/whatsapp-icon";
 
@@ -44,7 +46,10 @@ const GuestManagement = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEnvelope, setSelectedEnvelope] = useState<EnvelopeWithGuests | null>(null);
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+
     const [rsvpData, setRsvpData] = useState<Record<string, { attending: string; validation_status: string }>>({});
+    const [isExporting, setIsExporting] = useState(false);
+    const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'pending' | 'declined'>('all');
 
     const loadData = useCallback(async () => {
         if (!user?.id) return;
@@ -65,41 +70,36 @@ const GuestManagement = () => {
 
             setWeddingList(listData);
 
-            // Get envelopes with guests
-            const { data: envelopesData, error: envelopesError } = await supabase
-                .from("envelopes")
-                .select("*, guests(*), source")
-                .eq("wedding_list_id", listData.id)
-                .order("created_at", { ascending: false });
-
-            if (envelopesError) throw envelopesError;
-
-            setEnvelopes((envelopesData as EnvelopeWithGuests[]) || []);
-
-            // Load RSVP responses for all guests
-            if (envelopesData && envelopesData.length > 0) {
-                const allGuestIds = envelopesData.flatMap((env: any) =>
-                    env.guests.map((g: any) => g.id)
-                );
-
-                const { data: rsvpResponses } = await supabase
+            // Run envelopes and RSVP queries in parallel for better performance
+            const [envelopesResult, rsvpResult] = await Promise.all([
+                // Get envelopes with guests
+                supabase
+                    .from("envelopes")
+                    .select("*, guests(*), source")
+                    .eq("wedding_list_id", listData.id)
+                    .order("created_at", { ascending: false }),
+                // Get all RSVP responses for this wedding list
+                supabase
                     .from("rsvp_responses")
                     .select("guest_id, attending, validation_status")
                     .eq("wedding_list_id", listData.id)
-                    .in("guest_id", allGuestIds);
+            ]);
 
-                if (rsvpResponses) {
-                    const rsvpMap: Record<string, { attending: string; validation_status: string }> = {};
-                    rsvpResponses.forEach((r) => {
-                        if (r.guest_id) {
-                            rsvpMap[r.guest_id] = {
-                                attending: r.attending,
-                                validation_status: r.validation_status,
-                            };
-                        }
-                    });
-                    setRsvpData(rsvpMap);
-                }
+            if (envelopesResult.error) throw envelopesResult.error;
+            setEnvelopes((envelopesResult.data as EnvelopeWithGuests[]) || []);
+
+            // Build RSVP map
+            if (rsvpResult.data) {
+                const rsvpMap: Record<string, { attending: string; validation_status: string }> = {};
+                rsvpResult.data.forEach((r) => {
+                    if (r.guest_id) {
+                        rsvpMap[r.guest_id] = {
+                            attending: r.attending,
+                            validation_status: r.validation_status,
+                        };
+                    }
+                });
+                setRsvpData(rsvpMap);
             }
         } catch (error: any) {
             console.error("Error loading data:", error);
@@ -194,11 +194,34 @@ const GuestManagement = () => {
         );
     };
 
+    // Helper to get envelope RSVP status based on guests
+    const getEnvelopeRsvpStatus = (guests: Guest[]): 'confirmed' | 'pending' | 'declined' | 'partial' => {
+        const stats = getRsvpStats(guests);
+        if (stats.confirmed === stats.total) return 'confirmed';
+        if (stats.declined === stats.total) return 'declined';
+        if (stats.confirmed > 0 || stats.declined > 0) return 'partial';
+        return 'pending';
+    };
+
     const filteredEnvelopes = envelopes.filter((env) => {
+        // Text search
         const query = searchQuery.toLowerCase();
-        if (!query) return true;
-        if (env.group_name.toLowerCase().includes(query)) return true;
-        return env.guests.some((g) => g.name.toLowerCase().includes(query));
+        const matchesSearch = !query ||
+            env.group_name.toLowerCase().includes(query) ||
+            env.guests.some((g) => g.name.toLowerCase().includes(query));
+
+        if (!matchesSearch) return false;
+
+        // RSVP status filter
+        if (statusFilter === 'all') return true;
+
+        const envelopeStatus = getEnvelopeRsvpStatus(env.guests);
+
+        if (statusFilter === 'confirmed') return envelopeStatus === 'confirmed';
+        if (statusFilter === 'declined') return envelopeStatus === 'declined';
+        if (statusFilter === 'pending') return envelopeStatus === 'pending' || envelopeStatus === 'partial';
+
+        return true;
     });
 
     const totalGuests = envelopes.reduce((sum, env) => sum + env.guests.length, 0);
@@ -214,105 +237,26 @@ const GuestManagement = () => {
         }).length;
     }, 0);
 
-    // Export guest list to PDF via browser print
-    const handleExportPdf = () => {
-        const now = new Date();
-        const dateStr = now.toLocaleDateString('pt-BR');
-        const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-        let html = `
-            <html>
-            <head>
-                <title>Lista de Convidados - ${dateStr}</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
-                    h1 { font-size: 18px; margin-bottom: 10px; }
-                    .summary { background: #f5f5f5; padding: 10px; margin-bottom: 20px; border-radius: 4px; }
-                    .summary span { margin-right: 20px; }
-                    .envelope { margin-bottom: 20px; page-break-inside: avoid; }
-                    .envelope-title { font-weight: bold; font-size: 14px; background: #eee; padding: 5px; }
-                    table { width: 100%; border-collapse: collapse; }
-                    th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
-                    th { background: #f5f5f5; }
-                    .confirmed { color: green; }
-                    .pending { color: gray; }
-                    .declined { color: red; }
-                    @media print { body { -webkit-print-color-adjust: exact; } }
-                </style>
-            </head>
-            <body>
-                <h1>Lista de Convidados</h1>
-                <div class="summary">
-                    <span><strong>${envelopes.length}</strong> convites</span>
-                    <span><strong>${totalGuests}</strong> convidados</span>
-                    <span><strong>${totalConfirmed}</strong> confirmados</span>
-                    <span><strong>${totalWithWhatsApp}</strong> com WhatsApp</span>
-                    <span>Exportado em: ${dateStr} às ${timeStr}</span>
-                </div>
-        `;
-
-        envelopes.forEach(env => {
-            const stats = getRsvpStats(env.guests);
-            html += `
-                <div class="envelope">
-                    <div class="envelope-title">${env.group_name} (${stats.confirmed}/${stats.total} confirmados)</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Nome</th>
-                                <th>Tipo</th>
-                                <th>WhatsApp</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-
-            env.guests.forEach(guest => {
-                const rsvp = rsvpData[guest.id];
-                let status = 'Pendente';
-                let statusClass = 'pending';
-                if (rsvp?.attending === 'yes' && rsvp?.validation_status === 'validated') {
-                    status = 'Confirmado';
-                    statusClass = 'confirmed';
-                } else if (rsvp?.attending === 'no') {
-                    status = 'Recusado';
-                    statusClass = 'declined';
-                }
-
-                html += `
-                    <tr>
-                        <td>${guest.name}</td>
-                        <td>${guest.guest_type === 'child' ? 'Criança' : 'Adulto'}</td>
-                        <td>${guest.whatsapp || '-'}</td>
-                        <td class="${statusClass}">${status}</td>
-                    </tr>
-                `;
-            });
-
-            html += `
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        });
-
-        html += '</body></html>';
-
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-            printWindow.document.write(html);
-            printWindow.document.close();
-            printWindow.print();
+    // Export guest list to PDF via browser print (dynamic import)
+    const handleExportPdf = async () => {
+        try {
+            setIsExporting(true);
+            const { exportGuestListToPDF } = await import("@/utils/exportGuestPDF");
+            await exportGuestListToPDF(
+                envelopes,
+                { totalGuests, totalConfirmed, totalWithWhatsApp },
+                rsvpData
+            );
+        } catch (error) {
+            console.error("Export failed", error);
+            showError("Erro ao exportar PDF");
+        } finally {
+            setIsExporting(false);
         }
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500" />
-            </div>
-        );
+        return <PageLoader message="Carregando convidados..." />;
     }
 
     return (
@@ -345,8 +289,13 @@ const GuestManagement = () => {
                                 variant="outline"
                                 onClick={handleExportPdf}
                                 className="flex-1 md:flex-none"
+                                disabled={isExporting}
                             >
-                                <FileDown className="w-4 h-4 mr-2" />
+                                {isExporting ? (
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                    <FileDown className="w-4 h-4 mr-2" />
+                                )}
                                 Exportar
                             </Button>
                             <Button
@@ -420,15 +369,56 @@ const GuestManagement = () => {
                     </Card>
                 </div>
 
-                {/* Search */}
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                        placeholder="Buscar por nome do grupo ou convidado..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10 bg-white"
-                    />
+                {/* Search and Filter */}
+                <div className="space-y-3">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                            placeholder="Buscar por nome do grupo ou convidado..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10 bg-white"
+                        />
+                    </div>
+
+                    {/* RSVP Status Filter Tabs */}
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            variant={statusFilter === 'all' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setStatusFilter('all')}
+                            className={statusFilter === 'all' ? 'bg-pink-500 hover:bg-pink-600' : ''}
+                        >
+                            Todos
+                        </Button>
+                        <Button
+                            variant={statusFilter === 'confirmed' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setStatusFilter('confirmed')}
+                            className={statusFilter === 'confirmed' ? 'bg-green-500 hover:bg-green-600' : ''}
+                        >
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Confirmados
+                        </Button>
+                        <Button
+                            variant={statusFilter === 'pending' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setStatusFilter('pending')}
+                            className={statusFilter === 'pending' ? 'bg-yellow-500 hover:bg-yellow-600' : ''}
+                        >
+                            <Clock className="w-3 h-3 mr-1" />
+                            Pendentes
+                        </Button>
+                        <Button
+                            variant={statusFilter === 'declined' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setStatusFilter('declined')}
+                            className={statusFilter === 'declined' ? 'bg-red-500 hover:bg-red-600' : ''}
+                        >
+                            <X className="w-3 h-3 mr-1" />
+                            Recusados
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Envelope List */}

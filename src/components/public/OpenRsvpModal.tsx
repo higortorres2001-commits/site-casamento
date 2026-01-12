@@ -3,8 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { showSuccess, showError, showUserError } from "@/utils/toast";
 import { VALIDATION_MESSAGES } from "@/constants/messages";
-import { Loader2, Users, Plus, Check, ClipboardCheck, Gift, MessageSquare } from "lucide-react";
-import { nanoid } from "nanoid";
+import { Loader2 as SpinnerIcon, Users, Plus, Check, ClipboardCheck, Gift, MessageSquare } from "lucide-react";
+// import { nanoid } from "nanoid"; // Removed potential ESM issue
+
+const nanoid = (size = 21) => {
+    return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+};
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import GuestRowInput from "@/components/guests/GuestRowInput";
+import { isValidWhatsapp } from "@/utils/whatsappValidation";
 
 interface GuestRowData {
     id: string;
@@ -81,10 +86,12 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
     const [searchParams, setSearchParams] = useSearchParams();
     const [guests, setGuests] = useState<GuestRowData[]>([createEmptyGuest()]);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [focusNewRow, setFocusNewRow] = useState(false);
+    const [loadingMessage, setLoadingMessage] = useState("Processando...");
+    const [showSuccessState, setShowSuccessState] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
     const [duplicateWarningOpen, setDuplicateWarningOpen] = useState(false);
     const [potentialDuplicateName, setPotentialDuplicateName] = useState("");
+    const [focusNewRow, setFocusNewRow] = useState(false);
 
     // Reset when opening
     useEffect(() => {
@@ -128,11 +135,13 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
         const groupName = `Família ${surname} (${firstGuestName.split(' ')[0]})`;
 
         setIsSubmitting(true);
+        setLoadingMessage("Iniciando confirmação...");
 
         try {
+            // 1. Create Envelope (Source = public)
+            setLoadingMessage("Criando seu grupo...");
             const slug = generateSlug(groupName);
 
-            // 1. Create Envelope (Source = public)
             const { data: envelope, error: envelopeError } = await supabase
                 .from("envelopes")
                 .insert({
@@ -147,6 +156,7 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
             if (envelopeError) throw envelopeError;
 
             // 2. Create Guests
+            setLoadingMessage("Cadastrando convidados...");
             const guestsToInsert = validGuests.map((g) => ({
                 envelope_id: envelope.id,
                 name: g.name.trim(),
@@ -162,6 +172,7 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
             if (guestsError) throw guestsError;
 
             // 3. Auto-Confirm RSVP
+            setLoadingMessage("Confirmando presença...");
             const rsvpInserts = insertedGuests.map(g => ({
                 wedding_list_id: weddingListId,
                 guest_id: g.id,
@@ -202,8 +213,18 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
         const firstGuestName = firstGuest.name.trim();
         const mainPhone = firstGuest.whatsapp.replace(/\D/g, "");
 
+        // Validate Phone Format if provided
+        for (const guest of validGuests) {
+            if (guest.whatsapp && !isValidWhatsapp(guest.whatsapp)) {
+                showError(`O telefone de ${guest.name} é inválido. Use o formato (DD) 9XXXX-XXXX.`);
+                return;
+            }
+        }
+
         // Priority 1: Phone Number Duplicate Check
         if (mainPhone) {
+            setLoadingMessage("Verificando duplicidades...");
+            setIsSubmitting(true); // Show loading while checking
             try {
                 const { data: existingPhones } = await supabase
                     .from("guests")
@@ -215,14 +236,18 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
                 if (existingPhones && existingPhones.length > 0) {
                     setPotentialDuplicateName(existingPhones[0].name);
                     setDuplicateWarningOpen(true);
+                    setIsSubmitting(false);
                     return;
                 }
             } catch (err) {
                 console.error("Error checking phone duplicates:", err);
+            } finally {
+                // Don't turn off submitting here as we proceed if no duplicate
             }
         }
 
         // Priority 2: Name Check (fallback for guests without phone)
+        if (!isSubmitting) setIsSubmitting(true); // Ensure loading is on
         try {
             const { data: existingGuests } = await supabase
                 .from("guests")
@@ -234,6 +259,7 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
             if (existingGuests && existingGuests.length > 0) {
                 setPotentialDuplicateName(existingGuests[0].name);
                 setDuplicateWarningOpen(true);
+                setIsSubmitting(false);
                 return;
             }
         } catch (err) {
@@ -379,7 +405,7 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
                             >
                                 {isSubmitting ? (
                                     <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        <SpinnerIcon className="w-4 h-4 mr-2 animate-spin" />
                                         Confirmando...
                                     </>
                                 ) : (

@@ -132,7 +132,27 @@ const EnvelopeFormModal: React.FC<EnvelopeFormModalProps> = ({
 
         try {
             // Create envelope
-            const slug = generateSlug(finalGroupName);
+            let slug = generateSlug(finalGroupName);
+
+            // Check for duplicate slug and append suffix if needed
+            let isUnique = false;
+            let counter = 0;
+            const originalSlug = slug;
+
+            while (!isUnique) {
+                const { data: existing } = await supabase
+                    .from("envelopes")
+                    .select("id")
+                    .eq("slug", slug)
+                    .maybeSingle();
+
+                if (!existing) {
+                    isUnique = true;
+                } else {
+                    counter++;
+                    slug = `${originalSlug}-${counter}`;
+                }
+            }
             const { data: envelope, error: envelopeError } = await supabase
                 .from("envelopes")
                 .insert({

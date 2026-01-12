@@ -21,13 +21,19 @@ const EmailVerificationModal = ({
   onClose,
   onVerified
 }: EmailVerificationModalProps) => {
+  // OTP expiration time (5 minutes)
+  const OTP_EXPIRY_SECONDS = 300;
+  const RESEND_COOLDOWN_SECONDS = 60;
+
   // Estados do OTP
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS);
   const [canResend, setCanResend] = useState(false);
   const [verificationStep, setVerificationStep] = useState<'sending' | 'input' | 'verifying' | 'success'>('sending');
+  const [otpExpiresIn, setOtpExpiresIn] = useState(OTP_EXPIRY_SECONDS);
+  const [isOtpExpired, setIsOtpExpired] = useState(false);
 
   // Referências para os inputs
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -42,15 +48,26 @@ const EmailVerificationModal = ({
     }
   }, [isOpen]);
 
-  // Timer para reenvio
+  // Timer para reenvio (cooldown)
   useEffect(() => {
-    if (timeLeft > 0 && verificationStep === 'input') {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+    if (resendCooldown > 0 && verificationStep === 'input') {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
       return () => clearTimeout(timer);
-    } else if (timeLeft === 0) {
+    } else if (resendCooldown === 0) {
       setCanResend(true);
     }
-  }, [timeLeft, verificationStep]);
+  }, [resendCooldown, verificationStep]);
+
+  // Timer para expiração do OTP
+  useEffect(() => {
+    if (otpExpiresIn > 0 && verificationStep === 'input' && !isOtpExpired) {
+      const timer = setTimeout(() => setOtpExpiresIn(otpExpiresIn - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (otpExpiresIn === 0 && !isOtpExpired) {
+      setIsOtpExpired(true);
+      showError("Código expirado. Por favor, solicite um novo.");
+    }
+  }, [otpExpiresIn, verificationStep, isOtpExpired]);
 
   // Auto-focus no primeiro input quando estiver no passo de input
   useEffect(() => {
@@ -83,8 +100,10 @@ const EmailVerificationModal = ({
         console.log("✅ OTP sent successfully");
         showSuccess("Código enviado para seu e-mail!");
         setVerificationStep('input');
-        setTimeLeft(30);
+        setResendCooldown(RESEND_COOLDOWN_SECONDS);
         setCanResend(false);
+        setOtpExpiresIn(OTP_EXPIRY_SECONDS);
+        setIsOtpExpired(false);
       }
     } catch (error: any) {
       console.error("Unexpected error sending OTP:", error);
@@ -101,6 +120,11 @@ const EmailVerificationModal = ({
 
     if (otpCode.length !== 6) {
       showError("Por favor, digite os 6 dígitos do código.");
+      return;
+    }
+
+    if (isOtpExpired) {
+      showError("Código expirado. Por favor, solicite um novo.");
       return;
     }
 
@@ -208,9 +232,17 @@ const EmailVerificationModal = ({
   const handleResendCode = async () => {
     console.log("🔄 Resending OTP code");
     setCanResend(false);
-    setTimeLeft(30);
+    setResendCooldown(RESEND_COOLDOWN_SECONDS);
     setOtp(Array(6).fill(""));
+    setIsOtpExpired(false);
     await sendOtpCode();
+  };
+
+  // Formatar tempo restante
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Renderizar conteúdo baseado no passo atual
@@ -263,6 +295,23 @@ const EmailVerificationModal = ({
                   />
                 ))}
               </div>
+
+              {/* OTP Expiration Warning */}
+              {otpExpiresIn > 0 && otpExpiresIn <= 60 && (
+                <p className="text-xs text-orange-600 font-medium">
+                  ⚠️ Código expira em {formatTime(otpExpiresIn)}
+                </p>
+              )}
+              {otpExpiresIn > 60 && (
+                <p className="text-xs text-gray-400">
+                  Código válido por {formatTime(otpExpiresIn)}
+                </p>
+              )}
+              {isOtpExpired && (
+                <p className="text-xs text-red-600 font-medium">
+                  ❌ Código expirado. Solicite um novo abaixo.
+                </p>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -299,7 +348,7 @@ const EmailVerificationModal = ({
                   ) : canResend ? (
                     "Reenviar Código"
                   ) : (
-                    `Reenviar em ${timeLeft}s`
+                    `Aguarde ${resendCooldown}s para reenviar`
                   )}
                 </Button>
               </div>

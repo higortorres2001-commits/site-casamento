@@ -19,6 +19,7 @@ import GiftEditForm from "@/components/gifts/GiftEditForm";
 import ConfirmDialog from "@/components/ui/confirm-dialog";
 import { useSession } from "@/components/SessionContextProvider";
 import type { Gift, WeddingList } from "@/types";
+import PageLoader from "@/components/ui/page-loader";
 
 const Gifts = () => {
     const { user, isLoading: isSessionLoading } = useSession();
@@ -182,11 +183,7 @@ const Gifts = () => {
     };
 
     if (isSessionLoading || isLoadingGifts) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50">
-                <Loader2 className="h-8 w-8 animate-spin text-pink-500" />
-            </div>
-        );
+        return <PageLoader message="Carregando presentes..." />;
     }
 
     if (!weddingList) {
@@ -315,9 +312,9 @@ const Gifts = () => {
                                             <TableCell className="hidden md:table-cell">
                                                 {getCategoryLabel(gift.category)}
                                             </TableCell>
-                                            <TableCell className="hidden md:table-cell">
+                                            {/* <TableCell className="hidden md:table-cell">
                                                 {getPriorityBadge(gift.priority)}
-                                            </TableCell>
+                                            </TableCell> */}
                                             <TableCell className="hidden md:table-cell">
                                                 <span className="text-sm">
                                                     {gift.quantity_reserved} / {gift.quantity_total}
@@ -385,7 +382,7 @@ const Gifts = () => {
                                             <span className="bg-gray-100 px-2 py-0.5 rounded">Qtd: {gift.quantity_total}</span>
                                             <span className="bg-gray-100 px-2 py-0.5 rounded">{getCategoryLabel(gift.category)}</span>
                                             {gift.quantity_reserved > 0 && (
-                                                <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">Reserved: {gift.quantity_reserved}</span>
+                                                <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">Recebidos: {gift.quantity_reserved}</span>
                                             )}
                                         </div>
                                         <div className="flex justify-end pt-1">

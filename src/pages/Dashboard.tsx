@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { showError, showSuccess, showUserError } from "@/utils/toast";
 import { ADMIN_MESSAGES } from "@/constants/messages";
 import { generateWhatsAppLink } from "@/utils/phone-formatter";
+import PageLoader from "@/components/ui/page-loader";
 import type { Profile, WeddingList, Gift as GiftType } from "@/types";
 import OnboardingChecklist from "@/components/onboarding/OnboardingChecklist";
 
@@ -355,14 +356,7 @@ const Dashboard = () => {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-pink-50 via-white to-purple-50 flex items-center justify-center">
-                <div className="text-center">
-                    <Heart className="h-12 w-12 text-pink-500 animate-pulse mx-auto mb-4" />
-                    <p className="text-gray-600">Carregando...</p>
-                </div>
-            </div>
-        );
+        return <PageLoader message="Carregando lista..." />;
     }
 
     // No wedding list yet - prompt to create
