@@ -4,14 +4,12 @@
  */
 
 const ALLOWED_ORIGINS = [
-    'https://medsemestress.com',
-    'https://app.medsemestress.com',
-    'https://vetsemestresse.com.br',
-    'https://app.vetsemestresse.com.br',
     'https://site-casamento-fawn.vercel.app',
     'https://casei.sejatudoqueveiopraser.com.br', // Domínio personalizado do casamento
     'http://localhost:5173', // Desenvolvimento local
     'http://localhost:3000', // Desenvolvimento local
+    'http://localhost:8080', // Desenvolvimento local
+    'http://localhost:8081', // Desenvolvimento local
 ];
 
 /**
