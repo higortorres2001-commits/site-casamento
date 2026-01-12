@@ -144,6 +144,9 @@ export const UI_MESSAGES = {
         NO_ACTIVITY: "Nenhuma atividade ainda.",
         SHARE_TO_START: "Compartilhe sua lista para começar!",
     },
+    rsvp: {
+        TITLE: "Confirme sua Presença"
+    },
     notFound: {
         LIST_TITLE: "Lista não encontrada",
         LIST_DESCRIPTION: "Esta lista de presentes não existe ou não está disponível publicamente.",

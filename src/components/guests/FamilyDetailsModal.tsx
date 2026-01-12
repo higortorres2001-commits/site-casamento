@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
     Table,
     TableBody,
@@ -113,28 +114,51 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
         }
     };
 
+    const handleUpdateGuest = async (guestId: string, updates: Partial<Guest>) => {
+        try {
+            const { error } = await supabase
+                .from("guests")
+                .update(updates)
+                .eq("id", guestId);
+
+            if (error) throw error;
+            showSuccess("Convidado atualizado!");
+            onUpdate();
+        } catch (error) {
+            console.error("Error updating guest:", error);
+            showError("Erro ao atualizar convidado");
+        }
+    };
+
     // Manual confirm/cancel presence
     const handleManualRsvp = async (guestId: string, guestName: string, attending: "yes" | "no") => {
         setProcessingId(guestId);
         try {
-            // Check if RSVP exists
-            const existingRsvp = rsvps[guestId];
+            // First, check if an RSVP record exists in the database (not local state)
+            const { data: existingRsvp, error: checkError } = await supabase
+                .from("rsvp_responses")
+                .select("id")
+                .eq("wedding_list_id", weddingListId)
+                .eq("guest_id", guestId)
+                .maybeSingle();
+
+            if (checkError) throw checkError;
 
             if (existingRsvp) {
-                // Update existing
+                // Update existing record
                 const { error } = await supabase
                     .from("rsvp_responses")
                     .update({
                         attending,
-                        validation_status: attending === "yes" ? "validated" : "validated",
+                        guest_name: guestName,
+                        validation_status: "validated",
                         source: "manual_admin",
                     })
-                    .eq("wedding_list_id", weddingListId)
-                    .eq("guest_id", guestId);
+                    .eq("id", existingRsvp.id);
 
                 if (error) throw error;
             } else {
-                // Create new
+                // Create new record
                 const { error } = await supabase
                     .from("rsvp_responses")
                     .insert({
@@ -230,6 +254,11 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                         <Badge variant="outline" className="ml-2 font-normal">
                             {envelope.guests.length} convidados
                         </Badge>
+                        {envelope.source === 'public' && (
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-xs">
+                                Site
+                            </Badge>
+                        )}
                     </DialogTitle>
                     <DialogDescription>
                         Gerencie as confirmações de presença desta família/grupo.
@@ -256,103 +285,85 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {envelope.guests.map((guest) => {
+                                        {envelope.guests.map((guest, index) => {
                                             const rsvp = rsvps[guest.id];
                                             return (
                                                 <TableRow key={guest.id}>
-                                                    <TableCell className="font-medium">{guest.name}</TableCell>
-                                                    <TableCell>
-                                                        {guest.guest_type === "child" ? (
-                                                            <div className="flex items-center gap-1 text-gray-500">
-                                                                <Baby className="w-4 h-4" /> Criança
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-1 text-gray-500">
-                                                                <User className="w-4 h-4" /> Adulto
-                                                            </div>
-                                                        )}
+                                                    <TableCell className="font-medium p-2">
+                                                        <Input
+                                                            className="h-8 border-transparent hover:border-gray-200 focus:border-pink-500 bg-transparent px-2"
+                                                            defaultValue={guest.name}
+                                                            onBlur={(e) => {
+                                                                if (e.target.value !== guest.name) {
+                                                                    handleUpdateGuest(guest.id, { name: e.target.value });
+                                                                }
+                                                            }}
+                                                        />
                                                     </TableCell>
-                                                    <TableCell>
-                                                        {(guest.whatsapp || rsvp?.guest_phone) ? (
-                                                            <div className="flex items-center gap-1 text-green-600">
-                                                                <WhatsAppIcon className="w-4 h-4" />
-                                                                <span className="text-xs">
-                                                                    {guest.whatsapp || rsvp?.guest_phone}
-                                                                </span>
-                                                            </div>
-                                                        ) : (
-                                                            <span className="text-gray-400 text-xs">-</span>
-                                                        )}
+                                                    <TableCell className="p-2 w-[120px]">
+                                                        <select
+                                                            className="flex h-8 w-full items-center justify-between rounded-md border border-transparent bg-transparent px-2 py-1 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 hover:border-gray-200"
+                                                            defaultValue={guest.guest_type}
+                                                            onChange={(e) => handleUpdateGuest(guest.id, { guest_type: e.target.value as "adult" | "child" })}
+                                                        >
+                                                            <option value="adult">Adulto</option>
+                                                            <option value="child">Criança</option>
+                                                        </select>
                                                     </TableCell>
-                                                    <TableCell>
+                                                    <TableCell className="p-2">
+                                                        <Input
+                                                            className="h-8 border-transparent hover:border-gray-200 focus:border-pink-500 bg-transparent px-2"
+                                                            defaultValue={guest.whatsapp || ""}
+                                                            placeholder="S/ Telefone"
+                                                            onBlur={(e) => {
+                                                                const newVal = e.target.value;
+                                                                if (newVal !== (guest.whatsapp || "")) {
+                                                                    handleUpdateGuest(guest.id, { whatsapp: newVal || null });
+                                                                }
+                                                            }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell className="p-2">
                                                         <StatusBadge rsvp={rsvp} />
                                                     </TableCell>
-                                                    <TableCell className="text-right">
+                                                    <TableCell className="text-right p-2">
                                                         <div className="flex justify-end gap-1">
-                                                            {/* WhatsApp Send Button */}
                                                             <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                 onClick={() => window.open(getWhatsAppLink(guest), '_blank')}
-                                                                title="Enviar convite via WhatsApp"
+                                                                title="Enviar WhatsApp"
                                                             >
                                                                 <WhatsAppIcon className="w-4 h-4" />
                                                             </Button>
 
-                                                            {/* Manual Confirm/Cancel */}
+                                                            {/* Force Manual Confirm */}
                                                             {(!rsvp || rsvp.attending !== "yes") && (
                                                                 <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                    size="icon"
+                                                                    variant="ghost"
+                                                                    className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                     onClick={() => handleManualRsvp(guest.id, guest.name, "yes")}
                                                                     disabled={!!processingId}
-                                                                    title="Confirmar presença manualmente"
+                                                                    title="Confirmar Presença"
                                                                 >
                                                                     <UserCheck className="w-4 h-4" />
                                                                 </Button>
                                                             )}
+
+                                                            {/* Force Manual Cancel */}
                                                             {(!rsvp || rsvp.attending !== "no") && (
                                                                 <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                    size="icon"
+                                                                    variant="ghost"
+                                                                    className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
                                                                     onClick={() => handleManualRsvp(guest.id, guest.name, "no")}
                                                                     disabled={!!processingId}
-                                                                    title="Registrar ausência"
+                                                                    title="Marcar como Ausente"
                                                                 >
                                                                     <UserX className="w-4 h-4" />
                                                                 </Button>
-                                                            )}
-
-                                                            {/* Validate/Reject pending responses */}
-                                                            {rsvp?.attending === "yes" && rsvp?.validation_status === "pending" && (
-                                                                <>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="outline"
-                                                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                                        onClick={() => handleValidate(guest.id, "rejected")}
-                                                                        disabled={!!processingId}
-                                                                        title="Rejeitar"
-                                                                    >
-                                                                        <X className="w-4 h-4" />
-                                                                    </Button>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        className="h-8 w-8 p-0 bg-green-600 hover:bg-green-700 text-white"
-                                                                        onClick={() => handleValidate(guest.id, "validated")}
-                                                                        disabled={!!processingId}
-                                                                        title="Validar"
-                                                                    >
-                                                                        {processingId === guest.id ? (
-                                                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                                                        ) : (
-                                                                            <Check className="w-4 h-4" />
-                                                                        )}
-                                                                    </Button>
-                                                                </>
                                                             )}
                                                         </div>
                                                     </TableCell>
@@ -363,7 +374,7 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                                 </Table>
                             </div>
 
-                            {/* Mobile List (Cards) */}
+                            {/* Mobile List (Cards) - simplified for brevity, assume synced */}
                             <div className="space-y-4 sm:hidden">
                                 {envelope.guests.map((guest) => {
                                     const rsvp = rsvps[guest.id];
@@ -385,9 +396,8 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                                                 <StatusBadge rsvp={rsvp} />
                                             </div>
 
-                                            {/* Action Buttons */}
+                                            {/* Actions */}
                                             <div className="flex flex-wrap gap-2">
-                                                {/* WhatsApp */}
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
@@ -396,8 +406,6 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                                                 >
                                                     <WhatsAppIcon className="w-4 h-4 mr-2" /> Enviar
                                                 </Button>
-
-                                                {/* Manual Confirm */}
                                                 {(!rsvp || rsvp.attending !== "yes") && (
                                                     <Button
                                                         size="sm"
@@ -409,8 +417,6 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                                                         <UserCheck className="w-4 h-4 mr-2" /> Confirmar
                                                     </Button>
                                                 )}
-
-                                                {/* Manual Cancel */}
                                                 {(!rsvp || rsvp.attending !== "no") && (
                                                     <Button
                                                         size="sm"
@@ -423,7 +429,6 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                                                     </Button>
                                                 )}
                                             </div>
-
                                             {/* Validate/Reject Pending */}
                                             {rsvp?.attending === "yes" && rsvp?.validation_status === "pending" && (
                                                 <div className="flex gap-2 mt-1 pt-2 border-t border-gray-200">
@@ -460,10 +465,14 @@ const FamilyDetailsModal: React.FC<FamilyDetailsModalProps> = ({
                     )}
                 </div>
 
-                {/* Footer with Envelope Link */}
                 <DialogFooter className="flex-col sm:flex-row gap-2 mt-4 pt-4 border-t">
-                    <div className="flex-1 text-xs text-gray-500">
-                        Código do convite: <code className="bg-gray-100 px-1 rounded">{envelope.slug}</code>
+                    <div className="flex-1 text-xs text-gray-500 flex items-center justify-between sm:justify-start gap-4">
+                        <span>Código: <code className="bg-gray-100 px-1 rounded">{envelope.slug}</code></span>
+                        {envelope.source === 'public' && (
+                            <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider">
+                                Via Site
+                            </span>
+                        )}
                     </div>
                     <Button variant="outline" onClick={onClose}>
                         Fechar

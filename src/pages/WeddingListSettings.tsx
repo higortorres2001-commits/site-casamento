@@ -15,6 +15,16 @@ import {
     FormMessage,
     FormDescription,
 } from "@/components/ui/form";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,6 +44,7 @@ const listSchema = z.object({
     wedding_date: z.string().min(1, "Data do casamento é obrigatória"),
     description: z.string().optional(),
     is_public: z.boolean().default(true),
+    rsvp_mode: z.enum(["closed", "open"]).default("closed"),
 
     // Ceremony
     ceremony_location_name: z.string().optional(),
@@ -67,6 +78,8 @@ const WeddingListSettings = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [copied, setCopied] = useState(false);
     const [isSameLocation, setIsSameLocation] = useState(false);
+    const [rsvpAlertOpen, setRsvpAlertOpen] = useState(false);
+    const [pendingRsvpMode, setPendingRsvpMode] = useState<"closed" | "open" | null>(null);
     const navigate = useNavigate();
 
     const form = useForm<ListFormData>({
@@ -77,6 +90,7 @@ const WeddingListSettings = () => {
             wedding_date: "",
             description: "",
             is_public: true,
+            rsvp_mode: "closed",
             ceremony_location_name: "",
             ceremony_address: "",
             ceremony_image: "",
@@ -132,6 +146,7 @@ const WeddingListSettings = () => {
                     wedding_date: data.wedding_date || "",
                     description: data.description || "",
                     is_public: true,
+                    rsvp_mode: data.rsvp_mode || "closed",
                     ceremony_location_name: data.ceremony_location_name || "",
                     ceremony_address: data.ceremony_address || "",
                     ceremony_image: data.ceremony_image || "",
@@ -212,6 +227,7 @@ const WeddingListSettings = () => {
                 slug,
                 user_id: user.id,
                 is_public: true,
+                rsvp_mode: data.rsvp_mode || "closed",
                 wedding_date: data.wedding_date || null, // Ensure explicit null if empty, though schema mandates required
                 party_date: data.party_date || null,
             };
@@ -705,6 +721,40 @@ const WeddingListSettings = () => {
                                                     )}
                                                 />
                                             </div>
+
+                                            {/* RSVP Mode Toggle */}
+                                            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
+                                                <div className="space-y-0.5">
+                                                    <FormLabel className="text-base">Modo de Lista de Convidados</FormLabel>
+                                                    <FormDescription>
+                                                        {form.watch("rsvp_mode") === 'open'
+                                                            ? "Lista Aberta: Convidados podem confirmar presença e se cadastrar sozinhos."
+                                                            : "Lista Fechada: Apenas convidados que você cadastrou podem confirmar presença."}
+                                                    </FormDescription>
+                                                </div>
+                                                <FormField
+                                                    control={form.control}
+                                                    name="rsvp_mode"
+                                                    render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormControl>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`text-sm ${field.value === 'closed' ? 'font-bold text-blue-700' : 'text-gray-500'}`}>Fechada</span>
+                                                                    <Switch
+                                                                        checked={field.value === 'open'}
+                                                                        onCheckedChange={(checked) => {
+                                                                            const newMode = checked ? 'open' : 'closed';
+                                                                            setPendingRsvpMode(newMode);
+                                                                            setRsvpAlertOpen(true);
+                                                                        }}
+                                                                    />
+                                                                    <span className={`text-sm ${field.value === 'open' ? 'font-bold text-blue-700' : 'text-gray-500'}`}>Aberta</span>
+                                                                </div>
+                                                            </FormControl>
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            </div>
                                         </div>
 
                                         <FormField
@@ -840,6 +890,32 @@ const WeddingListSettings = () => {
                         </div>
                     </form>
                 </Form>
+                <AlertDialog open={rsvpAlertOpen} onOpenChange={setRsvpAlertOpen}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Alterar Modo de Lista?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Alternar entre lista <strong>Aberta</strong> e <strong>Fechada</strong> pode causar duplicidade de convidados caso alguém se cadastre enquanto a lista está aberta.
+                                <br /><br />
+                                Se você já cadastrou convidados manualmente, eles continuarão existindo. Deseja continuar?
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setPendingRsvpMode(null)}>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={() => {
+                                    if (pendingRsvpMode) {
+                                        form.setValue('rsvp_mode', pendingRsvpMode, { shouldDirty: true });
+                                        setPendingRsvpMode(null);
+                                    }
+                                }}
+                                className="bg-pink-500 hover:bg-pink-600"
+                            >
+                                Sim, alterar
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </div>
     );

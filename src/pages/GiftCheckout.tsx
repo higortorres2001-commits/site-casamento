@@ -110,7 +110,7 @@ const GiftCheckout = () => {
 
     const isCotas = useMemo(() => {
         if (!gift) return false;
-        return gift.quantity_total > 1;
+        return !!gift.is_quota;
     }, [gift]);
 
     const handleEmailVerified = (email: string) => {
@@ -437,7 +437,7 @@ const GiftCheckout = () => {
                                         {formatCurrency(gift.price)}
                                     </span>
 
-                                    {isCotas && availableQuantity > 1 && (
+                                    {availableQuantity > 1 && (
                                         <div className="flex items-center gap-2">
                                             <span className="text-sm text-gray-500">Qtd:</span>
                                             <select

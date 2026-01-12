@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import {
     Save,
     CheckCircle,
     LogOut,
+    Gift,
 } from "lucide-react";
 import { showSuccess, showError, showUserError } from "@/utils/toast";
 import type { Profile as ProfileType } from "@/types";
@@ -52,13 +53,48 @@ interface Transaction {
     status: string;
 }
 
+// Helper for time ago
+const getTimeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 60) return `Há ${diffMins} min`;
+    if (diffHours < 24) return `Há ${diffHours} hora${diffHours > 1 ? "s" : ""}`;
+    return `Há ${diffDays} dia${diffDays > 1 ? "s" : ""}`;
+};
+
 const Profile = () => {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "personal");
+    const [filterDays, setFilterDays] = useState<7 | 30 | 60>(7);
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profile, setProfile] = useState<ProfileType | null>(null);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loadingTransactions, setLoadingTransactions] = useState(false);
+
+    useEffect(() => {
+        const tab = searchParams.get("tab");
+        if (tab) {
+            setActiveTab(tab);
+            if (tab === "history") {
+                loadTransactions(filterDays);
+            }
+        }
+    }, [searchParams]);
+
+    // Trigger load when filter changes (if on history tab)
+    useEffect(() => {
+        if (activeTab === "history") {
+            loadTransactions(filterDays);
+        }
+    }, [filterDays, activeTab]);
 
     // Form state
     const [fullName, setFullName] = useState("");
@@ -111,13 +147,12 @@ const Profile = () => {
         }
     };
 
-    const loadTransactions = async () => {
+    const loadTransactions = async (days: number = 7) => {
         setLoadingTransactions(true);
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // Get user's wedding list first
             const { data: weddingList } = await supabase
                 .from("wedding_lists")
                 .select("id")
@@ -129,7 +164,10 @@ const Profile = () => {
                 return;
             }
 
-            // Get orders for the wedding list
+            // Calculate date filter
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - days);
+
             const { data: orders, error } = await supabase
                 .from("orders")
                 .select(`
@@ -138,11 +176,11 @@ const Profile = () => {
                     amount,
                     status,
                     guest_name,
-                    gifts:gift_id (name)
+                    gifts:gift_id (name, price)
                 `)
                 .eq("wedding_list_id", weddingList.id)
-                .order("created_at", { ascending: false })
-                .limit(50);
+                .gte("created_at", startDate.toISOString())
+                .order("created_at", { ascending: false });
 
             if (error) {
                 console.error("Error loading transactions:", error);
@@ -308,7 +346,14 @@ const Profile = () => {
                 </div>
 
                 {/* Tabs */}
-                <Tabs defaultValue="personal" className="w-full">
+                <Tabs
+                    value={activeTab}
+                    onValueChange={(val) => {
+                        setActiveTab(val);
+                        setSearchParams({ tab: val });
+                    }}
+                    className="w-full"
+                >
                     <TabsList className="grid w-full grid-cols-3 mb-6">
                         <TabsTrigger value="personal" className="flex items-center gap-2">
                             <User className="w-4 h-4" />
@@ -321,7 +366,7 @@ const Profile = () => {
                         <TabsTrigger
                             value="history"
                             className="flex items-center gap-2"
-                            onClick={() => transactions.length === 0 && loadTransactions()}
+                            onClick={() => transactions.length === 0 && loadTransactions(filterDays)}
                         >
                             <History className="w-4 h-4" />
                             <span className="hidden sm:inline">Histórico</span>
@@ -501,13 +546,48 @@ const Profile = () => {
                     <TabsContent value="history">
                         <Card>
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <History className="w-5 h-5 text-pink-500" />
-                                    Histórico de Transações
-                                </CardTitle>
-                                <CardDescription>
-                                    Veja todos os presentes recebidos
-                                </CardDescription>
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <div>
+                                        <CardTitle className="flex items-center gap-2">
+                                            <History className="w-5 h-5 text-pink-500" />
+                                            Histórico de Transações
+                                        </CardTitle>
+                                        <CardDescription>
+                                            Veja todos os presentes recebidos
+                                        </CardDescription>
+                                    </div>
+
+                                    {/* Date Filter Buttons */}
+                                    <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => setFilterDays(7)}
+                                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filterDays === 7
+                                                    ? "bg-white text-pink-600 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-900"
+                                                }`}
+                                        >
+                                            7 dias
+                                        </button>
+                                        <button
+                                            onClick={() => setFilterDays(30)}
+                                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filterDays === 30
+                                                    ? "bg-white text-pink-600 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-900"
+                                                }`}
+                                        >
+                                            30 dias
+                                        </button>
+                                        <button
+                                            onClick={() => setFilterDays(60)}
+                                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filterDays === 60
+                                                    ? "bg-white text-pink-600 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-900"
+                                                }`}
+                                        >
+                                            60 dias
+                                        </button>
+                                    </div>
+                                </div>
                             </CardHeader>
                             <CardContent>
                                 {loadingTransactions ? (
@@ -515,43 +595,61 @@ const Profile = () => {
                                         <Loader2 className="w-8 h-8 text-pink-500 animate-spin" />
                                     </div>
                                 ) : transactions.length === 0 ? (
-                                    <div className="text-center py-8 text-gray-500">
-                                        <History className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                                        <p>Nenhuma transação encontrada</p>
-                                        <p className="text-sm">Seus presentes aparecerão aqui</p>
+                                    <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                        <div className="bg-gray-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                                            <History className="w-6 h-6 text-gray-400" />
+                                        </div>
+                                        <p className="text-gray-600 font-medium">Nenhum presente encontrado no período</p>
+                                        <p className="text-sm text-gray-400 mt-1">
+                                            Tente filtrar por um período maior
+                                        </p>
                                     </div>
                                 ) : (
-                                    <div className="overflow-x-auto">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow>
-                                                    <TableHead>Data</TableHead>
-                                                    <TableHead>Presente</TableHead>
-                                                    <TableHead>De</TableHead>
-                                                    <TableHead className="text-right">Valor</TableHead>
-                                                    <TableHead>Status</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {transactions.map((tx) => (
-                                                    <TableRow key={tx.id}>
-                                                        <TableCell className="text-sm">
-                                                            {formatDate(tx.created_at)}
-                                                        </TableCell>
-                                                        <TableCell className="font-medium">
-                                                            {tx.gift_name}
-                                                        </TableCell>
-                                                        <TableCell>{tx.guest_name}</TableCell>
-                                                        <TableCell className="text-right font-semibold text-green-600">
-                                                            {formatCurrency(tx.amount)}
-                                                        </TableCell>
-                                                        <TableCell>
+                                    <div className="space-y-3">
+                                        {transactions.map((tx) => (
+                                            <div
+                                                key={tx.id}
+                                                className="flex items-start gap-3 p-4 rounded-xl border border-gray-100 hover:border-pink-100 hover:bg-pink-50/30 transition-all group bg-white shadow-sm"
+                                            >
+                                                {/* Icon */}
+                                                <div className="bg-pink-100 p-2.5 rounded-full shrink-0 mt-1 group-hover:bg-pink-200 transition-colors">
+                                                    <Gift className="h-5 w-5 text-pink-600" />
+                                                </div>
+
+                                                {/* Content */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <div>
+                                                            <p className="text-sm font-medium text-gray-900 line-clamp-1">
+                                                                Passaram a gravata - {tx.gift_name}
+                                                            </p>
+                                                            <p className="text-sm text-gray-600 mt-0.5">
+                                                                <span className="font-semibold text-gray-800">{tx.guest_name}</span> te presenteou
+                                                            </p>
+                                                        </div>
+                                                        <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">
+                                                            {getTimeAgo(tx.created_at)}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between mt-2">
+                                                        <div className="flex items-center gap-2">
+                                                            {/* Status Badge */}
                                                             {getStatusBadge(tx.status)}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
+                                                        </div>
+                                                        <p className="text-sm font-bold text-green-600 bg-green-50 px-2 py-1 rounded-md border border-green-100">
+                                                            {formatCurrency(tx.amount)}
+                                                        </p>
+                                                    </div>
+
+                                                    {/* Full Date Tooltip/Text */}
+                                                    <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+                                                        <Calendar className="w-3 h-3" />
+                                                        {formatDate(tx.created_at)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                             </CardContent>

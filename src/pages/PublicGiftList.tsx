@@ -18,6 +18,9 @@ import { supabase } from "@/integrations/supabase/client";
 import type { WeddingList, Gift as GiftType } from "@/types";
 import EnvelopeRsvp from "@/components/public/EnvelopeRsvp";
 import MessageWall from "@/components/public/MessageWall";
+import RsvpForm from "@/components/public/RsvpForm";
+import OpenRsvpModal from "@/components/public/OpenRsvpModal";
+import { useSession } from "@/components/SessionContextProvider";
 import CoupleHero from "@/components/public/CoupleHero";
 import CoupleStory from "@/components/public/CoupleStory";
 import { UI_MESSAGES } from "@/constants/messages";
@@ -61,6 +64,7 @@ const PublicGiftList = () => {
     const [notFound, setNotFound] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState("all");
     const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0 });
+    const [isOpenRsvpModalOpen, setIsOpenRsvpModalOpen] = useState(false);
 
     // Track loading state with ref for timeout closure
     const loadingRef = React.useRef(loading);
@@ -464,7 +468,35 @@ const PublicGiftList = () => {
 
                     <TabsContent value="rsvp" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="py-4">
-                            <EnvelopeRsvp weddingListId={weddingList.id} weddingSlug={weddingList.slug} />
+                            {weddingList.rsvp_mode === 'open' ? (
+                                <div className="max-w-md mx-auto">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-pink-100 text-center space-y-4">
+                                        <div className="bg-pink-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <CalendarCheck className="w-8 h-8 text-pink-500" />
+                                        </div>
+                                        <h2 className="text-xl font-semibold text-gray-800">
+                                            {UI_MESSAGES.rsvp.TITLE || "Confirme sua Presença"}
+                                        </h2>
+                                        <p className="text-gray-600">
+                                            Para nos ajudar a organizar tudo com carinho, por favor confirme sua presença e de sua família.
+                                        </p>
+                                        <Button
+                                            onClick={() => setIsOpenRsvpModalOpen(true)}
+                                            className="w-full bg-[var(--brand-color)] hover:opacity-90 text-white shadow-lg shadow-pink-200 mt-2"
+                                            size="lg"
+                                        >
+                                            Confirmar Presença
+                                        </Button>
+                                    </div>
+                                    <OpenRsvpModal
+                                        open={isOpenRsvpModalOpen}
+                                        onOpenChange={setIsOpenRsvpModalOpen}
+                                        weddingListId={weddingList.id}
+                                    />
+                                </div>
+                            ) : (
+                                <EnvelopeRsvp weddingListId={weddingList.id} weddingSlug={weddingList.slug} />
+                            )}
                         </div>
                     </TabsContent>
 

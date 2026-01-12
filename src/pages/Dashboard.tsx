@@ -39,7 +39,7 @@ import OnboardingChecklist from "@/components/onboarding/OnboardingChecklist";
 type Activity = {
     id: string;
     type: "gift" | "guest" | "message";
-    description: string;
+    description: React.ReactNode; // Changed to ReactNode to allow formatting parts of the string
     timestamp: Date;
     amount?: number;
 };
@@ -194,33 +194,115 @@ const Dashboard = () => {
     };
 
     const loadActivities = async (listId: string) => {
-        // Load recent gift purchases/reservations
-        const { data: reservations } = await supabase
-            .from("gift_reservations")
-            .select("*, gifts(name, price)")
-            .eq("status", "purchased")
-            .order("created_at", { ascending: false })
-            .limit(10);
+        try {
+            // Run all queries in parallel
+            const [rsvpsResult, giftsResult, messagesResult] = await Promise.all([
+                // 1. RSVPs (Confirmed)
+                supabase
+                    .from("rsvp_responses")
+                    .select("id, guest_name, created_at")
+                    .eq("wedding_list_id", listId)
+                    .eq("attending", "yes")
+                    .order("created_at", { ascending: false })
+                    .limit(4),
 
-        if (reservations && reservations.length > 0) {
-            const activityList: Activity[] = reservations.map(r => ({
-                id: r.id,
-                type: "gift" as const,
-                description: `${r.guest_name} ${r.status === 'purchased' ? 'comprou' : 'reservou'} "${(r as any).gifts?.name}"`,
-                timestamp: new Date(r.created_at),
-                amount: (r as any).gifts?.price,
-            }));
-            setActivities(activityList);
-        } else {
-            // Placeholder activities for demo
-            setActivities([
-                {
-                    id: "1",
-                    type: "gift",
-                    description: "Sua lista está pronta para receber presentes!",
-                    timestamp: new Date(),
-                },
+                // 2. Gifts (Purchased)
+                supabase
+                    .from("gift_reservations")
+                    .select("id, guest_name, created_at, gifts(name, price)")
+                    .eq("wedding_list_id", listId) // Ensure filtering by listId
+                    .eq("status", "purchased")
+                    .order("created_at", { ascending: false })
+                    .limit(4),
+
+                // 3. Messages
+                supabase
+                    .from("guest_messages")
+                    .select("id, guest_name, created_at")
+                    .eq("wedding_list_id", listId)
+                    .order("created_at", { ascending: false })
+                    .limit(4)
             ]);
+
+            const newActivities: Activity[] = [];
+
+            // Process RSVPs
+            if (rsvpsResult.data) {
+                rsvpsResult.data.forEach(rsvp => {
+                    const date = new Date(rsvp.created_at);
+                    const formattedDate = date.toLocaleDateString('pt-BR');
+                    const formattedTime = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                    newActivities.push({
+                        id: `rsvp-${rsvp.id}`,
+                        type: "guest",
+                        description: `${rsvp.guest_name} confirmou presença - ${formattedDate} ${formattedTime}`,
+                        timestamp: date
+                    });
+                });
+            }
+
+            // Process Gifts
+            if (giftsResult.data) {
+                giftsResult.data.forEach(giftItem => {
+                    const date = new Date(giftItem.created_at);
+                    const formattedDate = date.toLocaleDateString('pt-BR');
+                    const formattedTime = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                    const giftName = (giftItem as any).gifts?.name || "Presente";
+                    const price = (giftItem as any).gifts?.price || 0;
+                    const netValue = price * 0.95; // 5% fee removed
+
+                    newActivities.push({
+                        id: `gift-${giftItem.id}`,
+                        type: "gift",
+                        description: (
+                            <span>
+                                <strong>{giftItem.guest_name}</strong> Te Presenteou - {giftName} - <span className="text-green-600 font-medium">R$ {netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span> (recebido) - {formattedDate} {formattedTime}
+                            </span>
+                        ),
+                        timestamp: date,
+                        amount: netValue
+                    });
+                });
+            }
+
+            // Process Messages
+            if (messagesResult.data) {
+                messagesResult.data.forEach(msg => {
+                    const date = new Date(msg.created_at);
+                    const formattedDate = date.toLocaleDateString('pt-BR');
+                    const formattedTime = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                    newActivities.push({
+                        id: `msg-${msg.id}`,
+                        type: "message",
+                        description: `${msg.guest_name} deixou uma nova mensagem no mural - ${formattedDate} ${formattedTime}`,
+                        timestamp: date
+                    });
+                });
+            }
+
+            // Sort by timestamp descending and take top 4
+            const sortedActivities = newActivities
+                .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+                .slice(0, 4);
+
+            if (sortedActivities.length > 0) {
+                setActivities(sortedActivities);
+            } else {
+                setActivities([
+                    {
+                        id: "placeholder",
+                        type: "gift",
+                        description: "Sua lista está pronta para receber atividades!",
+                        timestamp: new Date(),
+                    },
+                ]);
+            }
+
+        } catch (error) {
+            console.error("Error loading activities:", error);
         }
     };
 
@@ -468,7 +550,7 @@ const Dashboard = () => {
                     </Card>
 
                     {/* Gifts Card */}
-                    <Card className="shadow-lg hover:shadow-xl transition-shadow border-0 cursor-pointer" onClick={() => navigate("/presentes")}>
+                    <Card className="shadow-lg hover:shadow-xl transition-shadow border-0 cursor-pointer" onClick={() => navigate("/meu-perfil?tab=history")}>
                         <CardContent className="pt-6">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="bg-pink-100 p-2 rounded-lg">

@@ -51,7 +51,7 @@ const giftSchema = z.object({
     description: z.string().optional(),
     price: z.coerce.number().min(1, "Preço deve ser maior que zero"),
     category: z.string().optional(),
-    is_unlimited: z.boolean().default(false),
+    is_unlimited: z.boolean().default(true),
     quantity_total: z.coerce.number().min(1).default(1),
     is_quota: z.boolean().default(false),
 });
@@ -87,7 +87,7 @@ const GiftEditForm: React.FC<GiftEditFormProps> = ({
             description: initialData?.description || "",
             price: initialData?.price || 0,
             category: initialData?.category || "",
-            is_unlimited: (initialData?.quantity_total || 1) > 99,
+            is_unlimited: initialData ? (initialData.quantity_total > 99) : true,
             quantity_total: initialData?.quantity_total || 1,
             is_quota: initialData?.is_quota || false,
         },
@@ -413,13 +413,11 @@ const GiftEditForm: React.FC<GiftEditFormProps> = ({
                                 <FormItem className="flex items-center justify-between rounded-lg border p-4 bg-gray-50">
                                     <div className="space-y-0.5">
                                         <FormLabel className="text-base flex items-center gap-2">
-                                            {field.value ? <Sparkles className="h-4 w-4 text-purple-500" /> : <Gift className="h-4 w-4 text-blue-500" />}
-                                            {field.value ? "Dividir em Cotas (Ex: Lua de Mel)" : "Item de Valor Único (Ex: Eletro)"}
+                                            <Sparkles className="h-4 w-4 text-purple-500" />
+                                            Dividir em Cotas (Ex: Lua de Mel)
                                         </FormLabel>
                                         <p className="text-sm text-gray-500">
-                                            {field.value
-                                                ? "Permite que os convidados comprem 'pedaços' do presente (ideal para valores altos)."
-                                                : "O convidado paga o valor cheio do item (ideal para presentes tradicionais)."}
+                                            Permite que os convidados comprem "pedaços" do presente (ideal para valores altos).
                                         </p>
                                     </div>
                                     <FormControl>

@@ -275,8 +275,8 @@ const Gifts = () => {
                                         <TableHead>Preço</TableHead>
                                         <TableHead className="text-center">Qtd.</TableHead>
                                         <TableHead className="hidden md:table-cell">Categoria</TableHead>
-                                        <TableHead className="hidden md:table-cell">Prioridade</TableHead>
-                                        <TableHead className="hidden md:table-cell">Reservados</TableHead>
+                                        {/* <TableHead className="hidden md:table-cell">Prioridade</TableHead> */}
+                                        <TableHead className="hidden md:table-cell">Recebidos</TableHead>
                                         <TableHead className="text-right">Ações</TableHead>
                                     </TableRow>
                                 </TableHeader>

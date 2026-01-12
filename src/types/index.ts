@@ -71,6 +71,7 @@ export type WeddingList = {
   slug: string;
   description?: string | null;
   is_public: boolean;
+  rsvp_mode?: 'closed' | 'open';
   created_at: string;
   updated_at: string;
   // Personalization
@@ -154,6 +155,7 @@ export type Envelope = {
   group_name: string;
   slug: string;
   send_status: 'pending' | 'sent' | 'failed';
+  source?: 'manual' | 'public';
   created_at: string;
   updated_at: string;
   guests?: Guest[]; // For joined queries

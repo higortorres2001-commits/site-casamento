@@ -22,6 +22,8 @@ import {
     ArrowLeft,
     Baby,
     User,
+    X,
+    FileDown,
 } from "lucide-react";
 import WhatsAppIcon from "@/components/ui/whatsapp-icon";
 
@@ -66,7 +68,7 @@ const GuestManagement = () => {
             // Get envelopes with guests
             const { data: envelopesData, error: envelopesError } = await supabase
                 .from("envelopes")
-                .select("*, guests(*)")
+                .select("*, guests(*), source")
                 .eq("wedding_list_id", listData.id)
                 .order("created_at", { ascending: false });
 
@@ -157,6 +159,41 @@ const GuestManagement = () => {
         return { confirmed, declined, pending, total: guests.length };
     };
 
+    // Badge based on RSVP confirmation status (not send status)
+    const getRsvpBadge = (guests: Guest[]) => {
+        const stats = getRsvpStats(guests);
+
+        if (stats.confirmed === stats.total) {
+            return (
+                <Badge className="bg-green-100 text-green-700 border-green-200">
+                    <CheckCircle className="w-3 h-3 mr-1" /> Confirmado
+                </Badge>
+            );
+        }
+
+        if (stats.declined === stats.total) {
+            return (
+                <Badge className="bg-red-100 text-red-700 border-red-200">
+                    <X className="w-3 h-3 mr-1" /> Recusado
+                </Badge>
+            );
+        }
+
+        if (stats.confirmed > 0 || stats.declined > 0) {
+            return (
+                <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+                    <Clock className="w-3 h-3 mr-1" /> Parcial
+                </Badge>
+            );
+        }
+
+        return (
+            <Badge className="bg-gray-100 text-gray-600 border-gray-200">
+                <Clock className="w-3 h-3 mr-1" /> Pendente
+            </Badge>
+        );
+    };
+
     const filteredEnvelopes = envelopes.filter((env) => {
         const query = searchQuery.toLowerCase();
         if (!query) return true;
@@ -169,6 +206,106 @@ const GuestManagement = () => {
         (sum, env) => sum + env.guests.filter((g) => g.whatsapp).length,
         0
     );
+
+    const totalConfirmed = envelopes.reduce((sum, env) => {
+        return sum + env.guests.filter(g => {
+            const rsvp = rsvpData[g.id];
+            return rsvp?.attending === "yes" && rsvp?.validation_status === "validated";
+        }).length;
+    }, 0);
+
+    // Export guest list to PDF via browser print
+    const handleExportPdf = () => {
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('pt-BR');
+        const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+        let html = `
+            <html>
+            <head>
+                <title>Lista de Convidados - ${dateStr}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
+                    h1 { font-size: 18px; margin-bottom: 10px; }
+                    .summary { background: #f5f5f5; padding: 10px; margin-bottom: 20px; border-radius: 4px; }
+                    .summary span { margin-right: 20px; }
+                    .envelope { margin-bottom: 20px; page-break-inside: avoid; }
+                    .envelope-title { font-weight: bold; font-size: 14px; background: #eee; padding: 5px; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
+                    th { background: #f5f5f5; }
+                    .confirmed { color: green; }
+                    .pending { color: gray; }
+                    .declined { color: red; }
+                    @media print { body { -webkit-print-color-adjust: exact; } }
+                </style>
+            </head>
+            <body>
+                <h1>Lista de Convidados</h1>
+                <div class="summary">
+                    <span><strong>${envelopes.length}</strong> convites</span>
+                    <span><strong>${totalGuests}</strong> convidados</span>
+                    <span><strong>${totalConfirmed}</strong> confirmados</span>
+                    <span><strong>${totalWithWhatsApp}</strong> com WhatsApp</span>
+                    <span>Exportado em: ${dateStr} às ${timeStr}</span>
+                </div>
+        `;
+
+        envelopes.forEach(env => {
+            const stats = getRsvpStats(env.guests);
+            html += `
+                <div class="envelope">
+                    <div class="envelope-title">${env.group_name} (${stats.confirmed}/${stats.total} confirmados)</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Tipo</th>
+                                <th>WhatsApp</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            env.guests.forEach(guest => {
+                const rsvp = rsvpData[guest.id];
+                let status = 'Pendente';
+                let statusClass = 'pending';
+                if (rsvp?.attending === 'yes' && rsvp?.validation_status === 'validated') {
+                    status = 'Confirmado';
+                    statusClass = 'confirmed';
+                } else if (rsvp?.attending === 'no') {
+                    status = 'Recusado';
+                    statusClass = 'declined';
+                }
+
+                html += `
+                    <tr>
+                        <td>${guest.name}</td>
+                        <td>${guest.guest_type === 'child' ? 'Criança' : 'Adulto'}</td>
+                        <td>${guest.whatsapp || '-'}</td>
+                        <td class="${statusClass}">${status}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        });
+
+        html += '</body></html>';
+
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.print();
+        }
+    };
 
     if (loading) {
         return (
@@ -203,13 +340,23 @@ const GuestManagement = () => {
                             </div>
                         </div>
 
-                        <Button
-                            onClick={() => setIsModalOpen(true)}
-                            className="bg-pink-500 hover:bg-pink-600 w-full md:w-auto"
-                        >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Novo Convite
-                        </Button>
+                        <div className="flex gap-2 w-full md:w-auto">
+                            <Button
+                                variant="outline"
+                                onClick={handleExportPdf}
+                                className="flex-1 md:flex-none"
+                            >
+                                <FileDown className="w-4 h-4 mr-2" />
+                                Exportar
+                            </Button>
+                            <Button
+                                onClick={() => setIsModalOpen(true)}
+                                className="bg-pink-500 hover:bg-pink-600 flex-1 md:flex-none"
+                            >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Novo Convite
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -259,14 +406,14 @@ const GuestManagement = () => {
                     <Card>
                         <CardContent className="pt-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-100 rounded-lg">
-                                    <Send className="w-5 h-5 text-purple-600" />
+                                <div className="p-2 bg-green-100 rounded-lg">
+                                    <CheckCircle className="w-5 h-5 text-green-600" />
                                 </div>
                                 <div>
                                     <p className="text-2xl font-bold">
-                                        {envelopes.filter((e) => e.send_status === "sent").length}
+                                        {totalConfirmed}
                                     </p>
-                                    <p className="text-xs text-gray-500">Enviados</p>
+                                    <p className="text-xs text-gray-500">Confirmados</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -342,7 +489,7 @@ const GuestManagement = () => {
                                                 >
                                                     <WhatsAppIcon className="h-4 w-4" />
                                                 </Button>
-                                                {getStatusBadge(envelope.send_status)}
+                                                {getRsvpBadge(envelope.guests)}
                                             </div>
                                         </div>
                                     </CardHeader>
