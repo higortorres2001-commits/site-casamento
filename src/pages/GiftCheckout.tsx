@@ -309,14 +309,12 @@ const GiftCheckout = () => {
                     );
 
                     showSuccess(GUEST_MESSAGES.success.GIFT_SENT);
-                    navigate("/confirmacao", {
-                        state: {
-                            orderId: reservation.id,
-                            totalPrice: totalPrice,
-                            giftName: gift.name,
-                            coupleName: weddingList ? `${weddingList.bride_name} & ${weddingList.groom_name}` : null,
-                        }
-                    });
+                    // Redirect to couple's page with thank you modal
+                    const coupleName = weddingList ? `${weddingList.bride_name} & ${weddingList.groom_name}` : '';
+                    const thankYouUrl = weddingList?.slug
+                        ? `/lista/${weddingList.slug}?showThankYou=true&coupleName=${encodeURIComponent(coupleName)}`
+                        : '/confirmacao';
+                    navigate(thankYouUrl);
                 } else {
                     showSuccess(GUEST_MESSAGES.success.ORDER_CREATED);
                     navigate("/processando-pagamento");
@@ -577,6 +575,10 @@ const GiftCheckout = () => {
                 pixDetails={pixDetails}
                 totalPrice={totalPrice}
                 asaasPaymentId={asaasPaymentId || ""}
+                redirectUrl={weddingList?.slug
+                    ? `/lista/${weddingList.slug}?showThankYou=true&coupleName=${encodeURIComponent(`${weddingList.bride_name} & ${weddingList.groom_name}`)}`
+                    : undefined
+                }
             />
         </div>
     );

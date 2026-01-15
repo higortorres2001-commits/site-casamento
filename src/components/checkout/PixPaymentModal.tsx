@@ -21,7 +21,8 @@ interface PixPaymentModalProps {
   orderId: string;
   pixDetails: any;
   totalPrice: number;
-  asaasPaymentId: string; // New prop: Asaas payment ID
+  asaasPaymentId: string;
+  redirectUrl?: string; // Optional: redirect URL after payment confirmed
 }
 
 const PixPaymentModal = ({
@@ -31,6 +32,7 @@ const PixPaymentModal = ({
   pixDetails,
   totalPrice,
   asaasPaymentId,
+  redirectUrl,
 }: PixPaymentModalProps) => {
   const navigate = useNavigate();
   const pollingIntervalRef = useRef<number | null>(null);
@@ -55,7 +57,7 @@ const PixPaymentModal = ({
         showSuccess(GUEST_MESSAGES.success.PAYMENT_CONFIRMED);
         stopPolling();
         onClose(); // Close the modal
-        navigate("/confirmacao");
+        navigate(redirectUrl || "/confirmacao");
       } else {
         console.log("Payment status still pending:", data?.status);
       }

@@ -29,6 +29,7 @@ import RsvpForm from "@/components/public/RsvpForm";
 import OpenRsvpModal from "@/components/public/OpenRsvpModal";
 import CoupleHero from "@/components/public/CoupleHero";
 import CoupleStory from "@/components/public/CoupleStory";
+import GiftThankYouModal from "@/components/public/GiftThankYouModal";
 
 // Loading fallback component (kept for potential future use)
 const LoadingFallback = () => (
@@ -62,6 +63,18 @@ const PublicGiftList = () => {
         if (tab && ["home", "gifts", "rsvp", "messages"].includes(tab)) {
             setActiveTab(tab);
         }
+
+        // Check for thank you modal from gift payment
+        const showThankYou = searchParams.get("showThankYou");
+        const coupleName = searchParams.get("coupleName");
+        if (showThankYou === "true") {
+            setThankYouCoupleName(coupleName || "");
+            setIsThankYouModalOpen(true);
+            // Clear the query params to avoid showing modal again on refresh
+            searchParams.delete("showThankYou");
+            searchParams.delete("coupleName");
+            setSearchParams(searchParams, { replace: true });
+        }
     }, [searchParams]);
 
     const handleTabChange = (value: string) => {
@@ -75,6 +88,8 @@ const PublicGiftList = () => {
     const [selectedCategory, setSelectedCategory] = useState("all");
     const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0 });
     const [isOpenRsvpModalOpen, setIsOpenRsvpModalOpen] = useState(false);
+    const [isThankYouModalOpen, setIsThankYouModalOpen] = useState(false);
+    const [thankYouCoupleName, setThankYouCoupleName] = useState("");
 
     // Track loading state with ref for timeout closure
     const loadingRef = React.useRef(loading);
@@ -525,6 +540,21 @@ const PublicGiftList = () => {
                     </TabsContent>
                 </Tabs>
             </div>
+
+            {/* Gift Thank You Modal */}
+            <GiftThankYouModal
+                isOpen={isThankYouModalOpen}
+                onClose={() => setIsThankYouModalOpen(false)}
+                coupleName={thankYouCoupleName || `${weddingList.bride_name} & ${weddingList.groom_name}`}
+                onConfirmRsvp={() => {
+                    setIsThankYouModalOpen(false);
+                    handleTabChange("rsvp");
+                }}
+                onLeaveMessage={() => {
+                    setIsThankYouModalOpen(false);
+                    handleTabChange("messages");
+                }}
+            />
 
             {/* Footer */}
             <div className="bg-gray-50 border-t py-8 text-center mt-12">
