@@ -321,6 +321,188 @@ async function sendMetaPurchaseEvent(
   }
 }
 
+/**
+ * Background processing function for gift payments
+ * Runs after HTTP 200 is returned to Asaas
+ */
+async function processGiftPaymentInBackground(
+  supabase: any,
+  logger: Logger,
+  giftReservationId: string,
+  reservationGiftId: string,
+  reservationQuantity: number
+): Promise<void> {
+  try {
+    // Update gift quantity_purchased
+    const { data: gift } = await supabase
+      .from('gifts')
+      .select('id, quantity_purchased, wedding_list_id')
+      .eq('id', reservationGiftId)
+      .single();
+
+    if (gift) {
+      await supabase
+        .from('gifts')
+        .update({
+          quantity_purchased: (gift.quantity_purchased || 0) + reservationQuantity
+        })
+        .eq('id', gift.id);
+
+      logger.info('Gift quantity updated', {
+        giftId: gift.id,
+        addedQuantity: reservationQuantity,
+        newTotal: (gift.quantity_purchased || 0) + reservationQuantity
+      });
+
+      // ==================== EMAIL NOTIFICATIONS ====================
+      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+      const EMAIL_FROM = Deno.env.get('EMAIL_FROM') || 'Lista de Casamento <noreply@listadecasamento.com>';
+      const APP_URL = Deno.env.get('APP_URL') || 'https://listadecasamento.com';
+
+      if (RESEND_API_KEY) {
+        // Fetch full reservation data for email
+        const { data: fullReservation } = await supabase
+          .from('gift_reservations')
+          .select('guest_name, guest_email, total_price, quantity')
+          .eq('id', giftReservationId)
+          .single();
+
+        // Fetch gift and wedding list details
+        const { data: giftDetails } = await supabase
+          .from('gifts')
+          .select(`
+            name, 
+            price,
+            wedding_list_id,
+            wedding_lists(
+              id,
+              bride_name, 
+              groom_name, 
+              user_id, 
+              first_gift_notified,
+              notification_email,
+              profiles!wedding_lists_user_id_fkey(email)
+            )
+          `)
+          .eq('id', gift.id)
+          .single();
+
+        if (giftDetails && fullReservation) {
+          const weddingList = (giftDetails as any).wedding_lists;
+          const coupleNames = `${weddingList.bride_name} & ${weddingList.groom_name}`;
+          const coupleEmail = weddingList.notification_email || weddingList.profiles?.email;
+
+          // 1. Send receipt to guest
+          if (fullReservation.guest_email) {
+            const receiptEmail = generateGiftReceiptEmail({
+              guestName: fullReservation.guest_name,
+              giftName: giftDetails.name,
+              amount: fullReservation.total_price || giftDetails.price,
+              quantity: fullReservation.quantity,
+              coupleNames,
+            });
+
+            const receiptResult = await sendEmail(
+              RESEND_API_KEY,
+              fullReservation.guest_email,
+              receiptEmail,
+              { from: EMAIL_FROM }
+            );
+
+            if (receiptResult.success) {
+              logger.info('Gift receipt sent to guest', { email: fullReservation.guest_email });
+            } else {
+              logger.warning('Failed to send gift receipt', { error: receiptResult.error });
+            }
+          }
+
+          // 2. Check if this is the FIRST gift
+          if (coupleEmail && !weddingList.first_gift_notified) {
+            const firstGiftEmail = generateFirstGiftEmail({
+              coupleNames,
+              guestName: fullReservation.guest_name,
+              giftName: giftDetails.name,
+              amount: fullReservation.total_price || giftDetails.price,
+              dashboardUrl: `${APP_URL}/dashboard`,
+            });
+
+            const firstGiftResult = await sendEmail(
+              RESEND_API_KEY,
+              coupleEmail,
+              firstGiftEmail,
+              { from: EMAIL_FROM }
+            );
+
+            if (firstGiftResult.success) {
+              logger.info('First gift celebration email sent', { email: coupleEmail });
+              await supabase
+                .from('wedding_lists')
+                .update({ first_gift_notified: true })
+                .eq('id', weddingList.id);
+            } else {
+              logger.warning('Failed to send first gift email', { error: firstGiftResult.error });
+            }
+          }
+        }
+      }
+    }
+
+    logger.info('Gift background processing completed', { giftReservationId });
+  } catch (error: any) {
+    logger.error('Gift background processing failed', {
+      giftReservationId,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Background processing function for regular orders
+ * Runs after HTTP 200 is returned to Asaas
+ */
+async function processOrderInBackground(
+  supabase: any,
+  logger: Logger,
+  order: any,
+  payload: any
+): Promise<void> {
+  try {
+    // ==================== CONCEDER ACESSO ====================
+    await grantProductAccess(supabase, order.user_id, order.ordered_product_ids);
+
+    logger.info('Product access granted', {
+      orderId: order.id,
+      userId: order.user_id,
+      productCount: order.ordered_product_ids.length
+    });
+
+    // ==================== BUSCAR PERFIL PARA EMAIL ====================
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email, name, cpf, whatsapp')
+      .eq('id', order.user_id)
+      .single();
+
+    if (profile?.email && profile?.cpf) {
+      // Enviar email (não-bloqueante)
+      sendAccessEmail(profile.email, profile.name, profile.cpf, logger);
+      // Enviar evento Meta (não-bloqueante)
+      sendMetaPurchaseEvent(order, profile, logger);
+    }
+
+    logger.info('Order background processing completed', {
+      orderId: order.id,
+      userId: order.user_id,
+      event: payload.event
+    });
+  } catch (error: any) {
+    logger.error('Order background processing failed', {
+      orderId: order.id,
+      error: error.message
+    });
+  }
+}
+
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
@@ -349,15 +531,19 @@ serve(async (req) => {
 
     payload = await req.json();
 
-    logger.info('Webhook received', {
-      event: payload.event,
-      paymentId: payload.payment?.id
-    });
-
-    // Processar apenas eventos relevantes
-    if (!['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED'].includes(payload.event)) {
-      logger.info('Event ignored (not relevant)', { event: payload.event });
-      return new Response(JSON.stringify({ message: 'Event ignored' }), {
+    // ==================== QUICK RESPONSE FOR NON-RELEVANT EVENTS ====================
+    // Retorna HTTP 200 IMEDIATAMENTE para evitar penalização do Asaas
+    const relevantEvents = ['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED'];
+    if (!relevantEvents.includes(payload.event)) {
+      logger.info('Event acknowledged (not processed)', {
+        event: payload.event,
+        paymentId: payload.payment?.id
+      });
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Event acknowledged',
+        event: payload.event
+      }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -370,16 +556,11 @@ serve(async (req) => {
       throw new Error('Payment ID not found in webhook');
     }
 
-    // ==================== CHECK IF GIFT PAYMENT ====================
+    // ==================== GIFT PAYMENT FLOW ====================
     if (externalReference.startsWith('gift_')) {
       const giftReservationId = externalReference.replace('gift_', '');
 
-      logger.info('Processing gift payment confirmation', {
-        asaasPaymentId,
-        giftReservationId
-      });
-
-      // Fetch gift reservation
+      // Fetch gift reservation - operação CRÍTICA, deve ser síncrona
       const { data: reservation, error: reservationError } = await supabase
         .from('gift_reservations')
         .select('id, gift_id, quantity, status')
@@ -388,22 +569,27 @@ serve(async (req) => {
 
       if (reservationError || !reservation) {
         logger.warning('Gift reservation not found', { giftReservationId });
-        return new Response(JSON.stringify({ message: 'Gift reservation not found' }), {
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Gift reservation not found'
+        }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      // Check if already processed (idempotency)
+      // Idempotency check
       if (reservation.status === 'purchased') {
-        logger.info('Gift reservation already processed (idempotent)', { giftReservationId });
-        return new Response(JSON.stringify({ message: 'Already processed' }), {
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Already processed'
+        }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      // Update reservation status to purchased
+      // CRITICAL: Update status IMEDIATAMENTE (operação essencial)
       await supabase
         .from('gift_reservations')
         .update({
@@ -412,141 +598,26 @@ serve(async (req) => {
         })
         .eq('id', giftReservationId);
 
-      // Update gift quantity_purchased
-      const { data: gift } = await supabase
-        .from('gifts')
-        .select('id, quantity_purchased, wedding_list_id')
-        .eq('id', reservation.gift_id)
-        .single();
-
-      if (gift) {
-        await supabase
-          .from('gifts')
-          .update({
-            quantity_purchased: (gift.quantity_purchased || 0) + reservation.quantity
-          })
-          .eq('id', gift.id);
-
-        logger.info('Gift quantity updated', {
-          giftId: gift.id,
-          addedQuantity: reservation.quantity,
-          newTotal: (gift.quantity_purchased || 0) + reservation.quantity
-        });
-
-        // ==================== EMAIL NOTIFICATIONS ====================
-        const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-        const EMAIL_FROM = Deno.env.get('EMAIL_FROM') || 'Lista de Casamento <noreply@listadecasamento.com>';
-        const APP_URL = Deno.env.get('APP_URL') || 'https://listadecasamento.com';
-
-        if (RESEND_API_KEY) {
-          // Fetch full reservation data for email
-          const { data: fullReservation } = await supabase
-            .from('gift_reservations')
-            .select('guest_name, guest_email, total_price, quantity')
-            .eq('id', giftReservationId)
-            .single();
-
-          // Fetch gift and wedding list details
-          const { data: giftDetails } = await supabase
-            .from('gifts')
-            .select(`
-              name, 
-              price,
-              wedding_list_id,
-              wedding_lists(
-                id,
-                bride_name, 
-                groom_name, 
-                user_id, 
-                first_gift_notified,
-                notification_email,
-                profiles!wedding_lists_user_id_fkey(email)
-              )
-            `)
-            .eq('id', gift.id)
-            .single();
-
-          if (giftDetails && fullReservation) {
-            const weddingList = (giftDetails as any).wedding_lists;
-            const coupleNames = `${weddingList.bride_name} & ${weddingList.groom_name}`;
-            const coupleEmail = weddingList.notification_email || weddingList.profiles?.email;
-
-            // 1. Send receipt to guest (immediate - trust/anti-fraud)
-            if (fullReservation.guest_email) {
-              const receiptEmail = generateGiftReceiptEmail({
-                guestName: fullReservation.guest_name,
-                giftName: giftDetails.name,
-                amount: fullReservation.total_price || giftDetails.price,
-                quantity: fullReservation.quantity,
-                coupleNames,
-              });
-
-              const receiptResult = await sendEmail(
-                RESEND_API_KEY,
-                fullReservation.guest_email,
-                receiptEmail,
-                { from: EMAIL_FROM }
-              );
-
-              if (receiptResult.success) {
-                logger.info('Gift receipt sent to guest', {
-                  email: fullReservation.guest_email
-                });
-              } else {
-                logger.warning('Failed to send gift receipt', {
-                  error: receiptResult.error
-                });
-              }
-            }
-
-            // 2. Check if this is the FIRST gift (send celebration immediately)
-            if (coupleEmail && !weddingList.first_gift_notified) {
-              const firstGiftEmail = generateFirstGiftEmail({
-                coupleNames,
-                guestName: fullReservation.guest_name,
-                giftName: giftDetails.name,
-                amount: fullReservation.total_price || giftDetails.price,
-                dashboardUrl: `${APP_URL}/dashboard`,
-              });
-
-              const firstGiftResult = await sendEmail(
-                RESEND_API_KEY,
-                coupleEmail,
-                firstGiftEmail,
-                { from: EMAIL_FROM }
-              );
-
-              if (firstGiftResult.success) {
-                logger.info('First gift celebration email sent', {
-                  email: coupleEmail
-                });
-
-                // Mark as notified (prevent duplicate first-gift emails)
-                await supabase
-                  .from('wedding_lists')
-                  .update({ first_gift_notified: true })
-                  .eq('id', weddingList.id);
-              } else {
-                logger.warning('Failed to send first gift email', {
-                  error: firstGiftResult.error
-                });
-              }
-            }
-            // If NOT first gift, it will be included in the Daily Digest
-          }
-        } else {
-          logger.warning('RESEND_API_KEY not configured, skipping email notifications');
-        }
-      }
-
-      logger.info('Gift payment processed successfully', {
+      logger.info('Gift payment confirmed', {
+        asaasPaymentId,
         giftReservationId,
-        giftId: reservation.gift_id,
-        quantity: reservation.quantity
+        giftId: reservation.gift_id
       });
 
+      // BACKGROUND: Processar emails e atualizações secundárias
+      // Não aguardamos - permite resposta rápida ao Asaas
+      processGiftPaymentInBackground(
+        supabase,
+        logger,
+        giftReservationId,
+        reservation.gift_id,
+        reservation.quantity
+      ).catch(err => console.error('Background gift processing error:', err));
+
+      // Resposta IMEDIATA para Asaas
       return new Response(JSON.stringify({
-        message: 'Gift payment processed successfully',
+        success: true,
+        message: 'Gift payment confirmed',
         giftReservationId,
         giftId: reservation.gift_id
       }), {
@@ -556,7 +627,6 @@ serve(async (req) => {
     }
 
     // ==================== REGULAR ORDER PAYMENT FLOW ====================
-    // ==================== BUSCAR PEDIDO ====================
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('id, user_id, ordered_product_ids, status, total_price, meta_tracking_data')
@@ -565,64 +635,44 @@ serve(async (req) => {
 
     if (orderError || !order) {
       logger.warning('Order not found for payment', { asaasPaymentId });
-      return new Response(JSON.stringify({ message: 'Order not found' }), {
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Order not found'
+      }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Verificar se já foi processado (idempotência)
+    // Idempotency check
     if (order.status === 'paid') {
-      logger.info('Order already processed (idempotent)', {
-        orderId: order.id,
-        userId: order.user_id
-      });
-      return new Response(JSON.stringify({ message: 'Already processed' }), {
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Already processed'
+      }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // ==================== ATUALIZAR STATUS ====================
+    // CRITICAL: Atualizar status IMEDIATAMENTE (operação essencial)
     await updateOrderStatus(supabase, order.id, 'paid');
 
-    logger.info('Order status updated to paid', {
-      orderId: order.id,
-      userId: order.user_id
-    });
-
-    // ==================== CONCEDER ACESSO ====================
-    await grantProductAccess(supabase, order.user_id, order.ordered_product_ids);
-
-    logger.info('Product access granted', {
+    logger.info('Order payment confirmed', {
       orderId: order.id,
       userId: order.user_id,
-      productCount: order.ordered_product_ids.length
+      asaasPaymentId
     });
 
-    // ==================== BUSCAR PERFIL PARA EMAIL ====================
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email, name, cpf, whatsapp')
-      .eq('id', order.user_id)
-      .single();
+    // BACKGROUND: Processar acesso, emails e Meta CAPI
+    // Não aguardamos - permite resposta rápida ao Asaas
+    processOrderInBackground(supabase, logger, order, payload)
+      .catch(err => console.error('Background order processing error:', err));
 
-    if (profile?.email && profile?.cpf) {
-      // Enviar email (não-bloqueante)
-      sendAccessEmail(profile.email, profile.name, profile.cpf, logger);
-
-      // Enviar evento Meta (não-bloqueante)
-      sendMetaPurchaseEvent(order, profile, logger);
-    }
-
-    logger.info('Webhook processed successfully', {
-      orderId: order.id,
-      userId: order.user_id,
-      event: payload.event
-    });
-
+    // Resposta IMEDIATA para Asaas
     return new Response(JSON.stringify({
-      message: 'Webhook processed successfully',
+      success: true,
+      message: 'Payment confirmed',
       orderId: order.id,
       userId: order.user_id
     }), {
@@ -631,14 +681,20 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    await logger.critical('Webhook processing failed', {
+    // IMPORTANT: Mesmo em erro, logamos e retornamos rapidamente
+    logger.critical('Webhook processing failed', {
       errorMessage: error.message,
       errorStack: error.stack,
       payload: payload || null
     });
 
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+    // Retorna 200 mesmo em erro para evitar re-tentativas infinitas do Asaas
+    // O erro foi logado para investigação manual
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), {
+      status: 200, // Changed from 500 to 200 to prevent Asaas penalties
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
