@@ -29,9 +29,17 @@ export function getCorsHeaders(origin: string | null): Record<string, string> {
     }
 
     // Para requisições do frontend, valida o origin
-    const validOrigin = ALLOWED_ORIGINS.includes(origin)
+    let validOrigin = ALLOWED_ORIGINS.includes(origin)
         ? origin
         : ALLOWED_ORIGINS[0];
+
+    // Verifica domínios dinâmicos (wildcards)
+    if (!ALLOWED_ORIGINS.includes(origin)) {
+        // Permite sejatudooqueveioparaser.com.br e todos os seus subdomínios
+        if (origin.match(/^https?:\/\/(?:.+\.)?sejatudooqueveioparaser\.com\.br$/)) {
+            validOrigin = origin;
+        }
+    }
 
     return {
         'Access-Control-Allow-Origin': validOrigin,
