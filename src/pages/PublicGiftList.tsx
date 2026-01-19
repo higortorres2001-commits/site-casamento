@@ -162,15 +162,9 @@ const PublicGiftList = () => {
             // @ts-ignore - Supabase join types can be tricky
             const loadedGifts = (listData.gifts || []) as GiftType[];
 
-            // Sort gifts manually since we can't easily order joined relations in a single query without complex syntax
+            // Sort gifts by price (ascending)
             const sortedGifts = loadedGifts.sort((a, b) => {
-                // PrioritySort: high > medium > low
-                const priorityMap = { high: 0, medium: 1, low: 2 };
-                if (priorityMap[a.priority] !== priorityMap[b.priority]) {
-                    return priorityMap[a.priority] - priorityMap[b.priority];
-                }
-                // DateSort: Newest first
-                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                return a.price - b.price;
             });
 
             // DEBUG: Log raw date from Supabase
@@ -463,7 +457,7 @@ const PublicGiftList = () => {
                                                 )}
 
                                                 {/* Price & Action */}
-                                                <div className="flex items-center justify-between mt-auto pt-4">
+                                                <div className="flex flex-col mt-auto pt-4 space-y-3">
                                                     <span className="text-2xl font-bold text-[var(--brand-color)]">
                                                         {formatCurrency(gift.price)}
                                                     </span>
@@ -471,7 +465,7 @@ const PublicGiftList = () => {
                                                     {!isSoldOut(gift) && (
                                                         <Button
                                                             onClick={() => handlePresentear(gift)}
-                                                            className="bg-[var(--brand-color)] hover:opacity-90 text-white"
+                                                            className="w-full bg-[var(--brand-color)] hover:opacity-90 text-white"
                                                         >
                                                             <ShoppingBag className="h-4 w-4 mr-2" />
                                                             Presentear

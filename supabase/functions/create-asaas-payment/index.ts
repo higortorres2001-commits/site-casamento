@@ -530,6 +530,9 @@ serve(async (req) => {
         quantity
       });
 
+      // Ensure totalPrice is a number
+      const parsedTotalPrice = typeof totalPrice === 'number' ? totalPrice : parseFloat(totalPrice);
+
       if (!name || !email || !cpf || !whatsapp || !giftId || !giftReservationId || !paymentMethod) {
         throw new Error('Campos obrigatórios ausentes para pagamento de presente');
       }
@@ -575,7 +578,7 @@ serve(async (req) => {
             phone: customerData.whatsapp,
             notificationDisabled: true,
           },
-          value: parseFloat(totalPrice.toFixed(2)),
+          value: parseFloat(parsedTotalPrice.toFixed(2)),
           description: `Presente: ${giftName} - #${giftReservationId.substring(0, 8)}`,
           externalReference: `gift_${giftReservationId}`,
           dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
@@ -633,7 +636,7 @@ serve(async (req) => {
           giftReservationId,
           customerData,
           creditCard,
-          totalPrice,
+          parsedTotalPrice,
           clientIp,
           `gift_${giftReservationId}` // Override external reference for webhook detection
         );
