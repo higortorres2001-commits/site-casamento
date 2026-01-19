@@ -71,20 +71,7 @@ class Logger {
   }
 }
 
-/**
- * Valida assinatura do webhook Asaas (se configurada)
- */
-function validateWebhookSignature(req: Request): boolean {
-  const asaasToken = req.headers.get('asaas-access-token');
-  const expectedToken = Deno.env.get('ASAAS_WEBHOOK_TOKEN');
 
-  // Se não houver token configurado, aceitar (para compatibilidade)
-  if (!expectedToken) {
-    return true;
-  }
-
-  return asaasToken === expectedToken;
-}
 
 /**
  * Atualiza status do pedido de forma atômica
@@ -520,14 +507,9 @@ serve(async (req) => {
   let payload: any;
 
   try {
-    // Validar assinatura do webhook
-    if (!validateWebhookSignature(req)) {
-      logger.error('Invalid webhook signature');
-      return new Response(JSON.stringify({ error: 'Invalid signature' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // Validação de assinatura removida por solicitação do usuário
+    // Todas as requisições serão aceitas
+    // if (!validateWebhookSignature(req)) { ... }
 
     payload = await req.json();
 

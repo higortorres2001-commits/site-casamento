@@ -10,7 +10,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useSession } from '@/components/SessionContextProvider';
 import { showError } from '@/utils/toast';
 
-const ADMIN_EMAIL = "higor.torres8@gmail.com";
+import { ADMIN_EMAILS } from '@/constants/admin';
 
 const AdminLayout = () => {
   const isMobile = useIsMobile();
@@ -22,7 +22,8 @@ const AdminLayout = () => {
   useEffect(() => {
     if (!isSessionLoading && user) {
       const isAdminRoute = location.pathname.startsWith('/admin');
-      if (isAdminRoute && user.email !== ADMIN_EMAIL) {
+      // Verifica se o email do usuário está na lista de admins permitidos
+      if (isAdminRoute && user.email && !ADMIN_EMAILS.includes(user.email)) {
         showError("Você não tem permissão para acessar esta área.");
         navigate('/dashboard');
       }

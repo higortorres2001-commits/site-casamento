@@ -25,6 +25,7 @@ import { Loader2, Trash2, Search, Download, AlertTriangle, CheckCircle, Info, XC
 import { showError, showSuccess } from "@/utils/toast";
 import { useSession } from "@/components/SessionContextProvider";
 import LogMetadataModal from "@/components/admin/LogMetadataModal";
+import { ADMIN_EMAILS } from "@/constants/admin";
 
 export type Log = {
   id: string;
@@ -68,7 +69,7 @@ const Logs = () => {
   const [auditTrailMode, setAuditTrailMode] = useState(false);
   const [correlationIdFilter, setCorrelationIdFilter] = useState<string>("");
 
-  const isAdmin = user?.email === "higor.torres8@gmail.com";
+  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
 
   const cleanupOldLogs = useCallback(async () => {
     const cutoff = new Date();

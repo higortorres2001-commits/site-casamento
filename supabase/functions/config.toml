@@ -1,2 +1,5 @@
 [search-guests]
 verify_jwt = false
+
+[asaas-webhook]
+verify_jwt = false
