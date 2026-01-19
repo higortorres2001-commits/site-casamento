@@ -3,3 +3,30 @@ verify_jwt = false
 
 [asaas-webhook]
 verify_jwt = false
+
+[create-asaas-payment]
+verify_jwt = false
+
+[check-user-exists]
+verify_jwt = false
+
+[lookup-guest-by-phone]
+verify_jwt = false
+
+[calculate-installments]
+verify_jwt = false
+
+[check-payment-status]
+verify_jwt = false
+
+[send-checkout-otp]
+verify_jwt = false
+
+[verify-checkout-otp]
+verify_jwt = false
+
+[update-guest-purchase]
+verify_jwt = false
+
+[send-gift-receipt]
+verify_jwt = false
