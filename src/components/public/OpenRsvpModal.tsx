@@ -298,20 +298,20 @@ const OpenRsvpModal: React.FC<OpenRsvpModalProps> = ({
 
                         <div className="w-full space-y-3 pt-4">
                             <Button
-                                className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200 h-12 text-lg"
+                                className="w-full bg-gray-500 hover:bg-gray-600 text-white h-12 text-lg"
                                 onClick={() => handleNavigate("gifts")}
                             >
                                 <Gift className="w-5 h-5 mr-2" />
                                 Presentear os Noivos
                             </Button>
 
-                            <button
+                            <Button
+                                className="w-full bg-gray-500 hover:bg-gray-600 text-white h-12 text-lg"
                                 onClick={() => handleNavigate("messages")}
-                                className="text-sm font-medium text-gray-500 hover:text-green-600 transition-colors flex items-center justify-center gap-1 mx-auto py-2"
                             >
-                                <MessageSquare className="w-4 h-4" />
+                                <MessageSquare className="w-5 h-5 mr-2" />
                                 Deixar um recado para os noivos
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </DialogContent>
