@@ -67,6 +67,7 @@ const listSchema = z.object({
     couple_story: z.string().optional(),
     brand_color: z.string().default("#ec4899"),
     gallery_images: z.array(z.string()).default([]),
+    dress_code: z.string().optional(),
 });
 
 type ListFormData = z.infer<typeof listSchema>;
@@ -107,6 +108,7 @@ const WeddingListSettings = () => {
             couple_story: "",
             brand_color: "#ec4899",
             gallery_images: [],
+            dress_code: "",
         },
     });
 
@@ -163,6 +165,7 @@ const WeddingListSettings = () => {
                     couple_story: data.couple_story || "",
                     brand_color: data.brand_color || "#ec4899",
                     gallery_images: data.gallery_images || [],
+                    dress_code: data.dress_code || "",
                 });
             }
 
@@ -756,6 +759,26 @@ const WeddingListSettings = () => {
                                                 />
                                             </div>
                                         </div>
+
+                                        {/* Dress Code Field */}
+                                        <FormField
+                                            control={form.control}
+                                            name="dress_code"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Traje / Dress Code (Opcional)</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            placeholder="Ex: Esporte Fino, Black Tie, Casual..."
+                                                            {...field}
+                                                        />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        Informe o tipo de traje sugerido para seus convidados. Deixe vazio para não exibir.
+                                                    </FormDescription>
+                                                </FormItem>
+                                            )}
+                                        />
 
                                         <FormField
                                             control={form.control}

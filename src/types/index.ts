@@ -93,6 +93,7 @@ export type WeddingList = {
   gallery_images?: string[] | null;
   couple_story?: string | null;
   brand_color?: string | null;
+  dress_code?: string | null;
 };
 
 export type Gift = {

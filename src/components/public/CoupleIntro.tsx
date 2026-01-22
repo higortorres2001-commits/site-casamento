@@ -122,14 +122,16 @@ const CoupleIntro: React.FC<CoupleIntroProps> = ({ weddingList }) => {
             </div>
 
             {/* Couple Story & Carousel */}
-            {(weddingList.couple_story || (weddingList.gallery_images && weddingList.gallery_images.length > 0)) && (
+            {(weddingList.couple_story?.trim() || (weddingList.gallery_images && weddingList.gallery_images.length > 0)) && (
                 <div className="grid md:grid-cols-2 gap-12 items-center bg-white p-6 md:p-12 rounded-3xl shadow-sm border border-gray-100">
-                    <div className="space-y-6">
-                        <h2 className="text-3xl md:text-4xl font-cursive text-gray-800">Nossa História</h2>
-                        <div className="prose prose-pink text-gray-600 leading-relaxed whitespace-pre-line text-lg">
-                            {weddingList.couple_story || "Escreva a história do casal aqui..."}
+                    {weddingList.couple_story?.trim() && (
+                        <div className="space-y-6">
+                            <h2 className="text-3xl md:text-4xl font-cursive text-gray-800">Nossa História</h2>
+                            <div className="prose prose-pink text-gray-600 leading-relaxed whitespace-pre-line text-lg">
+                                {weddingList.couple_story}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {weddingList.gallery_images && weddingList.gallery_images.length > 0 && (
                         <Carousel className="w-full max-w-md mx-auto">

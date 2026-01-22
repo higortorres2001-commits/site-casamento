@@ -66,8 +66,19 @@ export const exportGuestListToPDF = async (
             </div>
     `;
 
-    envelopes.forEach(env => {
+    // Sort envelopes alphabetically by group_name
+    const sortedEnvelopes = [...envelopes].sort((a, b) =>
+        a.group_name.localeCompare(b.group_name, 'pt-BR', { sensitivity: 'base' })
+    );
+
+    sortedEnvelopes.forEach(env => {
         const envStats = getRsvpStats(env.guests);
+
+        // Sort guests alphabetically by name within each envelope
+        const sortedGuests = [...env.guests].sort((a, b) =>
+            a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' })
+        );
+
         html += `
             <div class="envelope">
                 <div class="envelope-title">${env.group_name} (${envStats.confirmed}/${envStats.total} confirmados)</div>
@@ -83,7 +94,7 @@ export const exportGuestListToPDF = async (
                     <tbody>
         `;
 
-        env.guests.forEach(guest => {
+        sortedGuests.forEach(guest => {
             const rsvp = rsvpData[guest.id];
             let status = 'Pendente';
             let statusClass = 'pending';

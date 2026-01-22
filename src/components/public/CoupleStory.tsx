@@ -83,7 +83,7 @@ const CoupleStory: React.FC<CoupleStoryProps> = ({ weddingList }) => {
             ) : null}
 
             {/* Story Text Section */}
-            {weddingList.couple_story && (
+            {weddingList.couple_story?.trim() && (
                 <section className="max-w-4xl mx-auto px-6 py-20 text-center space-y-8">
                     <div className="inline-block border-b-2 border-pink-300 pb-1">
                         <span className="text-sm font-medium tracking-widest uppercase text-gray-500">Sobre Nós</span>
@@ -105,6 +105,19 @@ const CoupleStory: React.FC<CoupleStoryProps> = ({ weddingList }) => {
                             <h2 className="text-4xl md:text-5xl font-cursive text-gray-900">O Grande Dia</h2>
                             <p className="text-gray-500 uppercase tracking-widest text-sm">Detalhes dos Eventos</p>
                         </div>
+
+                        {/* Dress Code Section - Only show if filled */}
+                        {weddingList.dress_code?.trim() && (
+                            <div className="max-w-md mx-auto bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+                                <div className="inline-flex items-center justify-center w-12 h-12 bg-pink-50 rounded-full mb-4">
+                                    <svg className="w-6 h-6 text-pink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Traje</h3>
+                                <p className="text-gray-600 text-lg">{weddingList.dress_code}</p>
+                            </div>
+                        )}
 
                         {(() => {
                             // Check if Ceremony and Party are effectively the same event
